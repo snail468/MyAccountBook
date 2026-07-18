@@ -14,11 +14,15 @@ if (!secret || secret.length < 32) {
   }
 }
 
+// COOKIE_SECURE 显式指定；不设的话默认 false，避免 HTTP 部署下 secure cookie 被浏览器拒收
+// HTTPS 上线后可以设 COOKIE_SECURE=true 提高安全性
+const cookieSecure = process.env.COOKIE_SECURE === 'true';
+
 export const sessionOptions: SessionOptions = {
   password: secret || 'dev-only-insecure-secret-please-change-me-now',
   cookieName: 'mab_session',
   cookieOptions: {
-    secure: process.env.NODE_ENV === 'production',
+    secure: cookieSecure,
     httpOnly: true,
     sameSite: 'lax',
     path: '/',

@@ -47,16 +47,25 @@ export default async function WorkPage() {
 
   const entries = await prisma.entry.findMany({
     where: { userId: user.id },
-    select: { yearMonth: true, direction: true, amountCents: true },
+    select: { yearMonth: true, direction: true, amountCents: true, reimbursable: true },
   });
 
-  const byMonth = new Map<string, { income: number; expense: number; count: number }>();
+  const byMonth = new Map<
+    string,
+    { income: number; expense: number; reimbursable: number; count: number }
+  >();
   let earliest: string | null = null;
   for (const e of entries) {
     if (!earliest || e.yearMonth < earliest) earliest = e.yearMonth;
-    const acc = byMonth.get(e.yearMonth) ?? { income: 0, expense: 0, count: 0 };
-    if (e.direction === 'income') acc.income += e.amountCents;
-    else acc.expense += e.amountCents;
+    const acc =
+      byMonth.get(e.yearMonth) ?? { income: 0, expense: 0, reimbursable: 0, count: 0 };
+    if (e.direction === 'income') {
+      acc.income += e.amountCents;
+    } else if (e.reimbursable) {
+      acc.reimbursable += e.amountCents;
+    } else {
+      acc.expense += e.amountCents;
+    }
     acc.count += 1;
     byMonth.set(e.yearMonth, acc);
   }
@@ -74,7 +83,8 @@ export default async function WorkPage() {
 
       <div className="space-y-3">
         {months.map((m) => {
-          const s = byMonth.get(m) ?? { income: 0, expense: 0, count: 0 };
+          const s = byMonth.get(m) ?? { income: 0, expense: 0, reimbursable: 0, count: 0 };
+          // 报销出项不计入月净额
           const net = s.income - s.expense;
           const isCurrent = m === currentMonth;
           return (
@@ -106,9 +116,10 @@ export default async function WorkPage() {
                 </div>
               </div>
               {s.count > 0 && (
-                <div className="mt-3 flex gap-4 text-xs opacity-80 num">
+                <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs opacity-80 num">
                   <span>入 {formatYuan(s.income)}</span>
                   <span>出 {formatYuan(s.expense)}</span>
+                  {s.reimbursable > 0 && <span>报销 {formatYuan(s.reimbursable)}</span>}
                 </div>
               )}
             </Link>

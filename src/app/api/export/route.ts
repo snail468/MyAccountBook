@@ -22,7 +22,7 @@ export async function GET() {
   const lines: string[] = [];
 
   lines.push('# 工作账本');
-  lines.push(['月份', '类别', '方向', '金额(元)', '备注', '创建时间'].join(','));
+  lines.push(['月份', '类别', '方向', '金额(元)', '是否报销', '备注', '创建时间'].join(','));
   for (const e of entries) {
     lines.push(
       [
@@ -30,6 +30,7 @@ export async function GET() {
         csvEscape(e.category),
         csvEscape(e.direction === 'income' ? '进项' : '出项'),
         csvEscape(formatYuan(e.amountCents)),
+        csvEscape(e.reimbursable ? '是' : ''),
         csvEscape(e.note),
         csvEscape(e.createdAt.toISOString()),
       ].join(','),

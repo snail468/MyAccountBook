@@ -16,6 +16,7 @@ export default function NewEntryFlow({ yearMonth }: { yearMonth: string }) {
   const [customName, setCustomName] = useState('');
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
+  const [reimbursable, setReimbursable] = useState(false);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -26,6 +27,7 @@ export default function NewEntryFlow({ yearMonth }: { yearMonth: string }) {
     setCustomName('');
     setAmount('');
     setNote('');
+    setReimbursable(false);
     setError('');
   }
 
@@ -64,6 +66,7 @@ export default function NewEntryFlow({ yearMonth }: { yearMonth: string }) {
           direction,
           amountCents: cents,
           note: note.trim() || null,
+          reimbursable: direction === 'expense' ? reimbursable : false,
         }),
       });
       const data = await res.json();
@@ -191,6 +194,20 @@ export default function NewEntryFlow({ yearMonth }: { yearMonth: string }) {
               maxLength={200}
               className="mt-3 w-full px-4 py-3 rounded-2xl bg-ink-50 dark:bg-ink-800 border border-ink-200 dark:border-ink-700 focus:outline-none focus:ring-2 focus:ring-ink-400"
             />
+            {direction === 'expense' && (
+              <label className="mt-3 flex items-center gap-3 p-3 rounded-2xl bg-ink-50 dark:bg-ink-800 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={reimbursable}
+                  onChange={(e) => setReimbursable(e.target.checked)}
+                  className="w-5 h-5"
+                />
+                <div className="flex-1">
+                  <div className="text-sm">走报销</div>
+                  <div className="text-xs text-ink-500 mt-0.5">此项不计入总储蓄的扣减</div>
+                </div>
+              </label>
+            )}
             {error && <p className="text-red-500 text-sm mt-2">{error}</p>}
             <div className="mt-4 flex gap-2">
               <button onClick={() => setStep('category')} className="flex-1 py-3 rounded-2xl bg-ink-50 dark:bg-ink-800">

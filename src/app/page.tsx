@@ -11,7 +11,7 @@ async function getSummary(userId: string) {
   const [entries, paidEvents, pendingCount] = await Promise.all([
     prisma.entry.findMany({
       where: { userId },
-      select: { direction: true, amountCents: true },
+      select: { direction: true, amountCents: true, reimbursable: true },
     }),
     prisma.event.findMany({
       where: { userId, status: 'paid' },
@@ -22,16 +22,22 @@ async function getSummary(userId: string) {
     }),
   ]);
 
-  const workBalance = entries.reduce(
-    (acc, e) => acc + (e.direction === 'income' ? e.amountCents : -e.amountCents),
-    0,
-  );
+  // 报销中的出项不扣减总储蓄
+  const workBalance = entries.reduce((acc, e) => {
+    if (e.direction === 'income') return acc + e.amountCents;
+    if (e.reimbursable) return acc;
+    return acc - e.amountCents;
+  }, 0);
+  const reimbursablePending = entries
+    .filter((e) => e.direction === 'expense' && e.reimbursable)
+    .reduce((acc, e) => acc + e.amountCents, 0);
   const taoyuanBalance = paidEvents.reduce((acc, e) => acc + (e.paidCents ?? 0), 0);
   return {
     total: workBalance + taoyuanBalance,
     workBalance,
     taoyuanBalance,
     pendingCount,
+    reimbursablePending,
   };
 }
 
@@ -62,6 +68,12 @@ export default async function HomePage() {
             <div>桃源</div>
             <div className="num text-white">{formatYuan(s.taoyuanBalance)}</div>
           </div>
+          {s.reimbursablePending > 0 && (
+            <div>
+              <div>报销中</div>
+              <div className="num text-amber-300">{formatYuan(s.reimbursablePending)}</div>
+            </div>
+          )}
         </div>
       </div>
 

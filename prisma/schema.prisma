@@ -33,6 +33,9 @@ model Entry {
   amountCents Int
   note      String?
 
+  // 报销标记：仅对 expense 有意义。true 表示会走报销，不计入总储蓄。
+  reimbursable Boolean @default(false)
+
   createdAt DateTime @default(now())
 
   @@index([userId, yearMonth])

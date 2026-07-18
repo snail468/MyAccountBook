@@ -1,11 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
 export default function LoginPage() {
-  const router = useRouter();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -23,8 +21,8 @@ export default function LoginPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || '登录失败');
-      router.push('/');
-      router.refresh();
+      // 用 location 全量跳转，确保浏览器携带刚 Set-Cookie 的会话
+      window.location.href = '/';
     } catch (err) {
       setError(err instanceof Error ? err.message : '登录失败');
     } finally {
