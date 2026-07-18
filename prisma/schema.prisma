@@ -1,0 +1,69 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+
+  entries Entry[]
+  events  Event[]
+}
+
+// 工作账本条目
+model Entry {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // 归属月份，格式 "2026-07"
+  yearMonth String
+  // 类别名（预设或自定义）
+  category  String
+  // 方向：income / expense
+  direction String
+  // 分（避免浮点） — 存储为整数
+  amountCents Int
+  note      String?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, yearMonth])
+}
+
+// 桃源活动
+// status: published (已发布/待预测) -> predicted (已预测收入) -> announced (公示奖金) -> paid (已发钱)
+// 只有 paid 状态才计入储蓄
+model Event {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  title       String
+  publishedAt DateTime @default(now())
+  // 是否要参与并提醒
+  participate Boolean  @default(true)
+  // 活动结束/预测截止时间，用于首页提醒
+  deadline    DateTime?
+
+  predictedCents Int?
+  announcedCents Int?
+  paidCents      Int?
+
+  status String @default("published")
+  note   String?
+
+  paidAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, status])
+}

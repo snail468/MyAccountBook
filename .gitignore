@@ -1,0 +1,31 @@
+node_modules
+.next
+out
+build
+dist
+
+# env
+.env
+.env.local
+.env.production
+
+# db
+data/
+prisma/dev.db*
+*.db
+*.db-journal
+
+# logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Docker
+docker-data/

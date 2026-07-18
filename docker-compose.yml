@@ -1,0 +1,26 @@
+services:
+  app:
+    # 从 GHCR 拉取（推荐 —— 用 GitHub Actions 自动构建后你的服务器只需 pull + up）
+    image: ghcr.io/snail46/myaccountbook:latest
+    # 想在服务器上本地构建镜像，把 image 那行注释掉、启用下面 build 即可
+    # build: .
+    container_name: myaccountbook
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      # 至少 32 字符的随机字符串！生成： openssl rand -base64 32
+      SESSION_SECRET: "${SESSION_SECRET:?请在 .env 里设置 SESSION_SECRET}"
+      # 数据库文件放在挂载卷里
+      DATABASE_URL: "file:/data/app.db"
+      # 首个用户注册后可以改为 true 关闭注册
+      DISABLE_REGISTRATION: "${DISABLE_REGISTRATION:-false}"
+      NODE_ENV: production
+    volumes:
+      - ./data:/data
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:3000/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s

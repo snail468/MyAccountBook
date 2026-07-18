@@ -1,0 +1,32 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light dark;
+}
+
+html, body {
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: contain;
+}
+
+body {
+  @apply bg-ink-50 text-ink-900 antialiased;
+}
+
+@media (prefers-color-scheme: dark) {
+  body {
+    @apply bg-ink-900 text-ink-100;
+  }
+}
+
+/* 数字等宽 */
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 触摸友好的最小点击区域 */
+button, a {
+  touch-action: manipulation;
+}
