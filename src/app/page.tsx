@@ -2,6 +2,8 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { requireUser } from '@/lib/session';
 import { prisma } from '@/lib/db';
+import { ensureLegacyMigrated } from '@/lib/legacyMigrate';
+import { parseRewardMethods } from '@/lib/rewardMethod';
 import LogoutButton from '@/components/LogoutButton';
 import ExportButton from '@/components/ExportButton';
 import Money from '@/components/ui/Money';
@@ -9,14 +11,28 @@ import Money from '@/components/ui/Money';
 export const dynamic = 'force-dynamic';
 
 async function getSummary(userId: string) {
-  const [entries, paidEvents, pendingCount] = await Promise.all([
+  await ensureLegacyMigrated();
+
+  const [entries, paidAmounts, pendingCount] = await Promise.all([
     prisma.entry.findMany({
       where: { userId },
       select: { direction: true, amountCents: true },
     }),
-    prisma.event.findMany({
-      where: { userId, status: 'paid' },
-      select: { rewardMethod: true, paidCents: true },
+    prisma.eventAmount.findMany({
+      where: {
+        stage: 'paid',
+        event: { userId },
+      },
+      select: {
+        cents: true,
+        rewardMethod: true,
+        event: {
+          select: {
+            rewardMethod: true,
+            rewardMethods: true,
+          },
+        },
+      },
     }),
     prisma.event.count({
       where: {
@@ -37,15 +53,21 @@ async function getSummary(userId: string) {
   let C = 0;
   let D = 0;
   const otherReward = new Map<string, number>();
-  for (const ev of paidEvents) {
-    const c = ev.paidCents ?? 0;
-    if (ev.rewardMethod === 'cash') C += c;
-    else if (ev.rewardMethod === 'jdcard') D += c;
-    else if (ev.rewardMethod) {
-      otherReward.set(ev.rewardMethod, (otherReward.get(ev.rewardMethod) ?? 0) + c);
-    } else {
-      C += c;
+  for (const a of paidAmounts) {
+    // 归类优先级：条目自己 rewardMethod > 活动可用列表 fallback
+    let method = a.rewardMethod;
+    if (!method) {
+      // 用活动已声明的第一个方式作为兜底
+      const methods = parseRewardMethods(
+        a.event.rewardMethods,
+        a.event.rewardMethod,
+      );
+      method = methods[0] ?? null;
     }
+    if (method === 'cash') C += a.cents;
+    else if (method === 'jdcard') D += a.cents;
+    else if (method) otherReward.set(method, (otherReward.get(method) ?? 0) + a.cents);
+    else C += a.cents; // 完全没标注 → 计入现金
   }
 
   return {
@@ -173,6 +195,7 @@ function SumRow({
 }
 
 function rewardLabel(k: string) {
+  if (k.startsWith('custom:')) return k.slice('custom:'.length);
   switch (k) {
     case 'qcoin':
       return 'Q币';

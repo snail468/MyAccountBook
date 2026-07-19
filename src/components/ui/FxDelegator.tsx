@@ -1,12 +1,11 @@
 'use client';
 
 import { useEffect } from 'react';
+import { usePathname } from 'next/navigation';
 import { useUI } from './UIProvider';
-import { playFx } from './fx';
+import { playFx, preloadSounds } from './fx';
 
-// 判定这个点击目标是否应该触发 FX
 function isInteractive(el: HTMLElement): boolean {
-  // 沿父链找到最近的可交互元素
   let node: HTMLElement | null = el;
   while (node && node !== document.body) {
     const tag = node.tagName;
@@ -38,24 +37,29 @@ function isInteractive(el: HTMLElement): boolean {
 }
 
 export default function FxDelegator() {
-  const { theme, lightEnabled, soundEnabled, ready } = useUI();
+  const pathname = usePathname();
+  const { lightEnabled, soundEnabled, ready } = useUI();
+
+  // 用户开启声音后就预加载两段音频
+  useEffect(() => {
+    if (ready && soundEnabled) preloadSounds();
+  }, [ready, soundEnabled]);
 
   useEffect(() => {
     if (!ready) return;
-    // 都关的话不用监听
     if (!lightEnabled && !soundEnabled) return;
     const handler = (e: PointerEvent) => {
       if (!(e.target instanceof HTMLElement)) return;
       if (!isInteractive(e.target)) return;
-      playFx(e.clientX, e.clientY, theme, {
+      const isHome = pathname === '/';
+      playFx(e.clientX, e.clientY, isHome ? 'home' : 'global', {
         light: lightEnabled,
         sound: soundEnabled,
       });
     };
-    // 用 pointerdown 更即时；也在触屏上工作
     window.addEventListener('pointerdown', handler, { passive: true });
     return () => window.removeEventListener('pointerdown', handler);
-  }, [theme, lightEnabled, soundEnabled, ready]);
+  }, [pathname, lightEnabled, soundEnabled, ready]);
 
   return null;
 }

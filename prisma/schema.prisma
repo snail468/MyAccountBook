@@ -18,26 +18,18 @@ model User {
 }
 
 // 工作账本条目
-// 说明：出项默认「最终会回来」，因此不从总收入扣减，仅在“出项汇总”里展示。
-// 用户在条目上点“确认回款”会写入 refundedAt，仅用于 UI 划线/灰化，不影响总收入。
 model Entry {
   id        String   @id @default(cuid())
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  // 归属月份，格式 "2026-07"
   yearMonth String
-  // 类别名（预设或自定义）
   category  String
-  // 方向：income / expense
   direction String
-  // 分（避免浮点） — 存储为整数
   amountCents Int
   note      String?
 
-  // 操作时间（记账发生时间），默认 now，可手动改
   occurredAt DateTime @default(now())
-  // 回款确认时间；null 表示未回款
   refundedAt DateTime?
 
   createdAt DateTime @default(now())
@@ -46,49 +38,66 @@ model Entry {
 }
 
 // 桃源活动
-// status: published (活动火热进行中) -> predicted (待公示) -> announced (待发钱) -> paid (已到账)
-// 只有 paid 状态才计入总收入
+// 状态由 amounts 派生：有 paid → paid；有 announced → announced；有 predicted → predicted；否则 published
+// 旧的 predictedCents/announcedCents/paidCents 保留作为兼容层，新数据走 EventAmount
 model Event {
   id        String   @id @default(cuid())
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   title       String
-  // 活动详情
   startAt     DateTime?
   content     String?
+
+  // 兼容：旧单值 rewardMethod。新版用 rewardMethods (JSON array) 支持多选 + 自定义（"custom:名字"）
+  rewardMethod  String?
+  rewardMethods String?
+
   reward      String?
-  // cash | jdcard | qcoin | carrotcoin | merch
-  rewardMethod String?
-  // 话题 tag（用户点击可复制）
   topicTag    String?
 
+  // 内容图片 JSON array of URL strings
+  contentImages String?
+
   publishedAt DateTime @default(now())
-  // 是否要参与并提醒
   participate Boolean  @default(true)
-  // 活动结束/预测截止时间，用于首页提醒
   deadline    DateTime?
 
+  // 旧单值兼容（无 EventAmount 时作为 fallback）
   predictedCents Int?
   announcedCents Int?
   paidCents      Int?
-
-  // 各步骤时间戳，用户手动可改
-  predictedAt DateTime?
-  announcedAt DateTime?
-  paidAt      DateTime?
+  predictedAt    DateTime?
+  announcedAt    DateTime?
+  paidAt         DateTime?
 
   status String @default("published")
   note   String?
 
-  // 合并：子活动 parentId 指向父活动；父活动展示时聚合子的数字
   parentId  String?
   parent    Event?  @relation("EventMerge", fields: [parentId], references: [id], onDelete: SetNull)
   children  Event[] @relation("EventMerge")
+
+  amounts   EventAmount[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([userId, status])
   @@index([parentId])
+}
+
+// 单个活动某个阶段可以有多条金额
+model EventAmount {
+  id           String   @id @default(cuid())
+  eventId      String
+  event        Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  stage        String   // 'predicted' | 'announced' | 'paid'
+  cents        Int
+  note         String?
+  rewardMethod String?  // 该笔金额自带的发放方式（仅 paid 阶段进入 A/C/D 归类）
+  occurredAt   DateTime @default(now())
+  createdAt    DateTime @default(now())
+
+  @@index([eventId, stage])
 }

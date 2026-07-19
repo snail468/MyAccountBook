@@ -1,21 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { useUI, type FxTheme } from './UIProvider';
+import { useUI } from './UIProvider';
 import { previewFx } from './fx';
-
-const THEMES: {
-  key: FxTheme;
-  name: string;
-  desc: string;
-  swatch: string;
-}[] = [
-  { key: 'note', name: '便签', desc: '米黄墨点 · 纸敲桌', swatch: '#f7d774' },
-  { key: 'coin', name: '硬币', desc: '金色圆环 · 叮铃', swatch: '#e8b64a' },
-  { key: 'bell', name: '银铃', desc: '银蓝涟漪 · 单音钟', swatch: '#8fc4d8' },
-  { key: 'forest', name: '森林', desc: '抹茶绿扩散 · 木鱼', swatch: '#7fb87a' },
-  { key: 'starry', name: '星空', desc: '深紫星芒 · 高频泛音', swatch: '#8b6dd0' },
-];
 
 export default function FloatingToolbar() {
   const ui = useUI();
@@ -49,13 +36,13 @@ export default function FloatingToolbar() {
             className="w-full max-w-md bg-white dark:bg-ink-900 rounded-t-3xl sm:rounded-3xl p-6 max-h-[90dvh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-lg font-medium mb-4">外观 · 光效 · 音效</h3>
+            <h3 className="text-lg font-medium mb-4">光效 · 音效</h3>
 
             <div className="space-y-3">
               <label className="flex items-center justify-between p-3 rounded-2xl bg-ink-50 dark:bg-ink-800 cursor-pointer">
                 <div>
                   <div className="text-sm">点击光效</div>
-                  <div className="text-xs text-ink-500 mt-0.5">按下时的涟漪 / 星芒</div>
+                  <div className="text-xs text-ink-500 mt-0.5">星空风格：紫色涟漪 + 星芒</div>
                 </div>
                 <Switch checked={ui.lightEnabled} onChange={ui.setLightEnabled} />
               </label>
@@ -63,48 +50,23 @@ export default function FloatingToolbar() {
               <label className="flex items-center justify-between p-3 rounded-2xl bg-ink-50 dark:bg-ink-800 cursor-pointer">
                 <div>
                   <div className="text-sm">点击音效</div>
-                  <div className="text-xs text-ink-500 mt-0.5">短促合成音，无音频文件下载</div>
+                  <div className="text-xs text-ink-500 mt-0.5">
+                    首页用一段声，其它页面用另一段
+                  </div>
                 </div>
                 <Switch checked={ui.soundEnabled} onChange={ui.setSoundEnabled} />
               </label>
             </div>
 
-            <div className="mt-5">
-              <div className="text-xs text-ink-500 mb-2">主题</div>
-              <div className="space-y-2">
-                {THEMES.map((t) => (
-                  <button
-                    key={t.key}
-                    onClick={() => {
-                      ui.setTheme(t.key);
-                      previewFx(t.key, {
-                        light: ui.lightEnabled,
-                        sound: ui.soundEnabled,
-                      });
-                    }}
-                    className={`w-full flex items-center gap-3 p-3 rounded-2xl transition ${
-                      ui.theme === t.key
-                        ? 'bg-ink-900 dark:bg-ink-100 text-white dark:text-ink-900'
-                        : 'bg-ink-50 dark:bg-ink-800'
-                    }`}
-                  >
-                    <span
-                      className="w-8 h-8 rounded-full shrink-0"
-                      style={{ backgroundColor: t.swatch }}
-                    />
-                    <div className="flex-1 text-left">
-                      <div className="text-sm font-medium">{t.name}</div>
-                      <div className={`text-xs ${ui.theme === t.key ? 'opacity-80' : 'text-ink-500'}`}>
-                        {t.desc}
-                      </div>
-                    </div>
-                    {ui.theme === t.key && <span className="text-xs">✓</span>}
-                  </button>
-                ))}
-              </div>
-              <div className="mt-2 text-[11px] text-ink-400">
-                点击可试听/试看。切换后全局生效。
-              </div>
+            <div className="mt-4">
+              <button
+                onClick={() =>
+                  previewFx({ light: ui.lightEnabled, sound: ui.soundEnabled })
+                }
+                className="w-full py-3 rounded-2xl bg-ink-50 dark:bg-ink-800 text-sm"
+              >
+                试听 / 试看
+              </button>
             </div>
 
             <button

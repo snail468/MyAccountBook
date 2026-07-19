@@ -31,7 +31,8 @@ ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
     PORT=3000 \
     HOSTNAME=0.0.0.0 \
-    DATABASE_URL="file:/data/app.db"
+    DATABASE_URL="file:/data/app.db" \
+    UPLOAD_ROOT="/data/uploads"
 
 # standalone 输出包含最小 node_modules 和 server.js
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./

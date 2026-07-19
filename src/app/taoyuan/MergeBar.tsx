@@ -27,7 +27,8 @@ export default function MergeBar({
   function openConfirm() {
     setError('');
     setParentId(selectedIds[0] ?? '');
-    setTitle(selectedEvents[0]?.title ?? '');
+    // 默认拼接所有活动名
+    setTitle(selectedEvents.map((e) => e.title).join(' + '));
     setConfirmOpen(true);
   }
 
@@ -100,10 +101,7 @@ export default function MergeBar({
               {selectedEvents.map((ev) => (
                 <button
                   key={ev.id}
-                  onClick={() => {
-                    setParentId(ev.id);
-                    setTitle(ev.title);
-                  }}
+                  onClick={() => setParentId(ev.id)}
                   className={`w-full text-left p-3 rounded-2xl ${
                     parentId === ev.id
                       ? 'bg-ink-900 dark:bg-ink-100 text-white dark:text-ink-900'

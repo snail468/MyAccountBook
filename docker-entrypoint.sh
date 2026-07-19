@@ -2,7 +2,7 @@
 set -e
 
 # 确保数据目录归属正确（首次挂载 volume 常常是 root:root）
-mkdir -p /data
+mkdir -p /data /data/uploads
 chown -R nextjs:nodejs /data
 
 echo "[entrypoint] 同步数据库 schema..."

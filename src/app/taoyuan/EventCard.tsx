@@ -5,22 +5,16 @@ import { useRouter } from 'next/navigation';
 import { formatShort } from '@/lib/datetime';
 import { rewardMethodLabel } from '@/lib/rewardMethod';
 import { afterTaxCents, calcTaxCents } from '@/lib/tax';
+import type { Stage } from '@/lib/amounts';
 import Money from '@/components/ui/Money';
 import type { ClientEvent } from './types';
-import { aggregate } from './types';
-import AmountEditor from './AmountEditor';
+import { aggregateCount, aggregateSum } from './types';
+import StageDetail from './StageDetail';
 
-const NEXT_LABEL: Record<string, string> = {
-  published: '填写预测收入',
-  predicted: '登记公示奖金',
-  announced: '确认到账金额',
-};
-
-type Stage = 'predicted' | 'announced' | 'paid';
-const ADVANCE_ACTION: Record<string, 'predict' | 'announce' | 'pay'> = {
-  published: 'predict',
-  predicted: 'announce',
-  announced: 'pay',
+const STAGE_LABEL: Record<Stage, string> = {
+  predicted: '预测收入',
+  announced: '公示奖金',
+  paid: '到账金额',
 };
 
 function formatDeadline(iso: string): string {
@@ -48,58 +42,27 @@ export default function EventCard({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [hidden, setHidden] = useState(false);
-  const [advanceOpen, setAdvanceOpen] = useState(false);
-  const [editStage, setEditStage] = useState<Stage | null>(null);
+  const [openStage, setOpenStage] = useState<Stage | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [zoomImg, setZoomImg] = useState<string | null>(null);
 
-  const canAdvance = event.status !== 'paid';
   const merged = event.children.length > 0;
-  const agg = aggregate(event);
 
-  async function advance(cents: number, atISO: string | null) {
-    const action = ADVANCE_ACTION[event.status];
-    if (!action) return;
-    const payload: Record<string, unknown> = { action, at: atISO };
-    if (action === 'predict') payload.predictedCents = cents;
-    if (action === 'announce') payload.announcedCents = cents;
-    if (action === 'pay') payload.paidCents = cents;
-    const res = await fetch(`/api/events/${event.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || '失败');
-    setAdvanceOpen(false);
-    startTransition(() => router.refresh());
-  }
-
-  async function editAmount(stage: Stage, cents: number, atISO: string | null) {
-    const res = await fetch(`/api/events/${event.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'editAmount', stage, cents, at: atISO }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || '失败');
-    setEditStage(null);
-    startTransition(() => router.refresh());
-  }
-
-  async function clearStage(stage: Stage) {
-    const labels = { predicted: '预测', announced: '公示', paid: '到账' } as const;
-    if (!confirm(`删除 ${labels[stage]} 金额？状态会退回到上一步。`)) return;
-    const res = await fetch(`/api/events/${event.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'clearStage', stage }),
-    });
-    if (res.ok) startTransition(() => router.refresh());
-  }
+  const sums: Record<Stage, number> = {
+    predicted: aggregateSum(event, 'predicted'),
+    announced: aggregateSum(event, 'announced'),
+    paid: aggregateSum(event, 'paid'),
+  };
+  const counts: Record<Stage, number> = {
+    predicted: aggregateCount(event, 'predicted'),
+    announced: aggregateCount(event, 'announced'),
+    paid: aggregateCount(event, 'paid'),
+  };
 
   async function del() {
-    if (!confirm(`删除活动 "${event.title}"？${merged ? '子活动会被恢复为独立活动。' : ''}`)) return;
+    if (!confirm(`删除活动 "${event.title}"？${merged ? '子活动会被恢复为独立活动。' : ''}`))
+      return;
     setHidden(true);
     try {
       const res = await fetch(`/api/events/${event.id}`, { method: 'DELETE' });
@@ -117,7 +80,6 @@ export default function EventCard({
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch {
-      // fallback
       const ta = document.createElement('textarea');
       ta.value = event.topicTag;
       document.body.appendChild(ta);
@@ -128,8 +90,6 @@ export default function EventCard({
       setTimeout(() => setCopied(false), 1500);
     }
   }
-
-  const advanceLabel = canAdvance ? NEXT_LABEL[event.status] : '';
 
   if (hidden) return null;
 
@@ -156,32 +116,52 @@ export default function EventCard({
           </button>
         )}
         <div className="flex-1 min-w-0">
-          <div className="font-medium truncate flex items-center gap-2">
-            <span className="truncate">{event.title}</span>
+          <div className="font-medium flex flex-wrap items-baseline gap-x-2 gap-y-1">
+            <span className="break-all">{event.title}</span>
             {merged && (
               <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">
                 已合并 {event.children.length}
               </span>
             )}
-            {event.rewardMethod && (
-              <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-ink-100 dark:bg-ink-700 text-ink-600 dark:text-ink-300">
-                {rewardMethodLabel(event.rewardMethod)}
+            {event.rewardMethods.map((m) => (
+              <span
+                key={m}
+                className="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-ink-100 dark:bg-ink-700 text-ink-600 dark:text-ink-300"
+              >
+                {rewardMethodLabel(m)}
               </span>
-            )}
+            ))}
           </div>
           <div className="mt-0.5 text-xs text-ink-500 space-y-0.5">
             {event.startAt && <div>开始 {formatShort(event.startAt)}</div>}
             {event.deadline && <div>截止 {formatDeadline(event.deadline)}</div>}
-            {event.reward && <div className="truncate">奖励：{event.reward}</div>}
-            {event.content && <div className="truncate">内容：{event.content}</div>}
-            {event.note && <div className="truncate">备注：{event.note}</div>}
+            {event.reward && <div className="break-all">奖励：{event.reward}</div>}
+            {event.content && <div className="break-all">内容：{event.content}</div>}
+            {event.note && <div className="break-all">备注：{event.note}</div>}
           </div>
+
+          {event.contentImages.length > 0 && (
+            <div className="mt-2 grid grid-cols-3 gap-2">
+              {event.contentImages.map((url, i) => (
+                <button
+                  key={i}
+                  onClick={() => setZoomImg(url)}
+                  className="aspect-square rounded-lg overflow-hidden bg-ink-100 dark:bg-ink-700"
+                  aria-label={`查看图片 ${i + 1}`}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={url} alt="" className="w-full h-full object-cover" />
+                </button>
+              ))}
+            </div>
+          )}
+
           {event.topicTag && (
             <button
               onClick={copyTag}
               className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-ink-50 dark:bg-ink-700 text-xs text-ink-700 dark:text-ink-200 active:scale-[0.97]"
             >
-              <span className="truncate max-w-[16rem]">{event.topicTag}</span>
+              <span className="break-all">{event.topicTag}</span>
               <span className="text-ink-400">{copied ? '已复制' : '复制'}</span>
             </button>
           )}
@@ -197,63 +177,32 @@ export default function EventCard({
         )}
       </div>
 
-      {(agg.predicted !== null || agg.announced !== null || agg.paid !== null) && (
-        <div className="mt-3 grid grid-cols-3 gap-2 text-center">
-          <StageSlot
-            label={merged ? '预测合计' : '预测'}
-            cents={agg.predicted}
-            onEdit={
-              !merged && event.predictedCents !== null
-                ? () => setEditStage('predicted')
-                : undefined
-            }
-            onClear={
-              !merged && event.predictedCents !== null
-                ? () => clearStage('predicted')
-                : undefined
-            }
-            at={event.predictedAt}
+      <div className="mt-3 grid grid-cols-3 gap-2">
+        {(['predicted', 'announced', 'paid'] as Stage[]).map((s) => (
+          <StageButton
+            key={s}
+            stage={s}
+            label={STAGE_LABEL[s]}
+            sum={sums[s]}
+            count={counts[s]}
+            highlight={s === 'paid' && sums.paid > 0}
+            disabled={selecting}
+            onClick={() => setOpenStage(s)}
           />
-          <StageSlot
-            label={merged ? '公示合计' : '公示'}
-            cents={agg.announced}
-            onEdit={
-              !merged && event.announcedCents !== null
-                ? () => setEditStage('announced')
-                : undefined
-            }
-            onClear={
-              !merged && event.announcedCents !== null
-                ? () => clearStage('announced')
-                : undefined
-            }
-            at={event.announcedAt}
-          />
-          <StageSlot
-            label={merged ? '到账合计' : '到账'}
-            cents={agg.paid}
-            highlight={event.status === 'paid'}
-            onEdit={
-              !merged && event.paidCents !== null ? () => setEditStage('paid') : undefined
-            }
-            onClear={
-              !merged && event.paidCents !== null ? () => clearStage('paid') : undefined
-            }
-            at={event.paidAt}
-          />
-        </div>
-      )}
+        ))}
+      </div>
 
-      {agg.announced !== null && agg.announced > 0 && (
+      {sums.announced > 0 && (
         <div className="mt-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200/60 dark:border-amber-800/40 p-3 text-xs">
           <div className="text-amber-800 dark:text-amber-300 flex items-center justify-between">
             <span>税后金额（劳务报酬）</span>
             <span className="num font-semibold text-base">
-              <Money cents={afterTaxCents(agg.announced)} />
+              <Money cents={afterTaxCents(sums.announced)} />
             </span>
           </div>
           <div className="mt-1 text-[10px] text-amber-700/80 dark:text-amber-400/70 num">
-            公示 <Money cents={agg.announced} /> · 应纳税 <Money cents={calcTaxCents(agg.announced)} />
+            公示 <Money cents={sums.announced} /> · 应纳税{' '}
+            <Money cents={calcTaxCents(sums.announced)} />
           </div>
         </div>
       )}
@@ -267,7 +216,7 @@ export default function EventCard({
         </button>
       )}
 
-      {expanded && (
+      {expanded && merged && (
         <div className="mt-3 space-y-2 pl-3 border-l-2 border-ink-200 dark:border-ink-700">
           {event.children.map((c) => (
             <ChildRow
@@ -279,92 +228,78 @@ export default function EventCard({
         </div>
       )}
 
-      {canAdvance && !selecting && (
-        <button
-          onClick={() => setAdvanceOpen(true)}
-          className="mt-3 w-full py-2.5 rounded-xl bg-ink-50 dark:bg-ink-700 text-sm active:scale-[0.98]"
+      {openStage && (
+        <StageDetail
+          event={event}
+          stage={openStage}
+          onClose={() => setOpenStage(null)}
+          onChanged={() => startTransition(() => router.refresh())}
+        />
+      )}
+
+      {zoomImg && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80"
+          onClick={() => setZoomImg(null)}
         >
-          {advanceLabel} →
-        </button>
-      )}
-
-      {advanceOpen && canAdvance && (
-        <AmountEditor
-          title={advanceLabel + '（元）'}
-          onCancel={() => setAdvanceOpen(false)}
-          onSubmit={advance}
-        />
-      )}
-
-      {editStage && (
-        <AmountEditor
-          title={`修改${editStage === 'predicted' ? '预测' : editStage === 'announced' ? '公示' : '到账'}金额（元）`}
-          initialAmountCents={
-            editStage === 'predicted'
-              ? event.predictedCents
-              : editStage === 'announced'
-                ? event.announcedCents
-                : event.paidCents
-          }
-          initialAt={
-            editStage === 'predicted'
-              ? event.predictedAt
-              : editStage === 'announced'
-                ? event.announcedAt
-                : event.paidAt
-          }
-          onCancel={() => setEditStage(null)}
-          onSubmit={(cents, at) => editAmount(editStage, cents, at)}
-        />
-      )}
-    </div>
-  );
-}
-
-function StageSlot({
-  label,
-  cents,
-  highlight,
-  onEdit,
-  onClear,
-  at,
-}: {
-  label: string;
-  cents: number | null;
-  highlight?: boolean;
-  onEdit?: () => void;
-  onClear?: () => void;
-  at?: string | null;
-}) {
-  return (
-    <div
-      className={`p-2 rounded-lg ${highlight ? 'bg-emerald-100 dark:bg-emerald-900/40' : 'bg-ink-50 dark:bg-ink-700'}`}
-    >
-      <div className="text-[10px] text-ink-500">{label}</div>
-      <div className="num text-sm font-medium mt-0.5">
-        {cents !== null ? <Money cents={cents} /> : '—'}
-      </div>
-      {at && <div className="text-[9px] text-ink-400 mt-0.5">{formatShort(at).slice(5)}</div>}
-      {(onEdit || onClear) && (
-        <div className="mt-1 flex justify-center gap-2 text-[10px]">
-          {onEdit && (
-            <button onClick={onEdit} className="text-ink-500 underline">
-              改
-            </button>
-          )}
-          {onClear && (
-            <button onClick={onClear} className="text-red-500 underline">
-              删
-            </button>
-          )}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={zoomImg}
+            alt=""
+            className="max-w-full max-h-full"
+            onClick={(e) => e.stopPropagation()}
+          />
         </div>
       )}
     </div>
   );
 }
 
+function StageButton({
+  label,
+  sum,
+  count,
+  highlight,
+  disabled,
+  onClick,
+}: {
+  stage: Stage;
+  label: string;
+  sum: number;
+  count: number;
+  highlight: boolean;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  const hasValue = count > 0;
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={`p-3 rounded-xl text-center transition active:scale-[0.97] disabled:opacity-50 ${
+        hasValue
+          ? highlight
+            ? 'bg-emerald-600 dark:bg-emerald-500 text-white'
+            : 'bg-ink-900 dark:bg-ink-100 text-white dark:text-ink-900'
+          : 'bg-ink-900 dark:bg-ink-100 text-white dark:text-ink-900'
+      }`}
+    >
+      <div className="text-[10px] opacity-80">
+        {label}
+        {hasValue && count > 1 && <span> · {count}</span>}
+      </div>
+      <div className="num text-sm font-bold mt-0.5">
+        {hasValue ? <Money cents={sum} /> : '+ 填写'}
+      </div>
+    </button>
+  );
+}
+
 function ChildRow({ child, onChange }: { child: ClientEvent; onChange: () => void }) {
   const [busy, setBusy] = useState(false);
+  const pSum = aggregateSum(child, 'predicted');
+  const aSum = aggregateSum(child, 'announced');
+  const paidSum = aggregateSum(child, 'paid');
   async function detach() {
     if (!confirm(`把 "${child.title}" 摘出？`)) return;
     setBusy(true);
@@ -375,11 +310,11 @@ function ChildRow({ child, onChange }: { child: ClientEvent; onChange: () => voi
   return (
     <div className="p-2 rounded-lg bg-ink-50 dark:bg-ink-800/60 flex items-center gap-2">
       <div className="flex-1 min-w-0">
-        <div className="text-xs font-medium truncate">{child.title}</div>
+        <div className="text-xs font-medium break-all">{child.title}</div>
         <div className="text-[10px] text-ink-500 num">
-          {child.predictedCents !== null && <>预 <Money cents={child.predictedCents} /> </>}
-          {child.announcedCents !== null && <>公 <Money cents={child.announcedCents} /> </>}
-          {child.paidCents !== null && <>到 <Money cents={child.paidCents} /></>}
+          {pSum > 0 && <>预 <Money cents={pSum} /> </>}
+          {aSum > 0 && <>公 <Money cents={aSum} /> </>}
+          {paidSum > 0 && <>到 <Money cents={paidSum} /></>}
         </div>
       </div>
       <button

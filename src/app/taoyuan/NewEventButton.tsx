@@ -2,8 +2,9 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { REWARD_METHODS } from '@/lib/rewardMethod';
+import { REWARD_METHODS, rewardMethodLabel } from '@/lib/rewardMethod';
 import { localInputToISO } from '@/lib/datetime';
+import ImageUploader from './ImageUploader';
 
 export default function NewEventButton() {
   const router = useRouter();
@@ -13,8 +14,10 @@ export default function NewEventButton() {
   const [startAt, setStartAt] = useState('');
   const [deadline, setDeadline] = useState('');
   const [content, setContent] = useState('');
+  const [contentImages, setContentImages] = useState<string[]>([]);
   const [reward, setReward] = useState('');
-  const [rewardMethod, setRewardMethod] = useState<string>('');
+  const [rewardMethods, setRewardMethods] = useState<string[]>([]);
+  const [customMethod, setCustomMethod] = useState('');
   const [topicTag, setTopicTag] = useState('');
   const [participate, setParticipate] = useState(true);
   const [note, setNote] = useState('');
@@ -27,12 +30,29 @@ export default function NewEventButton() {
     setStartAt('');
     setDeadline('');
     setContent('');
+    setContentImages([]);
     setReward('');
-    setRewardMethod('');
+    setRewardMethods([]);
+    setCustomMethod('');
     setTopicTag('');
     setParticipate(true);
     setNote('');
     setError('');
+  }
+
+  function toggleMethod(m: string) {
+    setRewardMethods((prev) =>
+      prev.includes(m) ? prev.filter((x) => x !== m) : [...prev, m],
+    );
+  }
+
+  function addCustomMethod() {
+    const v = customMethod.trim();
+    if (!v) return;
+    const key = `custom:${v}`;
+    if (rewardMethods.includes(key)) return;
+    setRewardMethods((prev) => [...prev, key]);
+    setCustomMethod('');
   }
 
   async function save() {
@@ -52,8 +72,9 @@ export default function NewEventButton() {
           startAt: localInputToISO(startAt),
           deadline: localInputToISO(deadline),
           content: content.trim() || null,
+          contentImages,
           reward: reward.trim() || null,
-          rewardMethod: rewardMethod || null,
+          rewardMethods,
           topicTag: topicTag.trim() || null,
           note: note.trim() || null,
         }),
@@ -96,28 +117,45 @@ export default function NewEventButton() {
             autoFocus
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            maxLength={80}
+            maxLength={200}
             className={inputCls}
           />
         </Field>
 
-        <Field label="活动开始时间">
-          <input
-            type="datetime-local"
-            value={startAt}
-            onChange={(e) => setStartAt(e.target.value)}
-            className={inputCls}
-          />
+        <Field label="活动时间">
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <div className="text-[10px] text-ink-500 mb-1">开始</div>
+              <input
+                type="datetime-local"
+                value={startAt}
+                onChange={(e) => setStartAt(e.target.value)}
+                className={inputCls}
+              />
+            </div>
+            <div>
+              <div className="text-[10px] text-ink-500 mb-1">截止</div>
+              <input
+                type="datetime-local"
+                value={deadline}
+                onChange={(e) => setDeadline(e.target.value)}
+                className={inputCls}
+              />
+            </div>
+          </div>
         </Field>
 
         <Field label="活动内容">
           <textarea
             value={content}
             onChange={(e) => setContent(e.target.value)}
-            maxLength={500}
+            maxLength={2000}
             rows={3}
             className={`${inputCls} resize-none`}
           />
+          <div className="mt-2">
+            <ImageUploader value={contentImages} onChange={setContentImages} max={9} />
+          </div>
         </Field>
 
         <Field label="活动奖励">
@@ -130,15 +168,15 @@ export default function NewEventButton() {
           />
         </Field>
 
-        <Field label="奖励发放方式">
+        <Field label="奖励发放方式（多选）">
           <div className="grid grid-cols-3 gap-2">
             {REWARD_METHODS.map((m) => (
               <button
                 type="button"
                 key={m.key}
-                onClick={() => setRewardMethod(rewardMethod === m.key ? '' : m.key)}
+                onClick={() => toggleMethod(m.key)}
                 className={`py-2 rounded-xl text-sm ${
-                  rewardMethod === m.key
+                  rewardMethods.includes(m.key)
                     ? 'bg-ink-900 dark:bg-ink-100 text-white dark:text-ink-900'
                     : 'bg-ink-50 dark:bg-ink-800'
                 }`}
@@ -147,6 +185,45 @@ export default function NewEventButton() {
               </button>
             ))}
           </div>
+          <div className="mt-2 flex gap-2">
+            <input
+              value={customMethod}
+              onChange={(e) => setCustomMethod(e.target.value)}
+              placeholder="自定义方式（例如：礼盒）"
+              maxLength={64}
+              className={`${inputCls} py-2 text-sm`}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  addCustomMethod();
+                }
+              }}
+            />
+            <button
+              type="button"
+              onClick={addCustomMethod}
+              className="px-4 rounded-2xl bg-ink-50 dark:bg-ink-800 text-sm"
+            >
+              加
+            </button>
+          </div>
+          {rewardMethods.filter((m) => m.startsWith('custom:')).length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-2">
+              {rewardMethods
+                .filter((m) => m.startsWith('custom:'))
+                .map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => toggleMethod(m)}
+                    className="px-3 py-1 rounded-lg bg-ink-900 dark:bg-ink-100 text-white dark:text-ink-900 text-xs flex items-center gap-1"
+                  >
+                    {rewardMethodLabel(m)}
+                    <span className="opacity-70">✕</span>
+                  </button>
+                ))}
+            </div>
+          )}
         </Field>
 
         <Field label="话题 tag（用于一键复制）">
@@ -155,15 +232,6 @@ export default function NewEventButton() {
             onChange={(e) => setTopicTag(e.target.value)}
             maxLength={200}
             placeholder="#桃源xxx 挑战 @xxx"
-            className={inputCls}
-          />
-        </Field>
-
-        <Field label="预测截止时间（可选）">
-          <input
-            type="datetime-local"
-            value={deadline}
-            onChange={(e) => setDeadline(e.target.value)}
             className={inputCls}
           />
         </Field>
@@ -182,7 +250,7 @@ export default function NewEventButton() {
           <input
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            maxLength={200}
+            maxLength={500}
             className={inputCls}
           />
         </Field>
