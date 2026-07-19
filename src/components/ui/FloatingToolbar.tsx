@@ -36,7 +36,26 @@ export default function FloatingToolbar() {
             className="w-full max-w-md bg-white dark:bg-ink-900 rounded-t-3xl sm:rounded-3xl p-6 max-h-[90dvh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-lg font-medium mb-4">光效 · 音效</h3>
+            <h3 className="text-lg font-medium mb-4">外观 · 光效 · 音效</h3>
+
+            <div className="mb-4">
+              <div className="text-xs text-ink-500 mb-2">外观模式</div>
+              <div className="grid grid-cols-3 gap-2">
+                {(['light', 'dark', 'system'] as const).map((t) => (
+                  <button
+                    key={t}
+                    onClick={() => ui.setTheme(t)}
+                    className={`py-3 rounded-2xl text-sm ${
+                      ui.theme === t
+                        ? 'bg-ink-900 dark:bg-ink-100 text-white dark:text-ink-900'
+                        : 'bg-ink-50 dark:bg-ink-800'
+                    }`}
+                  >
+                    {t === 'light' ? '白天' : t === 'dark' ? '黑夜' : '跟随系统'}
+                  </button>
+                ))}
+              </div>
+            </div>
 
             <div className="space-y-3">
               <label className="flex items-center justify-between p-3 rounded-2xl bg-ink-50 dark:bg-ink-800 cursor-pointer">

@@ -27,9 +27,23 @@ export const viewport: Viewport = {
   userScalable: false,
 };
 
+// 应用主题前置脚本：hydrate 前就把 .dark 加上 / 不加，避免闪一下
+const THEME_INIT_SCRIPT = `
+(function(){try{
+  var raw = localStorage.getItem('xyd:ui:v3');
+  var theme = 'system';
+  if (raw) { try { var s = JSON.parse(raw); if (s && s.theme) theme = s.theme; } catch(_) {} }
+  var isDark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  if (isDark) document.documentElement.classList.add('dark');
+}catch(_){}})();
+`;
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="zh-CN">
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+      </head>
       <body>
         <UIProvider>
           <FxDelegator />

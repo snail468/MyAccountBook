@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { requireUser } from '@/lib/session';
+import { requireUserWithRole } from '@/lib/session';
 import { prisma } from '@/lib/db';
 import { ensureLegacyMigrated } from '@/lib/legacyMigrate';
 import { parseRewardMethods } from '@/lib/rewardMethod';
@@ -82,7 +82,7 @@ async function getSummary(userId: string) {
 }
 
 export default async function HomePage() {
-  const user = await requireUser();
+  const user = await requireUserWithRole();
   if (!user) redirect('/login');
 
   const s = await getSummary(user.id);
@@ -170,6 +170,19 @@ export default async function HomePage() {
         </Link>
 
         <ExportButton />
+
+        {user.role === 'admin' && (
+          <Link
+            href="/admin"
+            className="flex items-center justify-between p-5 rounded-2xl bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 active:scale-[0.98] transition"
+          >
+            <div>
+              <div className="text-lg font-medium">用户管理</div>
+              <div className="text-xs text-ink-500 mt-1">管理员专属：新增/删除/重置用户</div>
+            </div>
+            <span className="text-ink-400">›</span>
+          </Link>
+        )}
       </div>
     </div>
   );

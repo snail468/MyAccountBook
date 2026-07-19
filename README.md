@@ -93,7 +93,7 @@ npm run dev
    ```bash
    cat > .env <<EOF
    SESSION_SECRET=$(openssl rand -base64 32)
-   DISABLE_REGISTRATION=false
+   COOKIE_SECURE=false
    EOF
    chmod 600 .env
    ```
@@ -184,15 +184,16 @@ App 内也提供 **导出 CSV** 按钮供随时下载。
 
 ---
 
-## 关闭注册（只想给自己用）
+## 用户管理
 
-第一个账号注册后，编辑服务器上的 `.env`：
+**自助注册默认关闭**（安全默认）：只有当数据库里 0 个用户时，`/register` 才开放 —— 让你注册第一个账号，这个账号自动成为**管理员**。之后新账号只能由管理员在应用里创建。
 
-```bash
-DISABLE_REGISTRATION=true
-```
+- 首页登录后，如果你是管理员，会看到 **"用户管理"** 入口
+- 在 `/admin` 里可以新建用户 / 重置密码 / 升降级 / 删除
+- 已注册的老用户不受影响，密码/账本数据都保留
+- 管理员不能删除自己，且系统至少保留一个管理员
 
-然后 `docker compose up -d`（会自动重启并生效）。之后 `/register` 会返回 403。
+**如果已有部署想启用管理员机制**：直接拉取最新镜像 `docker compose pull && docker compose up -d`，启动时会自动把最早注册的用户升为 admin，其它用户默认 role=user。
 
 ---
 
