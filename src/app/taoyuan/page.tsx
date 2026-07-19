@@ -79,7 +79,7 @@ export default async function TaoyuanPage() {
   );
 
   return (
-    <div className="px-6 pt-10 pb-24">
+    <div className="px-6 pt-14 pb-24">
       <div className="flex items-center gap-3 mb-6">
         <Link href="/" className="text-ink-500 text-sm">‹ 返回</Link>
         <h1 className="text-2xl font-semibold flex-1">桃源账本</h1>

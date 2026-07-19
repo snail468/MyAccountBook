@@ -1,12 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { REWARD_METHODS } from '@/lib/rewardMethod';
 import { localInputToISO } from '@/lib/datetime';
 
 export default function NewEventButton() {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState('');
   const [startAt, setStartAt] = useState('');
@@ -60,7 +61,7 @@ export default function NewEventButton() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || '保存失败');
       reset();
-      router.refresh();
+      startTransition(() => router.refresh());
     } catch (err) {
       setError(err instanceof Error ? err.message : '保存失败');
     } finally {

@@ -2,9 +2,9 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { requireUser } from '@/lib/session';
 import { prisma } from '@/lib/db';
-import { formatYuan } from '@/lib/money';
 import LogoutButton from '@/components/LogoutButton';
 import ExportButton from '@/components/ExportButton';
+import Money from '@/components/ui/Money';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,8 +14,6 @@ async function getSummary(userId: string) {
       where: { userId },
       select: { direction: true, amountCents: true },
     }),
-    // paid 状态的活动。合并后子活动 parentId 有值 —— 但每笔到账都是唯一记录，
-    // C/D 用「所有 paid 事件」直接聚合即可（子+父不会重复计到账，只有真正 pay 过的才会有 paidCents）
     prisma.event.findMany({
       where: { userId, status: 'paid' },
       select: { rewardMethod: true, paidCents: true },
@@ -46,7 +44,6 @@ async function getSummary(userId: string) {
     else if (ev.rewardMethod) {
       otherReward.set(ev.rewardMethod, (otherReward.get(ev.rewardMethod) ?? 0) + c);
     } else {
-      // rewardMethod 空的旧数据算入 C（现金），保底不丢
       C += c;
     }
   }
@@ -58,7 +55,7 @@ async function getSummary(userId: string) {
     D,
     expenseTotal,
     pendingCount,
-    otherReward,
+    otherReward: [...otherReward.entries()],
   };
 }
 
@@ -69,37 +66,37 @@ export default async function HomePage() {
   const s = await getSummary(user.id);
 
   return (
-    <div className="px-6 pt-10">
+    <div className="px-6 pt-14">
       <div className="flex items-center justify-between mb-2">
-        <div className="text-sm text-ink-500">{user.username} · 我的账本</div>
+        <div className="text-sm text-ink-500">{user.username} · 心愿便利贴</div>
         <LogoutButton />
       </div>
 
       <div className="rounded-3xl bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 p-6 mt-4 shadow-sm">
         <div className="text-xs text-ink-500 mb-1">总收入 A = B + C + D (元)</div>
         <div className="num text-5xl font-bold" style={{ color: '#ff2d87' }}>
-          {formatYuan(s.A)}
+          <Money cents={s.A} />
         </div>
 
         <div className="mt-5 space-y-2 text-sm">
-          <Row label="B  工作账本 · 进项" value={s.B} className="text-ink-900 dark:text-ink-100" />
-          <Row label="C  桃源 · 现金奖励" value={s.C} className="text-ink-900 dark:text-ink-100" />
-          <Row
+          <SumRow label="B  工作账本 · 进项" cents={s.B} className="text-ink-900 dark:text-ink-100" />
+          <SumRow label="C  桃源 · 现金奖励" cents={s.C} className="text-ink-900 dark:text-ink-100" />
+          <SumRow
             label="D  桃源 · 京东卡奖励"
-            value={s.D}
+            cents={s.D}
             className="text-ink-400 dark:text-ink-500"
           />
         </div>
 
-        {s.otherReward.size > 0 && (
+        {s.otherReward.length > 0 && (
           <div className="mt-4 pt-3 border-t border-ink-100 dark:border-ink-700">
             <div className="text-[11px] text-ink-500 mb-1">
               以下奖励类型不计入 A，仅存档展示
             </div>
             <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-ink-500 num">
-              {[...s.otherReward.entries()].map(([k, v]) => (
+              {s.otherReward.map(([k, v]) => (
                 <span key={k}>
-                  {rewardLabel(k)} {formatYuan(v)}
+                  {rewardLabel(k)} <Money cents={v} />
                 </span>
               ))}
             </div>
@@ -126,7 +123,7 @@ export default async function HomePage() {
           <div>
             <div className="text-lg font-medium">工作出项汇总</div>
             <div className="text-xs text-ink-500 mt-1 num">
-              合计 {formatYuan(s.expenseTotal)} · 出项不计入 A
+              合计 <Money cents={s.expenseTotal} /> · 出项不计入 A
             </div>
           </div>
           <span className="text-ink-400">›</span>
@@ -156,19 +153,21 @@ export default async function HomePage() {
   );
 }
 
-function Row({
+function SumRow({
   label,
-  value,
+  cents,
   className,
 }: {
   label: string;
-  value: number;
+  cents: number;
   className?: string;
 }) {
   return (
     <div className="flex items-baseline justify-between">
       <span className="text-xs text-ink-500">{label}</span>
-      <span className={`num text-base font-medium ${className ?? ''}`}>{formatYuan(value)}</span>
+      <span className={`num text-base font-medium ${className ?? ''}`}>
+        <Money cents={cents} />
+      </span>
     </div>
   );
 }

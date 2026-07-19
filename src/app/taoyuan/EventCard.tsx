@@ -1,11 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { formatYuan } from '@/lib/money';
 import { formatShort } from '@/lib/datetime';
 import { rewardMethodLabel } from '@/lib/rewardMethod';
 import { afterTaxCents, calcTaxCents } from '@/lib/tax';
+import Money from '@/components/ui/Money';
 import type { ClientEvent } from './types';
 import { aggregate } from './types';
 import AmountEditor from './AmountEditor';
@@ -46,7 +46,8 @@ export default function EventCard({
   onToggle: () => void;
 }) {
   const router = useRouter();
-  const [busy, setBusy] = useState(false);
+  const [pending, startTransition] = useTransition();
+  const [hidden, setHidden] = useState(false);
   const [advanceOpen, setAdvanceOpen] = useState(false);
   const [editStage, setEditStage] = useState<Stage | null>(null);
   const [expanded, setExpanded] = useState(false);
@@ -71,7 +72,7 @@ export default function EventCard({
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || '失败');
     setAdvanceOpen(false);
-    router.refresh();
+    startTransition(() => router.refresh());
   }
 
   async function editAmount(stage: Stage, cents: number, atISO: string | null) {
@@ -83,28 +84,30 @@ export default function EventCard({
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || '失败');
     setEditStage(null);
-    router.refresh();
+    startTransition(() => router.refresh());
   }
 
   async function clearStage(stage: Stage) {
     const labels = { predicted: '预测', announced: '公示', paid: '到账' } as const;
     if (!confirm(`删除 ${labels[stage]} 金额？状态会退回到上一步。`)) return;
-    setBusy(true);
     const res = await fetch(`/api/events/${event.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'clearStage', stage }),
     });
-    if (res.ok) router.refresh();
-    else setBusy(false);
+    if (res.ok) startTransition(() => router.refresh());
   }
 
   async function del() {
     if (!confirm(`删除活动 "${event.title}"？${merged ? '子活动会被恢复为独立活动。' : ''}`)) return;
-    setBusy(true);
-    const res = await fetch(`/api/events/${event.id}`, { method: 'DELETE' });
-    if (res.ok) router.refresh();
-    else setBusy(false);
+    setHidden(true);
+    try {
+      const res = await fetch(`/api/events/${event.id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error();
+      startTransition(() => router.refresh());
+    } catch {
+      setHidden(false);
+    }
   }
 
   async function copyTag() {
@@ -128,13 +131,15 @@ export default function EventCard({
 
   const advanceLabel = canAdvance ? NEXT_LABEL[event.status] : '';
 
+  if (hidden) return null;
+
   return (
     <div
-      className={`p-4 rounded-2xl border ${
+      className={`p-4 rounded-2xl border transition ${
         selected
           ? 'bg-ink-100 dark:bg-ink-700 border-ink-400'
           : 'bg-white dark:bg-ink-800 border-ink-200 dark:border-ink-700'
-      }`}
+      } ${pending ? 'opacity-80' : ''}`}
     >
       <div className="flex items-start gap-3">
         {selecting && (
@@ -184,8 +189,7 @@ export default function EventCard({
         {!selecting && (
           <button
             onClick={del}
-            disabled={busy}
-            className="shrink-0 text-ink-300 hover:text-red-500 text-xs px-1 disabled:opacity-30"
+            className="shrink-0 text-ink-300 hover:text-red-500 text-xs px-1"
             aria-label="删除"
           >
             ✕
@@ -245,11 +249,11 @@ export default function EventCard({
           <div className="text-amber-800 dark:text-amber-300 flex items-center justify-between">
             <span>税后金额（劳务报酬）</span>
             <span className="num font-semibold text-base">
-              {formatYuan(afterTaxCents(agg.announced))}
+              <Money cents={afterTaxCents(agg.announced)} />
             </span>
           </div>
           <div className="mt-1 text-[10px] text-amber-700/80 dark:text-amber-400/70 num">
-            公示 {formatYuan(agg.announced)} · 应纳税 {formatYuan(calcTaxCents(agg.announced))}
+            公示 <Money cents={agg.announced} /> · 应纳税 <Money cents={calcTaxCents(agg.announced)} />
           </div>
         </div>
       )}
@@ -266,7 +270,11 @@ export default function EventCard({
       {expanded && (
         <div className="mt-3 space-y-2 pl-3 border-l-2 border-ink-200 dark:border-ink-700">
           {event.children.map((c) => (
-            <ChildRow key={c.id} child={c} onChange={() => router.refresh()} />
+            <ChildRow
+              key={c.id}
+              child={c}
+              onChange={() => startTransition(() => router.refresh())}
+            />
           ))}
         </div>
       )}
@@ -334,7 +342,7 @@ function StageSlot({
     >
       <div className="text-[10px] text-ink-500">{label}</div>
       <div className="num text-sm font-medium mt-0.5">
-        {cents !== null ? formatYuan(cents) : '—'}
+        {cents !== null ? <Money cents={cents} /> : '—'}
       </div>
       {at && <div className="text-[9px] text-ink-400 mt-0.5">{formatShort(at).slice(5)}</div>}
       {(onEdit || onClear) && (
@@ -369,9 +377,9 @@ function ChildRow({ child, onChange }: { child: ClientEvent; onChange: () => voi
       <div className="flex-1 min-w-0">
         <div className="text-xs font-medium truncate">{child.title}</div>
         <div className="text-[10px] text-ink-500 num">
-          {child.predictedCents !== null && <>预 {formatYuan(child.predictedCents)} </>}
-          {child.announcedCents !== null && <>公 {formatYuan(child.announcedCents)} </>}
-          {child.paidCents !== null && <>到 {formatYuan(child.paidCents)}</>}
+          {child.predictedCents !== null && <>预 <Money cents={child.predictedCents} /> </>}
+          {child.announcedCents !== null && <>公 <Money cents={child.announcedCents} /> </>}
+          {child.paidCents !== null && <>到 <Money cents={child.paidCents} /></>}
         </div>
       </div>
       <button

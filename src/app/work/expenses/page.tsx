@@ -2,8 +2,8 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { requireUser } from '@/lib/session';
 import { prisma } from '@/lib/db';
-import { formatYuan } from '@/lib/money';
 import { formatShort } from '@/lib/datetime';
+import Money from '@/components/ui/Money';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,7 +32,7 @@ export default async function ExpensesPage() {
   const months = [...byMonth.keys()].sort().reverse();
 
   return (
-    <div className="px-6 pt-10">
+    <div className="px-6 pt-14">
       <div className="flex items-center gap-3 mb-6">
         <Link href="/" className="text-ink-500 text-sm">‹ 返回</Link>
         <h1 className="text-2xl font-semibold flex-1">工作出项汇总</h1>
@@ -40,15 +40,15 @@ export default async function ExpensesPage() {
 
       <div className="rounded-3xl bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 p-5">
         <div className="text-xs text-ink-500">全部出项 (元)</div>
-        <div className="num text-3xl font-semibold mt-1">{formatYuan(total)}</div>
+        <div className="num text-3xl font-semibold mt-1"><Money cents={total} /></div>
         <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
           <div className="p-2 rounded-lg bg-ink-50 dark:bg-ink-700">
             <div className="text-ink-500">已回款</div>
-            <div className="num font-medium mt-0.5">{formatYuan(refundedTotal)}</div>
+            <div className="num font-medium mt-0.5"><Money cents={refundedTotal} /></div>
           </div>
           <div className="p-2 rounded-lg bg-ink-50 dark:bg-ink-700">
             <div className="text-ink-500">未回款</div>
-            <div className="num font-medium mt-0.5 text-red-500">{formatYuan(pending)}</div>
+            <div className="num font-medium mt-0.5 text-red-500"><Money cents={pending} /></div>
           </div>
         </div>
       </div>
@@ -69,7 +69,7 @@ export default async function ExpensesPage() {
                 <div className="text-sm font-medium">
                   {m.split('-')[0]} 年 {Number(m.split('-')[1])} 月
                 </div>
-                <div className="text-xs text-ink-500 num">{formatYuan(sum)}</div>
+                <div className="text-xs text-ink-500 num"><Money cents={sum} /></div>
               </Link>
               <div className="space-y-2">
                 {list.map((e) => {
@@ -104,7 +104,7 @@ export default async function ExpensesPage() {
                       <div
                         className={`num text-sm font-medium ${refunded ? 'line-through text-ink-400' : 'text-red-500'}`}
                       >
-                        -{formatYuan(e.amountCents)}
+                        -<Money cents={e.amountCents} />
                       </div>
                     </div>
                   );

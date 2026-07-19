@@ -3,6 +3,12 @@
 import { useState } from 'react';
 import Link from 'next/link';
 
+function Spinner() {
+  return (
+    <span className="inline-block w-4 h-4 border-2 border-white/60 border-t-transparent rounded-full animate-spin" />
+  );
+}
+
 export default function LoginPage() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -54,8 +60,9 @@ export default function LoginPage() {
         {error && <p className="text-red-500 text-sm">{error}</p>}
         <button
           disabled={loading}
-          className="w-full py-3 rounded-2xl bg-ink-900 dark:bg-ink-100 text-white dark:text-ink-900 font-medium disabled:opacity-50"
+          className="w-full py-3 rounded-2xl bg-ink-900 dark:bg-ink-100 text-white dark:text-ink-900 font-medium disabled:opacity-60 flex items-center justify-center gap-2"
         >
+          {loading && <Spinner />}
           {loading ? '登录中…' : '登录'}
         </button>
       </form>

@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { requireUser } from '@/lib/session';
 import { prisma } from '@/lib/db';
-import { formatYuan } from '@/lib/money';
+import Money from '@/components/ui/Money';
 import NewEntryFlow from './NewEntryFlow';
 import EntryRow from './EntryRow';
 
@@ -31,7 +31,7 @@ export default async function MonthPage({
     .reduce((a, e) => a + e.amountCents, 0);
 
   return (
-    <div className="px-6 pt-10">
+    <div className="px-6 pt-14">
       <div className="flex items-center gap-3 mb-6">
         <Link href="/work" className="text-ink-500 text-sm">‹ 工作账本</Link>
       </div>
@@ -40,9 +40,9 @@ export default async function MonthPage({
           {month.split('-')[0]} 年 {Number(month.split('-')[1])} 月
         </div>
         <div className="num text-3xl font-semibold mt-1">
-          进项 {formatYuan(income)}
+          进项 <Money cents={income} />
         </div>
-        <div className="mt-2 text-xs text-ink-500 num">出项 {formatYuan(expense)}</div>
+        <div className="mt-2 text-xs text-ink-500 num">出项 <Money cents={expense} /></div>
       </div>
 
       <NewEntryFlow yearMonth={month} />

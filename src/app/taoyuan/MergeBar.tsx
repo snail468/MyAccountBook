@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import type { ClientEvent } from './types';
 
@@ -14,6 +14,7 @@ export default function MergeBar({
   onDone: () => void;
 }) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [parentId, setParentId] = useState<string>('');
   const [title, setTitle] = useState('');
@@ -52,7 +53,7 @@ export default function MergeBar({
       if (!res.ok) throw new Error(data.error || '合并失败');
       setConfirmOpen(false);
       onDone();
-      router.refresh();
+      startTransition(() => router.refresh());
     } catch (err) {
       setError(err instanceof Error ? err.message : '合并失败');
     } finally {

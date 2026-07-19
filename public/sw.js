@@ -1,7 +1,7 @@
 // 简单的 service worker：只对 GET 请求做 network-first 缓存，用于离线可用
 // 数据 API 走 network-only（写入操作必须实时）
 
-const CACHE_NAME = 'mab-v1';
+const CACHE_NAME = 'mab-v2-xyd';
 const CACHE_URLS = ['/', '/manifest.json', '/icon-192.png', '/icon-512.png'];
 
 self.addEventListener('install', (event) => {

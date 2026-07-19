@@ -1,9 +1,10 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useState, useTransition } from 'react';
 import { formatYuan } from '@/lib/money';
 import { formatShort, localInputToISO, toLocalInput } from '@/lib/datetime';
+import Money from '@/components/ui/Money';
 
 type Props = {
   id: string;
@@ -17,30 +18,44 @@ type Props = {
 
 export default function EntryRow(props: Props) {
   const router = useRouter();
-  const [busy, setBusy] = useState(false);
+  const [pending, startTransition] = useTransition();
+  // 乐观 UI：本地状态先动，服务端确认后 router.refresh() 同步
+  const [optimisticRefundedAt, setOptimisticRefundedAt] = useState<string | null>(
+    props.refundedAt,
+  );
+  const [hidden, setHidden] = useState(false);
   const [showRefundDialog, setShowRefundDialog] = useState(false);
   const [refundInput, setRefundInput] = useState<string>(() => toLocalInput(new Date()));
   const [error, setError] = useState('');
 
-  const refunded = !!props.refundedAt;
+  const refunded = !!optimisticRefundedAt;
 
   async function del() {
     if (!confirm(`删除这笔 "${props.category}" ${formatYuan(props.amountCents)} 元？`)) return;
-    setBusy(true);
-    const res = await fetch(`/api/entries/${props.id}`, { method: 'DELETE' });
-    if (res.ok) router.refresh();
-    else setBusy(false);
+    setHidden(true); // 乐观：立刻消失
+    try {
+      const res = await fetch(`/api/entries/${props.id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error();
+      startTransition(() => router.refresh());
+    } catch {
+      setHidden(false);
+    }
   }
 
   async function unrefund() {
-    setBusy(true);
-    const res = await fetch(`/api/entries/${props.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'unrefund' }),
-    });
-    if (res.ok) router.refresh();
-    else setBusy(false);
+    const prev = optimisticRefundedAt;
+    setOptimisticRefundedAt(null);
+    try {
+      const res = await fetch(`/api/entries/${props.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'unrefund' }),
+      });
+      if (!res.ok) throw new Error();
+      startTransition(() => router.refresh());
+    } catch {
+      setOptimisticRefundedAt(prev);
+    }
   }
 
   async function submitRefund() {
@@ -50,27 +65,33 @@ export default function EntryRow(props: Props) {
       setError('时间格式不正确');
       return;
     }
-    setBusy(true);
-    const res = await fetch(`/api/entries/${props.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'refund', refundedAt: iso }),
-    });
-    if (res.ok) {
-      setShowRefundDialog(false);
-      router.refresh();
-    } else {
-      setBusy(false);
+    // 立刻关弹窗 + 乐观标记
+    setShowRefundDialog(false);
+    setOptimisticRefundedAt(iso);
+    try {
+      const res = await fetch(`/api/entries/${props.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'refund', refundedAt: iso }),
+      });
+      if (!res.ok) throw new Error();
+      startTransition(() => router.refresh());
+    } catch {
+      setOptimisticRefundedAt(props.refundedAt);
+      setError('操作失败，请重试');
+      setShowRefundDialog(true);
     }
   }
 
+  if (hidden) return null;
+
   return (
     <div
-      className={`flex items-center gap-3 p-4 rounded-2xl border ${
+      className={`flex items-center gap-3 p-4 rounded-2xl border transition ${
         refunded
           ? 'bg-ink-50 dark:bg-ink-800/60 border-ink-200 dark:border-ink-700 text-ink-400'
           : 'bg-white dark:bg-ink-800 border-ink-200 dark:border-ink-700'
-      }`}
+      } ${pending ? 'opacity-80' : ''}`}
     >
       <div className="flex-1 min-w-0">
         <div className={`font-medium truncate ${refunded ? 'line-through' : ''}`}>
@@ -78,8 +99,8 @@ export default function EntryRow(props: Props) {
         </div>
         <div className="text-[11px] text-ink-500 truncate mt-0.5">
           {formatShort(props.occurredAt)}
-          {refunded && props.refundedAt && (
-            <> · 回款 {formatShort(props.refundedAt)}</>
+          {refunded && optimisticRefundedAt && (
+            <> · 回款 {formatShort(optimisticRefundedAt)}</>
           )}
         </div>
         {props.note && (
@@ -93,18 +114,17 @@ export default function EntryRow(props: Props) {
         className={`num text-base font-medium ${refunded ? 'line-through text-ink-400' : props.direction === 'expense' ? 'text-red-500' : 'text-emerald-600 dark:text-emerald-400'}`}
       >
         {props.direction === 'expense' ? '-' : '+'}
-        {formatYuan(props.amountCents)}
+        <Money cents={props.amountCents} />
       </div>
 
       {props.direction === 'expense' && (
         <button
           onClick={() => (refunded ? unrefund() : setShowRefundDialog(true))}
-          disabled={busy}
           title={refunded ? '撤销回款' : '确认已回款'}
-          className={`shrink-0 w-8 h-8 rounded-full text-xs disabled:opacity-30 ${
+          className={`shrink-0 w-8 h-8 rounded-full text-xs ${
             refunded
               ? 'bg-ink-200 dark:bg-ink-700 text-ink-500'
-              : 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-200'
+              : 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300'
           }`}
           aria-label={refunded ? '撤销回款' : '确认回款'}
         >
@@ -114,8 +134,7 @@ export default function EntryRow(props: Props) {
 
       <button
         onClick={del}
-        disabled={busy}
-        className="shrink-0 text-ink-300 hover:text-red-500 text-xs px-1 disabled:opacity-30"
+        className="shrink-0 text-ink-300 hover:text-red-500 text-xs px-1"
         aria-label="删除"
       >
         ✕
@@ -132,7 +151,7 @@ export default function EntryRow(props: Props) {
           >
             <h3 className="text-base font-medium mb-1">确认回款</h3>
             <div className="text-xs text-ink-500 mb-4">
-              {props.category} · {formatYuan(props.amountCents)}
+              {props.category} · <Money cents={props.amountCents} fallback="·····" />
             </div>
             <label className="block text-xs text-ink-500">回款时间</label>
             <input
@@ -151,10 +170,9 @@ export default function EntryRow(props: Props) {
               </button>
               <button
                 onClick={submitRefund}
-                disabled={busy}
-                className="flex-1 py-3 rounded-2xl bg-ink-900 dark:bg-ink-100 text-white dark:text-ink-900 disabled:opacity-50"
+                className="flex-1 py-3 rounded-2xl bg-ink-900 dark:bg-ink-100 text-white dark:text-ink-900"
               >
-                {busy ? '…' : '确认'}
+                确认
               </button>
             </div>
           </div>

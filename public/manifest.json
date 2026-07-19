@@ -1,12 +1,12 @@
 {
-  "name": "我的账本",
-  "short_name": "账本",
-  "description": "极简多账本记账",
+  "name": "心愿便利贴",
+  "short_name": "便利贴",
+  "description": "多账本 + 心愿记录 PWA",
   "start_url": "/",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#0f172a",
-  "theme_color": "#0f172a",
+  "background_color": "#f5efff",
+  "theme_color": "#c8a2d8",
   "lang": "zh-CN",
   "icons": [
     {

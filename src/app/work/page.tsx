@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { requireUser } from '@/lib/session';
 import { prisma } from '@/lib/db';
-import { formatYuan } from '@/lib/money';
+import Money from '@/components/ui/Money';
 
 export const dynamic = 'force-dynamic';
 
@@ -64,7 +64,7 @@ export default async function WorkPage() {
   const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
   return (
-    <div className="px-6 pt-10">
+    <div className="px-6 pt-14">
       <div className="flex items-center gap-3 mb-6">
         <Link href="/" className="text-ink-500 text-sm">‹ 返回</Link>
         <h1 className="text-2xl font-semibold flex-1">工作账本</h1>
@@ -93,7 +93,7 @@ export default async function WorkPage() {
                 </div>
                 <div className="text-right">
                   <div className="num text-2xl font-medium">
-                    {formatYuan(s.income)}
+                    <Money cents={s.income} />
                   </div>
                   <div className="text-xs opacity-70 mt-1">
                     {s.count > 0 ? `${s.count} 条` : '点击记账'}
@@ -102,8 +102,8 @@ export default async function WorkPage() {
               </div>
               {s.count > 0 && (
                 <div className="mt-3 flex gap-4 text-xs opacity-80 num">
-                  <span>进 {formatYuan(s.income)}</span>
-                  <span>出 {formatYuan(s.expense)}</span>
+                  <span>进 <Money cents={s.income} /></span>
+                  <span>出 <Money cents={s.expense} /></span>
                 </div>
               )}
             </Link>
