@@ -4,6 +4,7 @@ import { requireUser } from '@/lib/session';
 import { prisma } from '@/lib/db';
 import { formatShort } from '@/lib/datetime';
 import Money from '@/components/ui/Money';
+import Prefetcher from '@/components/ui/Prefetcher';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,6 +34,7 @@ export default async function ExpensesPage() {
 
   return (
     <div className="px-6 pt-14">
+      <Prefetcher routes={['/']} />
       <div className="flex items-center gap-3 mb-6">
         <Link href="/" className="text-ink-500 text-sm">‹ 返回</Link>
         <h1 className="text-2xl font-semibold flex-1">工作出项汇总</h1>

@@ -7,6 +7,7 @@ import { parseRewardMethods } from '@/lib/rewardMethod';
 import LogoutButton from '@/components/LogoutButton';
 import ExportButton from '@/components/ExportButton';
 import Money from '@/components/ui/Money';
+import Prefetcher from '@/components/ui/Prefetcher';
 
 export const dynamic = 'force-dynamic';
 
@@ -89,6 +90,13 @@ export default async function HomePage() {
 
   return (
     <div className="px-6 pt-14">
+      <Prefetcher
+        routes={
+          user.role === 'admin'
+            ? ['/work', '/taoyuan', '/work/expenses', '/admin']
+            : ['/work', '/taoyuan', '/work/expenses']
+        }
+      />
       <div className="flex items-center justify-between mb-2">
         <div className="text-sm text-ink-500">{user.username} · 心愿便利贴</div>
         <LogoutButton />

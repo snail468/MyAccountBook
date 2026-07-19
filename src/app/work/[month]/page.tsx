@@ -3,6 +3,7 @@ import { notFound, redirect } from 'next/navigation';
 import { requireUser } from '@/lib/session';
 import { prisma } from '@/lib/db';
 import Money from '@/components/ui/Money';
+import Prefetcher from '@/components/ui/Prefetcher';
 import NewEntryFlow from './NewEntryFlow';
 import EntryRow from './EntryRow';
 
@@ -32,6 +33,7 @@ export default async function MonthPage({
 
   return (
     <div className="px-6 pt-14">
+      <Prefetcher routes={['/work', '/']} />
       <div className="flex items-center gap-3 mb-6">
         <Link href="/work" className="text-ink-500 text-sm">‹ 工作账本</Link>
       </div>
