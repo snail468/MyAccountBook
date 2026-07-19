@@ -6,7 +6,7 @@ mkdir -p /data
 chown -R nextjs:nodejs /data
 
 echo "[entrypoint] 同步数据库 schema..."
-su-exec nextjs:nodejs node ./node_modules/prisma/build/index.js db push --skip-generate
+su-exec nextjs:nodejs node ./node_modules/prisma/build/index.js db push --skip-generate --accept-data-loss
 
 echo "[entrypoint] 启动服务 (port ${PORT:-3000})..."
 exec su-exec nextjs:nodejs "$@"

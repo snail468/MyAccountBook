@@ -20,19 +20,15 @@ export default async function MonthPage({
 
   const entries = await prisma.entry.findMany({
     where: { userId: user.id, yearMonth: month },
-    orderBy: { createdAt: 'desc' },
+    orderBy: [{ occurredAt: 'desc' }, { createdAt: 'desc' }],
   });
 
   const income = entries
     .filter((e) => e.direction === 'income')
     .reduce((a, e) => a + e.amountCents, 0);
   const expense = entries
-    .filter((e) => e.direction === 'expense' && !e.reimbursable)
+    .filter((e) => e.direction === 'expense')
     .reduce((a, e) => a + e.amountCents, 0);
-  const reimbursable = entries
-    .filter((e) => e.direction === 'expense' && e.reimbursable)
-    .reduce((a, e) => a + e.amountCents, 0);
-  const net = income - expense;
 
   return (
     <div className="px-6 pt-10">
@@ -43,14 +39,10 @@ export default async function MonthPage({
         <div className="text-xs text-ink-500">
           {month.split('-')[0]} 年 {Number(month.split('-')[1])} 月
         </div>
-        <div className={`num text-3xl font-semibold mt-1 ${net < 0 ? 'text-red-500' : ''}`}>
-          {formatYuan(net, { sign: true })}
+        <div className="num text-3xl font-semibold mt-1">
+          进项 {formatYuan(income)}
         </div>
-        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-500 num">
-          <span>入 {formatYuan(income)}</span>
-          <span>出 {formatYuan(expense)}</span>
-          {reimbursable > 0 && <span className="text-amber-600 dark:text-amber-400">报销 {formatYuan(reimbursable)}</span>}
-        </div>
+        <div className="mt-2 text-xs text-ink-500 num">出项 {formatYuan(expense)}</div>
       </div>
 
       <NewEntryFlow yearMonth={month} />
@@ -67,7 +59,8 @@ export default async function MonthPage({
             direction={e.direction as 'income' | 'expense'}
             amountCents={e.amountCents}
             note={e.note}
-            reimbursable={e.reimbursable}
+            occurredAt={e.occurredAt.toISOString()}
+            refundedAt={e.refundedAt ? e.refundedAt.toISOString() : null}
           />
         ))}
       </div>

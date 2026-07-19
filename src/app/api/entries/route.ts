@@ -10,7 +10,7 @@ const bodySchema = z.object({
   direction: z.enum(['income', 'expense']),
   amountCents: z.number().int().positive().max(1_000_000_00),
   note: z.string().max(200).optional().nullable(),
-  reimbursable: z.boolean().optional().default(false),
+  occurredAt: z.string().datetime().optional().nullable(),
 });
 
 export async function POST(req: Request) {
@@ -22,7 +22,7 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: '参数错误' }, { status: 400 });
   }
-  const { yearMonth, category, direction, amountCents, note, reimbursable } = parsed.data;
+  const { yearMonth, category, direction, amountCents, note, occurredAt } = parsed.data;
 
   // 如果是预设类别，强制方向以预设为准
   const preset = PRESET_CATEGORIES.find((c) => c.name === category);
@@ -36,8 +36,7 @@ export async function POST(req: Request) {
       direction: finalDirection,
       amountCents,
       note: note?.trim() || null,
-      // 只有出项才允许标记为报销
-      reimbursable: finalDirection === 'expense' ? reimbursable : false,
+      occurredAt: occurredAt ? new Date(occurredAt) : new Date(),
     },
   });
   return NextResponse.json({ ok: true, id: entry.id });

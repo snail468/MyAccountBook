@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { PRESET_CATEGORIES, type Direction } from '@/lib/categories';
 import { yuanToCents } from '@/lib/money';
+import { localInputToISO, toLocalInput } from '@/lib/datetime';
 
 type Step = 'closed' | 'category' | 'amount';
 
@@ -16,7 +17,7 @@ export default function NewEntryFlow({ yearMonth }: { yearMonth: string }) {
   const [customName, setCustomName] = useState('');
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
-  const [reimbursable, setReimbursable] = useState(false);
+  const [occurredAt, setOccurredAt] = useState<string>(() => toLocalInput(new Date()));
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -27,7 +28,7 @@ export default function NewEntryFlow({ yearMonth }: { yearMonth: string }) {
     setCustomName('');
     setAmount('');
     setNote('');
-    setReimbursable(false);
+    setOccurredAt(toLocalInput(new Date()));
     setError('');
   }
 
@@ -66,7 +67,7 @@ export default function NewEntryFlow({ yearMonth }: { yearMonth: string }) {
           direction,
           amountCents: cents,
           note: note.trim() || null,
-          reimbursable: direction === 'expense' ? reimbursable : false,
+          occurredAt: localInputToISO(occurredAt),
         }),
       });
       const data = await res.json();
@@ -128,10 +129,7 @@ export default function NewEntryFlow({ yearMonth }: { yearMonth: string }) {
                 + 自定义类别
               </button>
             </div>
-            <button
-              onClick={reset}
-              className="mt-4 w-full py-3 rounded-2xl text-ink-500"
-            >
+            <button onClick={reset} className="mt-4 w-full py-3 rounded-2xl text-ink-500">
               取消
             </button>
           </>
@@ -194,20 +192,13 @@ export default function NewEntryFlow({ yearMonth }: { yearMonth: string }) {
               maxLength={200}
               className="mt-3 w-full px-4 py-3 rounded-2xl bg-ink-50 dark:bg-ink-800 border border-ink-200 dark:border-ink-700 focus:outline-none focus:ring-2 focus:ring-ink-400"
             />
-            {direction === 'expense' && (
-              <label className="mt-3 flex items-center gap-3 p-3 rounded-2xl bg-ink-50 dark:bg-ink-800 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={reimbursable}
-                  onChange={(e) => setReimbursable(e.target.checked)}
-                  className="w-5 h-5"
-                />
-                <div className="flex-1">
-                  <div className="text-sm">走报销</div>
-                  <div className="text-xs text-ink-500 mt-0.5">此项不计入总储蓄的扣减</div>
-                </div>
-              </label>
-            )}
+            <label className="block mt-3 text-xs text-ink-500">操作时间</label>
+            <input
+              type="datetime-local"
+              value={occurredAt}
+              onChange={(e) => setOccurredAt(e.target.value)}
+              className="mt-1 w-full px-4 py-3 rounded-2xl bg-ink-50 dark:bg-ink-800 border border-ink-200 dark:border-ink-700 focus:outline-none focus:ring-2 focus:ring-ink-400"
+            />
             {error && <p className="text-red-500 text-sm mt-2">{error}</p>}
             <div className="mt-4 flex gap-2">
               <button onClick={() => setStep('category')} className="flex-1 py-3 rounded-2xl bg-ink-50 dark:bg-ink-800">

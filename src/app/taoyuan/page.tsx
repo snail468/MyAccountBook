@@ -2,78 +2,90 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { requireUser } from '@/lib/session';
 import { prisma } from '@/lib/db';
-import NewEventButton from './NewEventButton';
-import EventCard from './EventCard';
+import TaoyuanClient from './TaoyuanClient';
+import type { ClientEvent } from './types';
 
 export const dynamic = 'force-dynamic';
 
-const STATUS_ORDER = ['published', 'predicted', 'announced', 'paid'] as const;
+function serializeEvent(
+  ev: {
+    id: string;
+    title: string;
+    status: string;
+    participate: boolean;
+    startAt: Date | null;
+    deadline: Date | null;
+    content: string | null;
+    reward: string | null;
+    rewardMethod: string | null;
+    topicTag: string | null;
+    predictedCents: number | null;
+    announcedCents: number | null;
+    paidCents: number | null;
+    predictedAt: Date | null;
+    announcedAt: Date | null;
+    paidAt: Date | null;
+    note: string | null;
+    parentId: string | null;
+  },
+  children: ClientEvent[] = [],
+): ClientEvent {
+  return {
+    id: ev.id,
+    title: ev.title,
+    status: ev.status,
+    participate: ev.participate,
+    startAt: ev.startAt?.toISOString() ?? null,
+    deadline: ev.deadline?.toISOString() ?? null,
+    content: ev.content,
+    reward: ev.reward,
+    rewardMethod: ev.rewardMethod,
+    topicTag: ev.topicTag,
+    predictedCents: ev.predictedCents,
+    announcedCents: ev.announcedCents,
+    paidCents: ev.paidCents,
+    predictedAt: ev.predictedAt?.toISOString() ?? null,
+    announcedAt: ev.announcedAt?.toISOString() ?? null,
+    paidAt: ev.paidAt?.toISOString() ?? null,
+    note: ev.note,
+    parentId: ev.parentId,
+    children,
+  };
+}
 
 export default async function TaoyuanPage() {
   const user = await requireUser();
   if (!user) redirect('/login');
 
-  const events = await prisma.event.findMany({
+  const raw = await prisma.event.findMany({
     where: { userId: user.id },
-    orderBy: [{ status: 'asc' }, { createdAt: 'desc' }],
+    orderBy: [{ createdAt: 'desc' }],
   });
 
-  const grouped = new Map<string, typeof events>();
-  for (const s of STATUS_ORDER) grouped.set(s, []);
-  for (const e of events) {
-    grouped.get(e.status)?.push(e);
+  // 构建 父 → 子[] 映射；顶层是 parentId === null
+  const childrenByParent = new Map<string, ClientEvent[]>();
+  const topLevel: typeof raw = [];
+  for (const ev of raw) {
+    if (ev.parentId) {
+      const arr = childrenByParent.get(ev.parentId) ?? [];
+      arr.push(serializeEvent(ev));
+      childrenByParent.set(ev.parentId, arr);
+    } else {
+      topLevel.push(ev);
+    }
   }
-
-  const labels: Record<string, string> = {
-    published: '待预测',
-    predicted: '待公示',
-    announced: '待发钱',
-    paid: '已到账',
-  };
+  const events: ClientEvent[] = topLevel.map((ev) =>
+    serializeEvent(ev, childrenByParent.get(ev.id) ?? []),
+  );
 
   return (
-    <div className="px-6 pt-10">
+    <div className="px-6 pt-10 pb-24">
       <div className="flex items-center gap-3 mb-6">
         <Link href="/" className="text-ink-500 text-sm">‹ 返回</Link>
         <h1 className="text-2xl font-semibold flex-1">桃源账本</h1>
       </div>
 
-      <NewEventButton />
-
-      <div className="mt-6 space-y-6">
-        {STATUS_ORDER.map((s) => {
-          const list = grouped.get(s) ?? [];
-          if (list.length === 0 && s === 'paid') return null;
-          return (
-            <section key={s}>
-              <div className="flex items-center gap-2 mb-2 px-1">
-                <div className="text-xs uppercase tracking-wide text-ink-500">{labels[s]}</div>
-                <div className="text-xs text-ink-400">· {list.length}</div>
-              </div>
-              {list.length === 0 ? (
-                <div className="text-xs text-ink-400 px-1 py-3">暂无</div>
-              ) : (
-                <div className="space-y-2">
-                  {list.map((e) => (
-                    <EventCard
-                      key={e.id}
-                      id={e.id}
-                      title={e.title}
-                      status={e.status}
-                      participate={e.participate}
-                      deadline={e.deadline ? e.deadline.toISOString() : null}
-                      predictedCents={e.predictedCents}
-                      announcedCents={e.announcedCents}
-                      paidCents={e.paidCents}
-                      note={e.note}
-                    />
-                  ))}
-                </div>
-              )}
-            </section>
-          );
-        })}
-      </div>
+      <TaoyuanClient events={events} />
     </div>
   );
 }

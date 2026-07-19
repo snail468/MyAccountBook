@@ -6,13 +6,11 @@ import { formatYuan } from '@/lib/money';
 
 export const dynamic = 'force-dynamic';
 
-// 生成从最早条目所在月份 到 当前月份 的月份列表 (倒序)
 function makeMonthList(earliest: string | null): string[] {
   const now = new Date();
   const curY = now.getFullYear();
   const curM = now.getMonth() + 1;
 
-  // 至少覆盖过去 12 个月，或从 earliest 到 现在
   let startY = curY;
   let startM = curM - 11;
   if (earliest) {
@@ -47,25 +45,16 @@ export default async function WorkPage() {
 
   const entries = await prisma.entry.findMany({
     where: { userId: user.id },
-    select: { yearMonth: true, direction: true, amountCents: true, reimbursable: true },
+    select: { yearMonth: true, direction: true, amountCents: true },
   });
 
-  const byMonth = new Map<
-    string,
-    { income: number; expense: number; reimbursable: number; count: number }
-  >();
+  const byMonth = new Map<string, { income: number; expense: number; count: number }>();
   let earliest: string | null = null;
   for (const e of entries) {
     if (!earliest || e.yearMonth < earliest) earliest = e.yearMonth;
-    const acc =
-      byMonth.get(e.yearMonth) ?? { income: 0, expense: 0, reimbursable: 0, count: 0 };
-    if (e.direction === 'income') {
-      acc.income += e.amountCents;
-    } else if (e.reimbursable) {
-      acc.reimbursable += e.amountCents;
-    } else {
-      acc.expense += e.amountCents;
-    }
+    const acc = byMonth.get(e.yearMonth) ?? { income: 0, expense: 0, count: 0 };
+    if (e.direction === 'income') acc.income += e.amountCents;
+    else acc.expense += e.amountCents;
     acc.count += 1;
     byMonth.set(e.yearMonth, acc);
   }
@@ -83,9 +72,7 @@ export default async function WorkPage() {
 
       <div className="space-y-3">
         {months.map((m) => {
-          const s = byMonth.get(m) ?? { income: 0, expense: 0, reimbursable: 0, count: 0 };
-          // 报销出项不计入月净额
-          const net = s.income - s.expense;
+          const s = byMonth.get(m) ?? { income: 0, expense: 0, count: 0 };
           const isCurrent = m === currentMonth;
           return (
             <Link
@@ -99,16 +86,14 @@ export default async function WorkPage() {
             >
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="text-xs opacity-70">
-                    {m.split('-')[0]} 年
-                  </div>
+                  <div className="text-xs opacity-70">{m.split('-')[0]} 年</div>
                   <div className="text-3xl font-semibold mt-0.5">
                     {Number(m.split('-')[1])} 月
                   </div>
                 </div>
                 <div className="text-right">
-                  <div className={`num text-2xl font-medium ${net < 0 ? 'text-red-400' : ''}`}>
-                    {formatYuan(net, { sign: true })}
+                  <div className="num text-2xl font-medium">
+                    {formatYuan(s.income)}
                   </div>
                   <div className="text-xs opacity-70 mt-1">
                     {s.count > 0 ? `${s.count} 条` : '点击记账'}
@@ -116,10 +101,9 @@ export default async function WorkPage() {
                 </div>
               </div>
               {s.count > 0 && (
-                <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs opacity-80 num">
-                  <span>入 {formatYuan(s.income)}</span>
+                <div className="mt-3 flex gap-4 text-xs opacity-80 num">
+                  <span>进 {formatYuan(s.income)}</span>
                   <span>出 {formatYuan(s.expense)}</span>
-                  {s.reimbursable > 0 && <span>报销 {formatYuan(s.reimbursable)}</span>}
                 </div>
               )}
             </Link>
