@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { formatYuan } from '@/lib/money';
 import { formatShort } from '@/lib/datetime';
 import { rewardMethodLabel } from '@/lib/rewardMethod';
+import { afterTaxCents, calcTaxCents } from '@/lib/tax';
 import type { ClientEvent } from './types';
 import { aggregate } from './types';
 import AmountEditor from './AmountEditor';
@@ -236,6 +237,20 @@ export default function EventCard({
             }
             at={event.paidAt}
           />
+        </div>
+      )}
+
+      {agg.announced !== null && agg.announced > 0 && (
+        <div className="mt-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200/60 dark:border-amber-800/40 p-3 text-xs">
+          <div className="text-amber-800 dark:text-amber-300 flex items-center justify-between">
+            <span>税后金额（劳务报酬）</span>
+            <span className="num font-semibold text-base">
+              {formatYuan(afterTaxCents(agg.announced))}
+            </span>
+          </div>
+          <div className="mt-1 text-[10px] text-amber-700/80 dark:text-amber-400/70 num">
+            公示 {formatYuan(agg.announced)} · 应纳税 {formatYuan(calcTaxCents(agg.announced))}
+          </div>
         </div>
       )}
 

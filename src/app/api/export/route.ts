@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db';
 import { requireUser } from '@/lib/session';
 import { formatYuan } from '@/lib/money';
 import { rewardMethodLabel } from '@/lib/rewardMethod';
+import { afterTaxCents } from '@/lib/tax';
 
 function csvEscape(v: string | number | null | undefined): string {
   if (v === null || v === undefined) return '';
@@ -62,6 +63,7 @@ export async function GET() {
       '话题tag',
       '预测(元)',
       '公示(元)',
+      '公示税后(元)',
       '到账(元)',
       '预测时间',
       '公示时间',
@@ -72,6 +74,8 @@ export async function GET() {
   );
   const titleById = new Map(events.map((e) => [e.id, e.title]));
   for (const ev of events) {
+    const afterTax =
+      ev.announcedCents !== null ? afterTaxCents(ev.announcedCents) : null;
     lines.push(
       [
         csvEscape(ev.title),
@@ -85,6 +89,7 @@ export async function GET() {
         csvEscape(ev.topicTag),
         csvEscape(ev.predictedCents !== null ? formatYuan(ev.predictedCents) : ''),
         csvEscape(ev.announcedCents !== null ? formatYuan(ev.announcedCents) : ''),
+        csvEscape(afterTax !== null ? formatYuan(afterTax) : ''),
         csvEscape(ev.paidCents !== null ? formatYuan(ev.paidCents) : ''),
         csvEscape(ev.predictedAt?.toISOString()),
         csvEscape(ev.announcedAt?.toISOString()),
