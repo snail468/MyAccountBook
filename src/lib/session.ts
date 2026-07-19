@@ -1,6 +1,7 @@
 import { getIronSession, type SessionOptions } from 'iron-session';
 import { cookies } from 'next/headers';
 import { prisma } from '@/lib/db';
+import { ensureAdminBootstrap } from '@/lib/adminBootstrap';
 
 export type SessionData = {
   userId?: string;
@@ -46,6 +47,8 @@ export async function requireUserWithRole(): Promise<
 > {
   const session = await getSession();
   if (!session.userId) return null;
+  // 幂等：确保管理员机制已 bootstrap 过一次
+  await ensureAdminBootstrap();
   const user = await prisma.user.findUnique({
     where: { id: session.userId },
     select: { id: true, username: true, role: true },

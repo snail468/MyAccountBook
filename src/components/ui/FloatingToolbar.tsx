@@ -57,6 +57,25 @@ export default function FloatingToolbar() {
               </div>
             </div>
 
+            <div className="mb-4">
+              <div className="text-xs text-ink-500 mb-2">界面风格</div>
+              <div className="grid grid-cols-2 gap-2">
+                {(['default', 'liquid'] as const).map((t) => (
+                  <button
+                    key={t}
+                    onClick={() => ui.setStyleTheme(t)}
+                    className={`py-3 rounded-2xl text-sm ${
+                      ui.styleTheme === t
+                        ? 'bg-ink-900 dark:bg-ink-100 text-white dark:text-ink-900'
+                        : 'bg-ink-50 dark:bg-ink-800'
+                    }`}
+                  >
+                    {t === 'default' ? '默认' : '液态玻璃'}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <div className="space-y-3">
               <label className="flex items-center justify-between p-3 rounded-2xl bg-ink-50 dark:bg-ink-800 cursor-pointer">
                 <div>

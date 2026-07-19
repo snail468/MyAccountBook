@@ -23,12 +23,118 @@ body {
   @apply bg-ink-900 text-ink-100;
 }
 
-/* 数字等宽 */
 .num {
   font-variant-numeric: tabular-nums;
 }
 
-/* 触摸友好的最小点击区域 */
 button, a {
   touch-action: manipulation;
+}
+
+/* ============ 液态玻璃主题 ============ */
+/*
+ * 说明：Tailwind 的 dark:bg-ink-800 只在 .dark 里生效。
+ * .liquid 不加 .dark 时是浅色玻璃；.liquid.dark 时是深色玻璃。
+ * 覆盖时用 !important + 具体选择器保证胜出 tailwind 生成的样式。
+ */
+
+/* 桌布：淡彩渐变 */
+.liquid body {
+  background:
+    radial-gradient(circle at 12% 12%, rgba(255, 155, 200, 0.55), transparent 45%),
+    radial-gradient(circle at 88% 18%, rgba(155, 190, 255, 0.55), transparent 45%),
+    radial-gradient(circle at 30% 92%, rgba(200, 162, 216, 0.55), transparent 50%),
+    radial-gradient(circle at 82% 88%, rgba(255, 210, 160, 0.55), transparent 45%),
+    #fefaff !important;
+  background-attachment: fixed !important;
+}
+.liquid.dark body {
+  background:
+    radial-gradient(circle at 12% 12%, rgba(120, 60, 130, 0.65), transparent 45%),
+    radial-gradient(circle at 88% 18%, rgba(50, 90, 160, 0.65), transparent 45%),
+    radial-gradient(circle at 30% 92%, rgba(90, 60, 140, 0.65), transparent 50%),
+    radial-gradient(circle at 82% 88%, rgba(140, 60, 90, 0.55), transparent 45%),
+    #0b0518 !important;
+  background-attachment: fixed !important;
+}
+
+/* —— 浅色玻璃卡片 —— */
+.liquid:not(.dark) .bg-white,
+.liquid:not(.dark) .bg-ink-50 {
+  background: rgba(255, 255, 255, 0.5) !important;
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border-color: rgba(255, 255, 255, 0.7) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 8px 24px -12px rgba(31, 38, 135, 0.2);
+}
+
+/* —— 深色玻璃卡片 —— */
+.liquid.dark .dark\:bg-ink-800,
+.liquid.dark .dark\:bg-ink-700,
+.liquid.dark .bg-ink-800,
+.liquid.dark .dark\:bg-ink-900 {
+  background: rgba(30, 30, 48, 0.5) !important;
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border-color: rgba(255, 255, 255, 0.14) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 8px 24px -12px rgba(0, 0, 0, 0.5);
+}
+
+/* CTA (bg-ink-900 在浅色，dark:bg-ink-100 在深色) */
+.liquid:not(.dark) .bg-ink-900 {
+  background: rgba(20, 20, 30, 0.85) !important;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.15),
+    0 6px 16px -8px rgba(20, 20, 30, 0.55);
+}
+.liquid.dark .dark\:bg-ink-100 {
+  background: rgba(240, 240, 250, 0.9) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    0 6px 16px -8px rgba(0, 0, 0, 0.5);
+}
+
+/* 悬浮工具栏 */
+.liquid:not(.dark) .bg-white\/80 {
+  background: rgba(255, 255, 255, 0.4) !important;
+}
+.liquid.dark .dark\:bg-ink-800\/80 {
+  background: rgba(30, 30, 48, 0.5) !important;
+}
+
+/* 弹层遮罩：更透 + 更模糊 */
+.liquid .bg-black\/40 {
+  background: rgba(0, 0, 0, 0.15) !important;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+/* input 玻璃感 */
+.liquid:not(.dark) input,
+.liquid:not(.dark) textarea,
+.liquid:not(.dark) select {
+  background: rgba(255, 255, 255, 0.35) !important;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-color: rgba(255, 255, 255, 0.6) !important;
+}
+.liquid.dark input,
+.liquid.dark textarea,
+.liquid.dark select {
+  background: rgba(30, 30, 48, 0.5) !important;
+  border-color: rgba(255, 255, 255, 0.14) !important;
+}
+
+/* 更圆的圆角 */
+.liquid .rounded-3xl {
+  border-radius: 28px;
+}
+.liquid .rounded-2xl {
+  border-radius: 20px;
 }

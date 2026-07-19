@@ -276,15 +276,13 @@ function StageButton({
     <button
       onClick={onClick}
       disabled={disabled}
-      className={`p-3 rounded-xl text-center transition active:scale-[0.97] disabled:opacity-50 ${
-        hasValue
-          ? highlight
-            ? 'bg-emerald-600 dark:bg-emerald-500 text-white'
-            : 'bg-ink-900 dark:bg-ink-100 text-white dark:text-ink-900'
-          : 'bg-ink-900 dark:bg-ink-100 text-white dark:text-ink-900'
+      className={`p-3 rounded-xl text-center transition active:scale-[0.97] disabled:opacity-50 border ${
+        highlight
+          ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-800 dark:text-emerald-200 border-emerald-200 dark:border-emerald-700'
+          : 'bg-ink-50 dark:bg-ink-700 text-ink-900 dark:text-ink-100 border-ink-200 dark:border-ink-600'
       }`}
     >
-      <div className="text-[10px] opacity-80">
+      <div className="text-[10px] opacity-70">
         {label}
         {hasValue && count > 1 && <span> · {count}</span>}
       </div>

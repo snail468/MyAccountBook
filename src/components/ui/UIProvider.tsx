@@ -9,15 +9,17 @@ import {
   useState,
 } from 'react';
 
-const STORAGE_KEY = 'xyd:ui:v3';
+const STORAGE_KEY = 'xyd:ui:v4';
 
 export type ThemeMode = 'light' | 'dark' | 'system';
+export type StyleTheme = 'default' | 'liquid';
 
 export type UIState = {
   amountsVisible: boolean;
   lightEnabled: boolean;
   soundEnabled: boolean;
   theme: ThemeMode;
+  styleTheme: StyleTheme;
 };
 
 const DEFAULT_STATE: UIState = {
@@ -25,6 +27,7 @@ const DEFAULT_STATE: UIState = {
   lightEnabled: true,
   soundEnabled: false,
   theme: 'system',
+  styleTheme: 'default',
 };
 
 type Ctx = UIState & {
@@ -32,55 +35,51 @@ type Ctx = UIState & {
   setLightEnabled: (v: boolean) => void;
   setSoundEnabled: (v: boolean) => void;
   setTheme: (t: ThemeMode) => void;
+  setStyleTheme: (t: StyleTheme) => void;
   ready: boolean;
 };
 
 const UIContext = createContext<Ctx | null>(null);
 
-function applyThemeClass(theme: ThemeMode) {
+function applyClasses(state: UIState) {
   if (typeof document === 'undefined') return;
   const root = document.documentElement;
   const isDark =
-    theme === 'dark' ||
-    (theme === 'system' &&
+    state.theme === 'dark' ||
+    (state.theme === 'system' &&
       window.matchMedia('(prefers-color-scheme: dark)').matches);
   root.classList.toggle('dark', isDark);
+  root.classList.toggle('liquid', state.styleTheme === 'liquid');
 }
 
 export function UIProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<UIState>(DEFAULT_STATE);
   const [ready, setReady] = useState(false);
 
-  // 首次挂载：从 localStorage 读，应用主题
   useEffect(() => {
+    let merged = DEFAULT_STATE;
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        const merged = { ...DEFAULT_STATE, ...parsed };
-        setState(merged);
-        applyThemeClass(merged.theme);
-      } else {
-        applyThemeClass(DEFAULT_STATE.theme);
-      }
+      if (raw) merged = { ...DEFAULT_STATE, ...JSON.parse(raw) };
     } catch {
-      applyThemeClass(DEFAULT_STATE.theme);
+      // ignore
     }
+    setState(merged);
+    applyClasses(merged);
     setReady(true);
   }, []);
 
-  // system 模式下监听系统偏好变化
   useEffect(() => {
     if (state.theme !== 'system') return;
     const mq = window.matchMedia('(prefers-color-scheme: dark)');
-    const onChange = () => applyThemeClass('system');
+    const onChange = () => applyClasses(state);
     mq.addEventListener('change', onChange);
     return () => mq.removeEventListener('change', onChange);
-  }, [state.theme]);
+  }, [state]);
 
   const persist = useCallback((next: UIState) => {
     setState(next);
-    applyThemeClass(next.theme);
+    applyClasses(next);
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
     } catch {
@@ -96,6 +95,7 @@ export function UIProvider({ children }: { children: React.ReactNode }) {
       setLightEnabled: (v) => persist({ ...state, lightEnabled: v }),
       setSoundEnabled: (v) => persist({ ...state, soundEnabled: v }),
       setTheme: (t) => persist({ ...state, theme: t }),
+      setStyleTheme: (t) => persist({ ...state, styleTheme: t }),
     }),
     [state, ready, persist],
   );
