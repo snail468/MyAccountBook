@@ -3,7 +3,7 @@
 import { useEffect } from 'react';
 import { usePathname } from 'next/navigation';
 import { useUI } from './UIProvider';
-import { playFx, preloadSounds } from './fx';
+import { playFx, preloadSounds, unlockAudio } from './fx';
 
 function isInteractive(el: HTMLElement): boolean {
   let node: HTMLElement | null = el;
@@ -40,10 +40,33 @@ export default function FxDelegator() {
   const pathname = usePathname();
   const { lightEnabled, soundEnabled, ready } = useUI();
 
-  // 用户开启声音后就预加载两段音频
+  // 用户开启声音后就预下载 + 解码
   useEffect(() => {
     if (ready && soundEnabled) preloadSounds();
   }, [ready, soundEnabled]);
+
+  // iOS 冷启动锁死：在第一次 pointerdown 里同步解锁 AudioContext
+  // 这个监听绑在 document 上，且是"捕获阶段 + 一次性"，永远在其他任何点击处理之前跑
+  useEffect(() => {
+    if (!ready) return;
+    let done = false;
+    const unlock = () => {
+      if (done) return;
+      done = true;
+      unlockAudio();
+      document.removeEventListener('pointerdown', unlock, true);
+      document.removeEventListener('touchstart', unlock, true);
+      document.removeEventListener('click', unlock, true);
+    };
+    document.addEventListener('pointerdown', unlock, true);
+    document.addEventListener('touchstart', unlock, true);
+    document.addEventListener('click', unlock, true);
+    return () => {
+      document.removeEventListener('pointerdown', unlock, true);
+      document.removeEventListener('touchstart', unlock, true);
+      document.removeEventListener('click', unlock, true);
+    };
+  }, [ready]);
 
   useEffect(() => {
     if (!ready) return;

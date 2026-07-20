@@ -61,6 +61,8 @@ function spawnRipple(x: number, y: number) {
 export type SoundKey = 'home' | 'global';
 
 let sharedCtx: AudioContext | null = null;
+let unlocked = false;
+
 function getCtx(): AudioContext | null {
   if (typeof window === 'undefined') return null;
   const AC =
@@ -72,6 +74,28 @@ function getCtx(): AudioContext | null {
     sharedCtx.resume().catch(() => {});
   }
   return sharedCtx;
+}
+
+// iOS Safari: AudioContext 冷启动是 suspended 状态；必须在用户手势回调里 resume + 播一次静音才算解锁
+// 解锁完成前调 start() 也没声。这个函数应该在第一次 pointerdown / touchstart 时同步触发
+export function unlockAudio() {
+  if (unlocked) return;
+  const ctx = getCtx();
+  if (!ctx) return;
+  try {
+    ctx.resume().catch(() => {});
+    // 播一个 1 sample 的静音 buffer，iOS 认这个动作完成了解锁契约
+    const buf = ctx.createBuffer(1, 1, 22050);
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.connect(ctx.destination);
+    src.start(0);
+    unlocked = true;
+  } catch {
+    // ignore
+  }
+  // 同步顺手把两段声音的下载解码也踢一下
+  void preloadSounds();
 }
 
 type Loaded = { buffer: AudioBuffer; startOffset: number };

@@ -7,9 +7,11 @@ import { rewardMethodLabel } from '@/lib/rewardMethod';
 import { afterTaxCents, calcTaxCents } from '@/lib/tax';
 import type { Stage } from '@/lib/amounts';
 import Money from '@/components/ui/Money';
+import Lightbox from '@/components/ui/Lightbox';
 import type { ClientEvent } from './types';
 import { aggregateCount, aggregateSum } from './types';
 import StageDetail from './StageDetail';
+import EditEventModal from './EditEventModal';
 
 const STAGE_LABEL: Record<Stage, string> = {
   predicted: '预测收入',
@@ -46,6 +48,7 @@ export default function EventCard({
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
   const [zoomImg, setZoomImg] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
 
   const merged = event.children.length > 0;
 
@@ -167,13 +170,23 @@ export default function EventCard({
           )}
         </div>
         {!selecting && (
-          <button
-            onClick={del}
-            className="shrink-0 text-ink-300 hover:text-red-500 text-xs px-1"
-            aria-label="删除"
-          >
-            ✕
-          </button>
+          <div className="shrink-0 flex items-center gap-2">
+            <button
+              onClick={() => setEditing(true)}
+              className="text-ink-400 hover:text-ink-700 dark:hover:text-ink-100 text-xs px-1"
+              aria-label="编辑活动"
+              title="编辑"
+            >
+              ✎
+            </button>
+            <button
+              onClick={del}
+              className="text-ink-300 hover:text-red-500 text-xs px-1"
+              aria-label="删除"
+            >
+              ✕
+            </button>
+          </div>
         )}
       </div>
 
@@ -237,19 +250,17 @@ export default function EventCard({
         />
       )}
 
-      {zoomImg && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80"
-          onClick={() => setZoomImg(null)}
-        >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={zoomImg}
-            alt=""
-            className="max-w-full max-h-full"
-            onClick={(e) => e.stopPropagation()}
-          />
-        </div>
+      {zoomImg && <Lightbox src={zoomImg} onClose={() => setZoomImg(null)} />}
+
+      {editing && (
+        <EditEventModal
+          event={event}
+          onClose={() => setEditing(false)}
+          onSaved={() => {
+            setEditing(false);
+            startTransition(() => router.refresh());
+          }}
+        />
       )}
     </div>
   );

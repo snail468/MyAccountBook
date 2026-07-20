@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { prisma } from '@/lib/db';
 import { requireUserWithRole } from '@/lib/session';
+import Prefetcher from '@/components/ui/Prefetcher';
 import AdminUserList from './AdminUserList';
 
 export const dynamic = 'force-dynamic';
@@ -24,6 +25,7 @@ export default async function AdminPage() {
 
   return (
     <div className="px-6 pt-14 pb-20">
+      <Prefetcher routes={['/']} />
       <div className="flex items-center gap-3 mb-6">
         <Link href="/" className="text-ink-500 text-sm">‹ 返回</Link>
         <h1 className="text-2xl font-semibold flex-1">用户管理</h1>

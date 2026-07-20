@@ -5,10 +5,13 @@ import { useRef, useState } from 'react';
 export default function ImageUploader({
   value,
   onChange,
+  namePrefix,
   max = 9,
 }: {
   value: string[];
   onChange: (next: string[]) => void;
+  // 上传时用作文件名前缀（活动名）；服务端会自动清洗特殊字符 + 补编号
+  namePrefix?: string;
   max?: number;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -30,6 +33,7 @@ export default function ImageUploader({
       for (const f of list) {
         const fd = new FormData();
         fd.append('file', f);
+        if (namePrefix && namePrefix.trim()) fd.append('title', namePrefix.trim());
         const res = await fetch('/api/events/upload', { method: 'POST', body: fd });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || '上传失败');

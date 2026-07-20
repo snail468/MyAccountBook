@@ -1,44 +1,35 @@
 'use client';
 
-import { useState, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState } from 'react';
 import { REWARD_METHODS, rewardMethodLabel } from '@/lib/rewardMethod';
-import { localInputToISO } from '@/lib/datetime';
+import { localInputToISO, toLocalInput } from '@/lib/datetime';
 import ImageUploader from './ImageUploader';
+import type { ClientEvent } from './types';
 
-export default function NewEventButton() {
-  const router = useRouter();
-  const [, startTransition] = useTransition();
-  const [open, setOpen] = useState(false);
-  const [title, setTitle] = useState('');
-  const [startAt, setStartAt] = useState('');
-  const [deadline, setDeadline] = useState('');
-  const [content, setContent] = useState('');
-  const [contentImages, setContentImages] = useState<string[]>([]);
-  const [reward, setReward] = useState('');
-  const [rewardMethods, setRewardMethods] = useState<string[]>([]);
+export default function EditEventModal({
+  event,
+  onClose,
+  onSaved,
+}: {
+  event: ClientEvent;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [title, setTitle] = useState(event.title);
+  const [startAt, setStartAt] = useState(event.startAt ? toLocalInput(event.startAt) : '');
+  const [deadline, setDeadline] = useState(
+    event.deadline ? toLocalInput(event.deadline) : '',
+  );
+  const [content, setContent] = useState(event.content ?? '');
+  const [contentImages, setContentImages] = useState<string[]>(event.contentImages);
+  const [reward, setReward] = useState(event.reward ?? '');
+  const [rewardMethods, setRewardMethods] = useState<string[]>(event.rewardMethods);
   const [customMethod, setCustomMethod] = useState('');
-  const [topicTag, setTopicTag] = useState('');
-  const [participate, setParticipate] = useState(true);
-  const [note, setNote] = useState('');
+  const [topicTag, setTopicTag] = useState(event.topicTag ?? '');
+  const [participate, setParticipate] = useState(event.participate);
+  const [note, setNote] = useState(event.note ?? '');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
-
-  function reset() {
-    setOpen(false);
-    setTitle('');
-    setStartAt('');
-    setDeadline('');
-    setContent('');
-    setContentImages([]);
-    setReward('');
-    setRewardMethods([]);
-    setCustomMethod('');
-    setTopicTag('');
-    setParticipate(true);
-    setNote('');
-    setError('');
-  }
 
   function toggleMethod(m: string) {
     setRewardMethods((prev) =>
@@ -63,10 +54,11 @@ export default function NewEventButton() {
     }
     setSaving(true);
     try {
-      const res = await fetch('/api/events', {
-        method: 'POST',
+      const res = await fetch(`/api/events/${event.id}`, {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          action: 'meta',
           title: title.trim(),
           participate,
           startAt: localInputToISO(startAt),
@@ -81,8 +73,7 @@ export default function NewEventButton() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || '保存失败');
-      reset();
-      startTransition(() => router.refresh());
+      onSaved();
     } catch (err) {
       setError(err instanceof Error ? err.message : '保存失败');
     } finally {
@@ -90,27 +81,16 @@ export default function NewEventButton() {
     }
   }
 
-  if (!open) {
-    return (
-      <button
-        onClick={() => setOpen(true)}
-        className="w-full py-4 rounded-2xl bg-ink-900 dark:bg-ink-100 text-white dark:text-ink-900 text-base font-medium active:scale-[0.98] transition"
-      >
-        + 新活动
-      </button>
-    );
-  }
-
   return (
     <div
       className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40"
-      onClick={reset}
+      onClick={onClose}
     >
       <div
         className="w-full max-w-md bg-white dark:bg-ink-900 rounded-t-3xl sm:rounded-3xl p-6 max-h-[90dvh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="text-lg font-medium mb-4">新活动</h3>
+        <h3 className="text-lg font-medium mb-4">编辑活动</h3>
 
         <Field label="活动名 *">
           <input
@@ -262,7 +242,7 @@ export default function NewEventButton() {
 
         {error && <p className="text-red-500 text-sm mt-2">{error}</p>}
         <div className="mt-4 flex gap-2">
-          <button onClick={reset} className="flex-1 py-3 rounded-2xl bg-ink-50 dark:bg-ink-800">
+          <button onClick={onClose} className="flex-1 py-3 rounded-2xl bg-ink-50 dark:bg-ink-800">
             取消
           </button>
           <button
@@ -270,7 +250,7 @@ export default function NewEventButton() {
             disabled={saving}
             className="flex-1 py-3 rounded-2xl bg-ink-900 dark:bg-ink-100 text-white dark:text-ink-900 disabled:opacity-50"
           >
-            {saving ? '保存中…' : '发布'}
+            {saving ? '保存中…' : '保存'}
           </button>
         </div>
       </div>
