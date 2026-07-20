@@ -11,94 +11,191 @@ model User {
   id           String   @id @default(cuid())
   username     String   @unique
   passwordHash String
-  role         String   @default("user")   // "admin" | "user"
+  role         String   @default("user")
   createdAt    DateTime @default(now())
 
-  entries Entry[]
-  events  Event[]
+  entries       Entry[]
+  events        Event[]
+  ledgers       Ledger[]
+  memberships   TripMember[]
 }
 
-// 工作账本条目
+// ============ 工作账本 (built-in kind="work") ============
 model Entry {
-  id        String   @id @default(cuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  yearMonth String
-  category  String
-  direction String
-  amountCents Int
-  note      String?
-
-  occurredAt DateTime @default(now())
-  refundedAt DateTime?
-
-  createdAt DateTime @default(now())
+  id           String    @id @default(cuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  yearMonth    String
+  category     String
+  direction    String
+  amountCents  Int
+  note         String?
+  occurredAt   DateTime  @default(now())
+  refundedAt   DateTime?
+  createdAt    DateTime  @default(now())
 
   @@index([userId, yearMonth])
 }
 
-// 桃源活动
-// 状态由 amounts 派生：有 paid → paid；有 announced → announced；有 predicted → predicted；否则 published
-// 旧的 predictedCents/announcedCents/paidCents 保留作为兼容层，新数据走 EventAmount
+// ============ 桃源账本 (built-in kind="taoyuan") ============
 model Event {
-  id        String   @id @default(cuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  title       String
-  startAt     DateTime?
-  content     String?
-
-  // 兼容：旧单值 rewardMethod。新版用 rewardMethods (JSON array) 支持多选 + 自定义（"custom:名字"）
-  rewardMethod  String?
-  rewardMethods String?
-
-  reward      String?
-  topicTag    String?
-
-  // 内容图片 JSON array of URL strings
-  contentImages String?
-
-  publishedAt DateTime @default(now())
-  participate Boolean  @default(true)
-  deadline    DateTime?
-
-  // 旧单值兼容（无 EventAmount 时作为 fallback）
+  id             String        @id @default(cuid())
+  userId         String
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title          String
+  startAt        DateTime?
+  content        String?
+  rewardMethod   String?
+  rewardMethods  String?
+  reward         String?
+  topicTag       String?
+  contentImages  String?
+  publishedAt    DateTime      @default(now())
+  participate    Boolean       @default(true)
+  deadline       DateTime?
   predictedCents Int?
   announcedCents Int?
   paidCents      Int?
   predictedAt    DateTime?
   announcedAt    DateTime?
   paidAt         DateTime?
-
-  status String @default("published")
-  note   String?
-
-  parentId  String?
-  parent    Event?  @relation("EventMerge", fields: [parentId], references: [id], onDelete: SetNull)
-  children  Event[] @relation("EventMerge")
-
-  amounts   EventAmount[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  status         String        @default("published")
+  note           String?
+  parentId       String?
+  parent         Event?        @relation("EventMerge", fields: [parentId], references: [id], onDelete: SetNull)
+  children       Event[]       @relation("EventMerge")
+  amounts        EventAmount[]
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
 
   @@index([userId, status])
   @@index([parentId])
 }
 
-// 单个活动某个阶段可以有多条金额
 model EventAmount {
   id           String   @id @default(cuid())
   eventId      String
   event        Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  stage        String   // 'predicted' | 'announced' | 'paid'
+  stage        String
   cents        Int
   note         String?
-  rewardMethod String?  // 该笔金额自带的发放方式（仅 paid 阶段进入 A/C/D 归类）
+  rewardMethod String?
   occurredAt   DateTime @default(now())
   createdAt    DateTime @default(now())
 
   @@index([eventId, stage])
+}
+
+// ============ 账本 (通用容器) ============
+// kind: work | taoyuan | general | travel
+//   work / taoyuan: 仅作为"用户已启用"的标记，实际数据在 Entry / Event
+//   general: 数据在 GeneralEntry
+//   travel: 数据在 TripExpense + TripMember + TripSplit
+model Ledger {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind      String
+  name      String
+  icon      String?
+  color     String?
+  order     Int      @default(0)
+  archived  Boolean  @default(false)
+
+  // 普通账本：月度总预算
+  budgetCents Int?
+
+  // 旅游账本：本币 + 日期
+  baseCurrency String?
+  startDate    DateTime?
+  endDate      DateTime?
+
+  entries      GeneralEntry[]
+  tripMembers  TripMember[]
+  tripExpenses TripExpense[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, order])
+  // 唯一性由应用层保证：work/taoyuan 每用户仅一条；general/travel 可多条
+}
+
+// ============ 普通账本条目 ============
+model GeneralEntry {
+  id          String   @id @default(cuid())
+  ledgerId    String
+  ledger      Ledger   @relation(fields: [ledgerId], references: [id], onDelete: Cascade)
+  direction   String   // "income" | "expense"
+  category    String
+  amountCents Int
+  tags        String?  // 逗号分隔
+  note        String?
+  imageUrls   String?  // JSON array
+  occurredAt  DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  @@index([ledgerId, occurredAt])
+}
+
+// ============ 旅游账本 ============
+model TripMember {
+  id          String   @id @default(cuid())
+  ledgerId    String
+  ledger      Ledger   @relation(fields: [ledgerId], references: [id], onDelete: Cascade)
+  userId      String?  // 应用内用户；null 表示纯名字占位
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  displayName String
+  createdAt   DateTime @default(now())
+
+  paidExpenses TripExpense[]
+  splits       TripSplit[]
+
+  @@index([ledgerId])
+}
+
+model TripExpense {
+  id                 String   @id @default(cuid())
+  ledgerId           String
+  ledger             Ledger   @relation(fields: [ledgerId], references: [id], onDelete: Cascade)
+  payerId            String
+  payer              TripMember @relation(fields: [payerId], references: [id], onDelete: Cascade)
+  title              String
+  category           String
+  phase              String   // "pre" | "during"
+  currency           String   // "CNY" | "JPY" | ...
+  amountForeignCents Int      // 外币，以分为单位
+  rate               Float    // 1 外币 = rate 本币
+  amountBaseCents    Int      // 本币，冗余存储便于查询
+  note               String?
+  imageUrls          String?  // JSON array
+  occurredAt         DateTime @default(now())
+  createdAt          DateTime @default(now())
+
+  splits TripSplit[]
+
+  @@index([ledgerId, phase])
+}
+
+model TripSplit {
+  id         String @id @default(cuid())
+  expenseId  String
+  expense    TripExpense @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  memberId   String
+  member     TripMember  @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  shareCents Int  // 该成员应承担的本币金额（分）
+
+  @@index([expenseId])
+  @@index([memberId])
+}
+
+// ============ 汇率缓存 ============
+model CurrencyRate {
+  id         String   @id @default(cuid())
+  base       String   // 通常固定 "CNY"
+  quote      String
+  rate       Float    // 1 quote = rate base
+  fetchedAt  DateTime @default(now())
+
+  @@unique([base, quote])
 }
