@@ -94,10 +94,12 @@ async function r2Put(key: string, body: Uint8Array, contentType: string) {
   const bucket = process.env.R2_BUCKET!;
   const url = `${r2Endpoint()}/${bucket}/${key}`;
   const headers = await signR2Request('PUT', url, body, contentType);
+  // TS 5.7+ 里 Uint8Array<ArrayBufferLike> 不再满足 BodyInit —— 拷成独立 ArrayBuffer
+  const ab = body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength) as ArrayBuffer;
   const res = await fetch(url, {
     method: 'PUT',
     headers,
-    body,
+    body: ab,
   });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
@@ -186,9 +188,16 @@ async function signR2Request(
   };
 }
 
+// TS 5.7+：Uint8Array<ArrayBufferLike> 不满足 DOM BufferSource（可能背靠
+// SharedArrayBuffer）。我们的数据都来自 TextEncoder/digest，实际都是普通
+// ArrayBuffer —— 统一 cast 收敛类型
+function asBufferSource(data: Uint8Array): BufferSource {
+  return data as unknown as BufferSource;
+}
+
 async function sha256(data: Uint8Array): Promise<Uint8Array> {
   if (typeof crypto !== 'undefined' && crypto.subtle) {
-    const buf = await crypto.subtle.digest('SHA-256', data);
+    const buf = await crypto.subtle.digest('SHA-256', asBufferSource(data));
     return new Uint8Array(buf);
   }
   return new Uint8Array(createHash('sha256').update(data).digest());
@@ -198,12 +207,16 @@ async function hmac(key: Uint8Array, msg: string): Promise<Uint8Array> {
   if (typeof crypto !== 'undefined' && crypto.subtle) {
     const cryptoKey = await crypto.subtle.importKey(
       'raw',
-      key,
+      asBufferSource(key),
       { name: 'HMAC', hash: 'SHA-256' },
       false,
       ['sign'],
     );
-    const buf = await crypto.subtle.sign('HMAC', cryptoKey, new TextEncoder().encode(msg));
+    const buf = await crypto.subtle.sign(
+      'HMAC',
+      cryptoKey,
+      asBufferSource(new TextEncoder().encode(msg)),
+    );
     return new Uint8Array(buf);
   }
   return new Uint8Array(createHmac('sha256', key).update(msg).digest());
