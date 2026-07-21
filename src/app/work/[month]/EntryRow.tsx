@@ -5,6 +5,7 @@ import { useState, useTransition } from 'react';
 import { formatYuan } from '@/lib/money';
 import { formatShort, localInputToISO, toLocalInput } from '@/lib/datetime';
 import Money from '@/components/ui/Money';
+import EditEntryModal from './EditEntryModal';
 
 type Props = {
   id: string;
@@ -27,6 +28,7 @@ export default function EntryRow(props: Props) {
   const [showRefundDialog, setShowRefundDialog] = useState(false);
   const [refundInput, setRefundInput] = useState<string>(() => toLocalInput(new Date()));
   const [error, setError] = useState('');
+  const [editing, setEditing] = useState(false);
 
   const refunded = !!optimisticRefundedAt;
 
@@ -133,6 +135,14 @@ export default function EntryRow(props: Props) {
       )}
 
       <button
+        onClick={() => setEditing(true)}
+        className="shrink-0 text-ink-400 hover:text-ink-700 dark:hover:text-ink-100 text-xs px-1"
+        aria-label="编辑"
+        title="编辑"
+      >
+        ✎
+      </button>
+      <button
         onClick={del}
         className="shrink-0 text-ink-300 hover:text-red-500 text-xs px-1"
         aria-label="删除"
@@ -177,6 +187,24 @@ export default function EntryRow(props: Props) {
             </div>
           </div>
         </div>
+      )}
+
+      {editing && (
+        <EditEntryModal
+          entry={{
+            id: props.id,
+            category: props.category,
+            direction: props.direction,
+            amountCents: props.amountCents,
+            note: props.note,
+            occurredAt: props.occurredAt,
+          }}
+          onClose={() => setEditing(false)}
+          onSaved={() => {
+            setEditing(false);
+            startTransition(() => router.refresh());
+          }}
+        />
       )}
     </div>
   );

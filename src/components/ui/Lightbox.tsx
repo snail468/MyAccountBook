@@ -9,9 +9,8 @@ type Point = { x: number; y: number };
  *  - 双指捏合缩放（1x – 6x）
  *  - 单指拖拽平移（仅在放大时）
  *  - 双击切换 放大 / 还原
- *  - 右上角大号 ✕ 关闭按钮
- *  - 点击图片外围（黑色遮罩）也关闭
- *  - Esc 关闭
+ *  - 右上角大号 ✕ 关闭按钮（唯一关闭方式，避免手抖误退）
+ *  - Esc 关闭（键盘）
  */
 export default function Lightbox({
   src,
@@ -29,8 +28,6 @@ export default function Lightbox({
   const initialScale = useRef(1);
   const panStart = useRef<Point>({ x: 0, y: 0 });
   const lastTapAt = useRef(0);
-  const pointerDownAt = useRef(0);
-  const pointerDownPos = useRef<Point>({ x: 0, y: 0 });
 
   // 打开时锁定 body 滚动 + Esc 关闭
   useEffect(() => {
@@ -65,8 +62,6 @@ export default function Lightbox({
     if ((e.target as HTMLElement).closest('[data-lightbox-close]')) return;
     (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    pointerDownAt.current = Date.now();
-    pointerDownPos.current = { x: e.clientX, y: e.clientY };
 
     if (pointers.current.size === 2) {
       const [a, b] = [...pointers.current.values()];
@@ -106,29 +101,14 @@ export default function Lightbox({
   }
 
   function onPointerUp(e: React.PointerEvent) {
-    const startPos = pointerDownPos.current;
-    const moved = Math.hypot(e.clientX - startPos.x, e.clientY - startPos.y);
-    const dt = Date.now() - pointerDownAt.current;
-
     pointers.current.delete(e.pointerId);
 
-    // 缩放后如果小于 1.02 视为回到 1x，顺手复位平移
+    // 缩放后如果小于 1.05 视为回到 1x，顺手复位平移
     if (pointers.current.size === 0 && scale < 1.05) {
       reset();
     }
-
-    // 极小移动 + 短时间 + 无缩放 → 视为点击遮罩背景，关闭
-    if (
-      pointers.current.size === 0 &&
-      moved < 8 &&
-      dt < 250 &&
-      scale === 1 &&
-      Date.now() - lastTapAt.current >= 300 // 排除刚触发过双击
-    ) {
-      // 仅当命中的是遮罩本身（不是图片）时关闭；图片单击不关，避免误触
-      const target = e.target as HTMLElement;
-      if (target.dataset.lightboxBackdrop === 'true') onClose();
-    }
+    // 不做背景 tap-to-close：手势与双击缩放会互相干扰，
+    // 也避免手抖误退。要退请点右上 ✕ 或按 Esc。
   }
 
   return (
@@ -166,7 +146,7 @@ export default function Lightbox({
       </button>
 
       <div className="absolute bottom-6 left-0 right-0 text-center text-xs text-white/60 pointer-events-none select-none">
-        双指缩放 · 双击放大 / 还原 · 点击背景关闭
+        双指缩放 · 双击放大 / 还原 · 右上角 ✕ 关闭
       </div>
     </div>
   );

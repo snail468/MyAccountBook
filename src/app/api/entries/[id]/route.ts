@@ -17,6 +17,7 @@ const patchSchema = z.union([
     note: z.string().max(200).nullable().optional(),
     occurredAt: z.string().datetime().nullable().optional(),
     category: z.string().trim().min(1).max(32).optional(),
+    direction: z.enum(['income', 'expense']).optional(),
   }),
 ]);
 
@@ -49,6 +50,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (p.note !== undefined) data.note = p.note?.trim() || null;
   if (p.occurredAt !== undefined) data.occurredAt = p.occurredAt ? new Date(p.occurredAt) : null;
   if (p.category !== undefined) data.category = p.category;
+  if (p.direction !== undefined) data.direction = p.direction;
   await prisma.entry.update({ where: { id }, data });
   return NextResponse.json({ ok: true });
 }
