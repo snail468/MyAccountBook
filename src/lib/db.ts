@@ -10,29 +10,43 @@ declare global {
 // —— 双模式 ——
 //   Docker / 本地：TURSO_DATABASE_URL 未设 → 走 file:./data/app.db（保持不变）
 //   Cloudflare / 远端 SQLite：TURSO_DATABASE_URL 设了 → 用 libsql 适配器
+// 用 Function('return require')() 绕开 webpack 静态分析 ——
+// 让 Docker 构建即便没装 @prisma/adapter-libsql / @libsql/client 也不会
+// 产生 "Module not found" 警告；CF 构建时才真正 require 到。
+function opaqueRequire(id: string): unknown {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-implied-eval, no-new-func
+    const req = Function('return require')() as NodeJS.Require;
+    return req(id);
+  } catch {
+    return null;
+  }
+}
+
 function createPrisma(): PrismaClient {
   const tursoUrl = process.env.TURSO_DATABASE_URL;
   if (tursoUrl) {
-    // 动态导入 —— libsql 依赖只在 CF 部署时需要安装
-    // 使用 require 保证不会被 Next.js 打包到主 bundle 里
-    /* eslint-disable @typescript-eslint/no-var-requires, @typescript-eslint/no-explicit-any */
-    try {
-      const { PrismaLibSQL } = require('@prisma/adapter-libsql');
-      const { createClient } = require('@libsql/client');
-      const libsql = createClient({
-        url: tursoUrl,
-        authToken: process.env.TURSO_AUTH_TOKEN,
-      });
-      const adapter = new PrismaLibSQL(libsql);
-      return new PrismaClient({
-        adapter,
-        log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
-      } as any);
-    } catch (err) {
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    const adapterMod = opaqueRequire('@prisma/adapter-libsql') as any;
+    const clientMod = opaqueRequire('@libsql/client') as any;
+    if (adapterMod?.PrismaLibSQL && clientMod?.createClient) {
+      try {
+        const libsql = clientMod.createClient({
+          url: tursoUrl,
+          authToken: process.env.TURSO_AUTH_TOKEN,
+        });
+        const adapter = new adapterMod.PrismaLibSQL(libsql);
+        return new PrismaClient({
+          adapter,
+          log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
+        } as any);
+      } catch (err) {
+        console.error('[db] 初始化 libsql 适配器失败，回退本地 SQLite:', err);
+      }
+    } else {
       console.error(
-        '[db] TURSO_DATABASE_URL 已设置但未能加载 @prisma/adapter-libsql / @libsql/client。' +
-          '请 npm i @prisma/adapter-libsql @libsql/client 后重试。回退到本地 SQLite。',
-        err,
+        '[db] TURSO_DATABASE_URL 已设置但 @prisma/adapter-libsql / @libsql/client 未安装。' +
+          '请先跑 npm run cf:setup。回退到本地 SQLite。',
       );
     }
     /* eslint-enable */

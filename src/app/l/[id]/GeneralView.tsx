@@ -411,7 +411,7 @@ function EntryForm({
     tags: string | null;
     note: string | null;
     imageUrls: string[];
-    occurredAt: string;
+    occurredAt: string | null;
   }) => void;
   onCancel: () => void;
   onManageCategories?: () => void;
