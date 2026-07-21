@@ -6,6 +6,7 @@ import { formatYuan } from '@/lib/money';
 import { formatShort, localInputToISO, toLocalInput } from '@/lib/datetime';
 import Money from '@/components/ui/Money';
 import EditEntryModal from './EditEntryModal';
+import { useConfirm } from '@/components/ui/Dialog';
 
 type Props = {
   id: string;
@@ -29,11 +30,18 @@ export default function EntryRow(props: Props) {
   const [refundInput, setRefundInput] = useState<string>(() => toLocalInput(new Date()));
   const [error, setError] = useState('');
   const [editing, setEditing] = useState(false);
+  const confirm = useConfirm();
 
   const refunded = !!optimisticRefundedAt;
 
   async function del() {
-    if (!confirm(`删除这笔 "${props.category}" ${formatYuan(props.amountCents)} 元？`)) return;
+    const ok = await confirm({
+      title: `删除这笔 "${props.category}"？`,
+      body: `${formatYuan(props.amountCents)} 元`,
+      danger: true,
+      confirmText: '删除',
+    });
+    if (!ok) return;
     setHidden(true); // 乐观：立刻消失
     try {
       const res = await fetch(`/api/entries/${props.id}`, { method: 'DELETE' });
@@ -45,12 +53,12 @@ export default function EntryRow(props: Props) {
   }
 
   async function unrefund() {
-    if (
-      !confirm(
-        `确认未回款，恢复出项吗？\n\n"${props.category}" ${formatYuan(props.amountCents)} 元`,
-      )
-    )
-      return;
+    const ok = await confirm({
+      title: '撤销回款？',
+      body: `"${props.category}" ${formatYuan(props.amountCents)} 元将恢复为出项。`,
+      confirmText: '撤销',
+    });
+    if (!ok) return;
     const prev = optimisticRefundedAt;
     setOptimisticRefundedAt(null);
     try {

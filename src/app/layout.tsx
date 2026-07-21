@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { UIProvider } from '@/components/ui/UIProvider';
+import { DialogProvider } from '@/components/ui/Dialog';
 import FloatingToolbar from '@/components/ui/FloatingToolbar';
 import FxDelegator from '@/components/ui/FxDelegator';
 import GlobalProgress from '@/components/ui/GlobalProgress';
@@ -50,10 +51,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body>
         <UIProvider>
-          <GlobalProgress />
-          <FxDelegator />
-          <FloatingToolbar />
-          <div className="mx-auto max-w-md min-h-dvh pb-20">{children}</div>
+          <DialogProvider>
+            <GlobalProgress />
+            <FxDelegator />
+            <FloatingToolbar />
+            <div className="mx-auto max-w-md min-h-dvh pb-20">{children}</div>
+          </DialogProvider>
         </UIProvider>
         <script
           dangerouslySetInnerHTML={{

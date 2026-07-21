@@ -7,7 +7,36 @@ declare global {
   var __xydWalConfigured: boolean | undefined;
 }
 
-function createPrisma() {
+// —— 双模式 ——
+//   Docker / 本地：TURSO_DATABASE_URL 未设 → 走 file:./data/app.db（保持不变）
+//   Cloudflare / 远端 SQLite：TURSO_DATABASE_URL 设了 → 用 libsql 适配器
+function createPrisma(): PrismaClient {
+  const tursoUrl = process.env.TURSO_DATABASE_URL;
+  if (tursoUrl) {
+    // 动态导入 —— libsql 依赖只在 CF 部署时需要安装
+    // 使用 require 保证不会被 Next.js 打包到主 bundle 里
+    /* eslint-disable @typescript-eslint/no-var-requires, @typescript-eslint/no-explicit-any */
+    try {
+      const { PrismaLibSQL } = require('@prisma/adapter-libsql');
+      const { createClient } = require('@libsql/client');
+      const libsql = createClient({
+        url: tursoUrl,
+        authToken: process.env.TURSO_AUTH_TOKEN,
+      });
+      const adapter = new PrismaLibSQL(libsql);
+      return new PrismaClient({
+        adapter,
+        log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
+      } as any);
+    } catch (err) {
+      console.error(
+        '[db] TURSO_DATABASE_URL 已设置但未能加载 @prisma/adapter-libsql / @libsql/client。' +
+          '请 npm i @prisma/adapter-libsql @libsql/client 后重试。回退到本地 SQLite。',
+        err,
+      );
+    }
+    /* eslint-enable */
+  }
   return new PrismaClient({
     log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
   });
@@ -20,14 +49,16 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 // 单次初始化：开 WAL + 设 busy timeout。让多人同时读写不互相锁死。
+// Turso 是远端服务不需要 PRAGMA，跳过。
 async function configureSqlite(client: PrismaClient) {
   if (global.__xydWalConfigured) return;
+  if (process.env.TURSO_DATABASE_URL) {
+    global.__xydWalConfigured = true;
+    return;
+  }
   try {
-    // WAL：读写可并发（读不阻塞写、写不阻塞读）
     await client.$executeRawUnsafe('PRAGMA journal_mode=WAL');
-    // 遇到锁最多等 5 秒再报错，避免瞬时冲突直接失败
     await client.$executeRawUnsafe('PRAGMA busy_timeout=5000');
-    // 完全同步太慢，NORMAL 在 WAL 下已经很安全
     await client.$executeRawUnsafe('PRAGMA synchronous=NORMAL');
     global.__xydWalConfigured = true;
   } catch (err) {
@@ -35,5 +66,4 @@ async function configureSqlite(client: PrismaClient) {
   }
 }
 
-// 首次导入 db 时就跑一次
 void configureSqlite(prisma);

@@ -12,6 +12,7 @@ import type { ClientEvent } from './types';
 import { aggregateCount, aggregateSum } from './types';
 import StageDetail from './StageDetail';
 import EditEventModal from './EditEventModal';
+import { useConfirm } from '@/components/ui/Dialog';
 
 const STAGE_LABEL: Record<Stage, string> = {
   predicted: '预测收入',
@@ -49,6 +50,7 @@ export default function EventCard({
   const [copied, setCopied] = useState(false);
   const [zoomImg, setZoomImg] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
+  const confirm = useConfirm();
 
   const merged = event.children.length > 0;
 
@@ -64,8 +66,13 @@ export default function EventCard({
   };
 
   async function del() {
-    if (!confirm(`删除活动 "${event.title}"？${merged ? '子活动会被恢复为独立活动。' : ''}`))
-      return;
+    const ok = await confirm({
+      title: `删除活动 "${event.title}"？`,
+      body: merged ? '子活动会被恢复为独立活动。' : '此活动的所有金额记录会一并删除。',
+      danger: true,
+      confirmText: '删除',
+    });
+    if (!ok) return;
     setHidden(true);
     try {
       const res = await fetch(`/api/events/${event.id}`, { method: 'DELETE' });
@@ -306,11 +313,13 @@ function StageButton({
 
 function ChildRow({ child, onChange }: { child: ClientEvent; onChange: () => void }) {
   const [busy, setBusy] = useState(false);
+  const confirm = useConfirm();
   const pSum = aggregateSum(child, 'predicted');
   const aSum = aggregateSum(child, 'announced');
   const paidSum = aggregateSum(child, 'paid');
   async function detach() {
-    if (!confirm(`把 "${child.title}" 摘出？`)) return;
+    const ok = await confirm({ title: `把 "${child.title}" 摘出？`, body: '会恢复为独立活动。', confirmText: '摘出' });
+    if (!ok) return;
     setBusy(true);
     const res = await fetch(`/api/events/${child.id}/unmerge`, { method: 'POST' });
     if (res.ok) onChange();

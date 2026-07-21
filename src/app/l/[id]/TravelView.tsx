@@ -10,6 +10,7 @@ import { computeSettlement } from '@/lib/settlement';
 import TripExpenseModal from './TripExpenseModal';
 import TripMembersModal from './TripMembersModal';
 import TripFunReport from './TripFunReport';
+import { useConfirm } from '@/components/ui/Dialog';
 
 export type Member = { id: string; userId: string | null; displayName: string };
 
@@ -52,9 +53,11 @@ export default function TravelView({
   const [, startTransition] = useTransition();
   const [phase, setPhase] = useState<'pre' | 'during'>('during');
   const [showAdd, setShowAdd] = useState(false);
+  const [editing, setEditing] = useState<Expense | null>(null);
   const [showMembers, setShowMembers] = useState(false);
   const [showReport, setShowReport] = useState(false);
   const [zoomImg, setZoomImg] = useState<string | null>(null);
+  const confirm = useConfirm();
 
   const phaseList = expenses.filter((e) => e.phase === phase);
   const preTotal = expenses
@@ -85,8 +88,13 @@ export default function TravelView({
   const transfers = useMemo(() => computeSettlement(balances), [balances]);
 
   async function del(exp: Expense) {
-    if (!confirm(`删除 "${exp.title}" ${(exp.amountBaseCents / 100).toFixed(2)} ${ledger.baseCurrency}？`))
-      return;
+    const ok = await confirm({
+      title: `删除 "${exp.title}"？`,
+      body: `${(exp.amountBaseCents / 100).toFixed(2)} ${ledger.baseCurrency}`,
+      danger: true,
+      confirmText: '删除',
+    });
+    if (!ok) return;
     const res = await fetch(`/api/ledgers/${ledger.id}/expenses/${exp.id}`, {
       method: 'DELETE',
     });
@@ -182,6 +190,7 @@ export default function TravelView({
             expense={e}
             baseCurrency={ledger.baseCurrency}
             members={members}
+            onEdit={() => setEditing(e)}
             onDelete={() => del(e)}
             onZoomImage={setZoomImg}
           />
@@ -230,6 +239,35 @@ export default function TravelView({
         />
       )}
 
+      {editing && (
+        <TripExpenseModal
+          ledgerId={ledger.id}
+          baseCurrency={ledger.baseCurrency}
+          members={members}
+          defaultPhase={editing.phase}
+          editing={{
+            id: editing.id,
+            title: editing.title,
+            category: editing.category,
+            phase: editing.phase,
+            currency: editing.currency,
+            amountForeignCents: editing.amountForeignCents,
+            rate: editing.rate,
+            amountBaseCents: editing.amountBaseCents,
+            note: editing.note,
+            imageUrls: editing.imageUrls,
+            occurredAt: editing.occurredAt,
+            payerId: editing.payerId,
+            splits: editing.splits,
+          }}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null);
+            startTransition(() => router.refresh());
+          }}
+        />
+      )}
+
       {showMembers && (
         <TripMembersModal
           ledgerId={ledger.id}
@@ -259,12 +297,14 @@ function ExpenseRow({
   expense,
   baseCurrency,
   members,
+  onEdit,
   onDelete,
   onZoomImage,
 }: {
   expense: Expense;
   baseCurrency: string;
   members: Member[];
+  onEdit: () => void;
   onDelete: () => void;
   onZoomImage: (url: string) => void;
 }) {
@@ -318,6 +358,14 @@ function ExpenseRow({
             </div>
           )}
         </div>
+        <button
+          onClick={onEdit}
+          className="text-ink-400 hover:text-ink-700 dark:hover:text-ink-100 text-xs px-1"
+          aria-label="编辑"
+          title="编辑"
+        >
+          ✎
+        </button>
         <button
           onClick={onDelete}
           className="text-ink-300 hover:text-red-500 text-xs px-1"

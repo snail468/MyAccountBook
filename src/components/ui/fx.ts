@@ -1,9 +1,10 @@
-// 光效：只保留星空涟漪
-// 音效：HTMLAudioElement 直接播放两段 mp3
-//   - 走系统"通知音"通道，音量随用户设备设置
-//   - 手势里 .play() 直接生效，不再依赖 Web Audio unlock
-//   - .volume = 0.35 保守默认，避免 iOS 首次媒体会话时音量突然被拉到最大
-//   - Web Audio 仅用于一次性探测头部静音的偏移量，探完就释放
+// 光效：星空涟漪
+// 音效：Web Audio API（AudioContext + AudioBuffer + AudioBufferSourceNode）
+//   - 冷启动首次 pointerdown 里 resume() AudioContext（iOS/Android 解锁点）
+//   - 预 fetch + decodeAudioData 得到 AudioBuffer，之后每次点击都 new 一个
+//     AudioBufferSourceNode 播放 —— 零延迟、可从任意 offset 播放、不会
+//     "被上一次点击的播放头顶回后半段"
+//   - 静音头 offset 直接在解码后的 buffer 上算出来，start(0, offset) 即精确跳过
 
 // —— 光效 ——
 const RIPPLE_COLOR = 'rgba(139, 109, 208, 0.7)';
@@ -68,129 +69,140 @@ const AUDIO_URLS: Record<SoundKey, string> = {
   global: '/audio/global.mp3',
 };
 
-const DEFAULT_VOLUME = 0.35;
+const DEFAULT_GAIN = 0.5;
 
-type Slot = {
-  el: HTMLAudioElement;
-  startOffsetSec: number;
-  detected: boolean;
-};
+type Buf = { buffer: AudioBuffer; startOffsetSec: number };
 
-const slots: Partial<Record<SoundKey, Slot>> = {};
+let ac: AudioContext | null = null;
+let masterGain: GainNode | null = null;
+const buffers: Partial<Record<SoundKey, Buf>> = {};
+const pendingDecodes: Partial<Record<SoundKey, Promise<void>>> = {};
+let unlocked = false;
 
-function ensureSlot(key: SoundKey): Slot | null {
+function getAC(): AudioContext | null {
   if (typeof window === 'undefined') return null;
-  if (slots[key]) return slots[key]!;
-  const el = new Audio(AUDIO_URLS[key]);
-  el.preload = 'auto';
-  el.volume = DEFAULT_VOLUME;
-  // iOS: playsinline 保险
-  el.setAttribute('playsinline', '');
-  // 静音段探测：拉一份解码看首个非静音位置
-  const slot: Slot = { el, startOffsetSec: 0, detected: false };
-  slots[key] = slot;
-  detectSilenceHead(AUDIO_URLS[key]).then((offset) => {
-    slot.startOffsetSec = offset;
-    slot.detected = true;
-  });
-  return slot;
-}
-
-// 用一次性 AudioContext 探测头部静音，探完立刻 close 释放
-async function detectSilenceHead(url: string): Promise<number> {
+  if (ac) return ac;
+  const AC =
+    window.AudioContext ||
+    (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  if (!AC) return null;
   try {
-    const AC =
-      window.AudioContext ||
-      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    if (!AC) return 0;
-    const res = await fetch(url);
-    if (!res.ok) return 0;
-    const arr = await res.arrayBuffer();
-    const ctx = new AC();
-    const buffer = await ctx.decodeAudioData(arr).finally(() => {
-      // decodeAudioData 完成后关闭 context
-    });
-    await ctx.close();
-    const data = buffer.getChannelData(0);
-    const sr = buffer.sampleRate;
-    const windowSize = Math.max(1, Math.floor(sr * 0.008)); // 8ms 窗
-    const threshold = 0.02;
-    for (let i = 0; i < data.length - windowSize; i += windowSize) {
-      let sum = 0;
-      for (let j = 0; j < windowSize; j++) sum += data[i + j] * data[i + j];
-      const rms = Math.sqrt(sum / windowSize);
-      if (rms > threshold) {
-        const back = Math.floor(sr * 0.005);
-        return Math.max(0, (i - back) / sr);
-      }
-    }
-    return 0;
+    ac = new AC();
+    masterGain = ac.createGain();
+    masterGain.gain.value = DEFAULT_GAIN;
+    masterGain.connect(ac.destination);
+    return ac;
   } catch {
-    return 0;
+    ac = null;
+    return null;
   }
 }
 
-// iOS/Android 冷启动首次点击"解锁"：在用户手势里做一次 muted play + pause
-// 这样让系统把这个 <audio> 元素标记为 user-gestured，后续 .play() 无 autoplay 阻拦
-let unlocked = false;
-export function unlockAudio() {
-  if (unlocked) return;
-  const homeSlot = ensureSlot('home');
-  const globalSlot = ensureSlot('global');
-  const els = [homeSlot?.el, globalSlot?.el].filter(Boolean) as HTMLAudioElement[];
-  let unlockedCount = 0;
-  for (const el of els) {
+function detectSilenceHead(buf: AudioBuffer): number {
+  const data = buf.getChannelData(0);
+  const sr = buf.sampleRate;
+  const windowSize = Math.max(1, Math.floor(sr * 0.008));
+  const threshold = 0.02;
+  for (let i = 0; i < data.length - windowSize; i += windowSize) {
+    let sum = 0;
+    for (let j = 0; j < windowSize; j++) sum += data[i + j] * data[i + j];
+    const rms = Math.sqrt(sum / windowSize);
+    if (rms > threshold) {
+      const back = Math.floor(sr * 0.005);
+      return Math.max(0, (i - back) / sr);
+    }
+  }
+  return 0;
+}
+
+async function loadBuffer(key: SoundKey): Promise<void> {
+  if (buffers[key]) return;
+  if (pendingDecodes[key]) return pendingDecodes[key];
+  const ctx = getAC();
+  if (!ctx) return;
+  const p = (async () => {
     try {
-      el.muted = true;
-      const p = el.play();
-      if (p && typeof p.then === 'function') {
-        p.then(() => {
-          el.pause();
-          el.currentTime = 0;
-          el.muted = false;
-          unlockedCount++;
-          if (unlockedCount >= els.length) unlocked = true;
-        }).catch(() => {
-          // 某些浏览器会 reject（比如用户没真正手势）；下次再试
-          el.muted = false;
-        });
-      } else {
-        // 老浏览器同步返回
-        el.pause();
-        el.currentTime = 0;
-        el.muted = false;
-        unlockedCount++;
-        if (unlockedCount >= els.length) unlocked = true;
-      }
+      const res = await fetch(AUDIO_URLS[key]);
+      if (!res.ok) return;
+      const arr = await res.arrayBuffer();
+      // Safari 老版本要求 callback 风格
+      const buffer: AudioBuffer = await new Promise((resolve, reject) => {
+        try {
+          const maybe = ctx.decodeAudioData(
+            arr,
+            (b) => resolve(b),
+            (e) => reject(e),
+          );
+          if (maybe && typeof (maybe as Promise<AudioBuffer>).then === 'function') {
+            (maybe as Promise<AudioBuffer>).then(resolve, reject);
+          }
+        } catch (e) {
+          reject(e);
+        }
+      });
+      buffers[key] = { buffer, startOffsetSec: detectSilenceHead(buffer) };
     } catch {
       // ignore
     }
+  })();
+  pendingDecodes[key] = p;
+  return p;
+}
+
+// iOS/Android 冷启动首次手势里：resume() AudioContext，同时启动预解码
+// 关键：resume() 一定要在用户手势的同一个事件回调里执行（同步入队），
+// 不能放到 async 之后。这里我们把 fetch/decode 放到 resume() 之后，
+// 但因为 resume() 本身是同步入队的（返回的 Promise 会 microtask 完成），
+// 只要在 pointerdown handler 里立即调用即可解锁。
+export function unlockAudio() {
+  if (unlocked) return;
+  const ctx = getAC();
+  if (!ctx) return;
+  try {
+    // 静音"空 buffer"启动 —— 保证 AudioContext 进入 running 状态
+    const silent = ctx.createBuffer(1, 1, 22050);
+    const src = ctx.createBufferSource();
+    src.buffer = silent;
+    src.connect(ctx.destination);
+    src.start(0);
+  } catch {
+    // ignore
   }
+  const p = ctx.resume();
+  if (p && typeof p.then === 'function') {
+    p.then(() => {
+      unlocked = true;
+    }).catch(() => {
+      // ignore
+    });
+  } else {
+    unlocked = true;
+  }
+  // 解锁的同一时刻就把两个音效预解码，避免第一次 playSound 时还在 decode
+  loadBuffer('home');
+  loadBuffer('global');
 }
 
 function playSound(key: SoundKey) {
-  const slot = ensureSlot(key);
-  if (!slot) return;
-  const { el, startOffsetSec } = slot;
+  const ctx = getAC();
+  if (!ctx || !masterGain) return;
+  // Safari 有时候会自己 suspend；每次都尝试 resume()（无副作用）
+  if (ctx.state === 'suspended') {
+    ctx.resume().catch(() => {});
+  }
+  const slot = buffers[key];
+  if (!slot) {
+    // buffer 还没加载好 —— 触发加载，本次不发声（下次点击就有了）
+    loadBuffer(key);
+    return;
+  }
   try {
-    // 每次点击都从静音段之后重新播放
-    el.pause();
-    // 只在音频已经有 metadata 时才 seek（避免 NotSupportedError）
-    if (el.readyState >= 1 /* HAVE_METADATA */ && startOffsetSec > 0) {
-      try {
-        el.currentTime = startOffsetSec;
-      } catch {
-        el.currentTime = 0;
-      }
-    } else {
-      el.currentTime = 0;
-    }
-    const p = el.play();
-    if (p && typeof p.catch === 'function') {
-      p.catch(() => {
-        // 静默失败：可能未解锁或者 tab 挂起
-      });
-    }
+    const src = ctx.createBufferSource();
+    src.buffer = slot.buffer;
+    src.connect(masterGain);
+    // start(when, offset) —— 精确从跳过静音头的位置开播，完全避开
+    // HTMLAudioElement.currentTime = 的时序问题
+    src.start(0, slot.startOffsetSec);
   } catch {
     // ignore
   }
@@ -212,8 +224,15 @@ export function previewFx(opts: { light: boolean; sound: boolean }) {
   playFx(window.innerWidth / 2, window.innerHeight / 2, 'global', opts);
 }
 
-// 预加载：mount 后就把两个 <audio> 元素创建 + 开始 preload
+// 预加载：ready 时立即建立 AudioContext（会是 suspended 状态）+ 预解码 buffer
+//   - 现代浏览器（iOS 15+ / Android Chrome）允许在无手势时 new AudioContext，
+//     只是 state='suspended'。decodeAudioData 在 suspended 下也能正常工作。
+//   - 这样第一次 pointerdown 里 resume() 一发出，buffer 已就绪 —— start(0, offset)
+//     会在 context 恢复瞬间发声，避免"第一次静音"或"只播下半段"
 export function preloadSounds() {
-  ensureSlot('home');
-  ensureSlot('global');
+  if (typeof window === 'undefined') return;
+  const ctx = getAC();
+  if (!ctx) return;
+  loadBuffer('home');
+  loadBuffer('global');
 }

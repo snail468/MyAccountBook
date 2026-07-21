@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import type { Member } from './TravelView';
+import { useAlert, useConfirm } from '@/components/ui/Dialog';
 
 export default function TripMembersModal({
   ledgerId,
@@ -18,6 +19,8 @@ export default function TripMembersModal({
   const [value, setValue] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const confirm = useConfirm();
+  const alert = useAlert();
 
   async function add() {
     setError('');
@@ -44,7 +47,13 @@ export default function TripMembersModal({
   }
 
   async function del(id: string, name: string) {
-    if (!confirm(`删除成员 "${name}"？`)) return;
+    const ok = await confirm({
+      title: `删除成员 "${name}"？`,
+      body: '若该成员有已记录的开销/分摊将拦截删除。',
+      danger: true,
+      confirmText: '删除',
+    });
+    if (!ok) return;
     const res = await fetch(`/api/ledgers/${ledgerId}/members/${id}`, {
       method: 'DELETE',
     });
@@ -52,7 +61,7 @@ export default function TripMembersModal({
       onChanged();
     } else {
       const data = await res.json().catch(() => ({}));
-      alert(data.error || '删除失败');
+      await alert({ title: '删除失败', body: data.error || '未知错误', danger: true });
     }
   }
 

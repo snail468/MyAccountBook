@@ -5,13 +5,17 @@ import { useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import Money from '@/components/ui/Money';
 import Lightbox from '@/components/ui/Lightbox';
+import { useAlert, useConfirm, useToast } from '@/components/ui/Dialog';
 import { formatShort, localInputToISO, toLocalInput } from '@/lib/datetime';
 import { yuanToCents } from '@/lib/money';
 import {
-  ALL_GENERAL_CATEGORIES,
-  GENERAL_EXPENSE_CATEGORIES,
-  GENERAL_INCOME_CATEGORIES,
+  effectiveCategories,
   iconOf,
+  ICON_LIBRARY,
+  parseCustom,
+  type CustomCategoriesJson,
+  type GeneralCategory,
+  type GeneralCategoryDirection,
 } from '@/lib/generalCategories';
 import ImageUploader from '@/app/taoyuan/ImageUploader';
 
@@ -31,6 +35,7 @@ type LedgerMeta = {
   name: string;
   icon: string | null;
   budgetCents: number | null;
+  customCategories: string | null;
 };
 
 export default function GeneralView({
@@ -43,8 +48,11 @@ export default function GeneralView({
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [showRecord, setShowRecord] = useState(false);
+  const [editing, setEditing] = useState<Entry | null>(null);
   const [zoomImg, setZoomImg] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [showCategoryManager, setShowCategoryManager] = useState(false);
+  const confirm = useConfirm();
 
   // 本月过滤
   const monthStart = useMemo(() => {
@@ -94,9 +102,15 @@ export default function GeneralView({
           ? 'bg-yellow-500'
           : 'bg-emerald-500';
 
-  async function del(entryId: string, name: string, amount: number) {
-    if (!confirm(`删除 "${name}" ${(amount / 100).toFixed(2)} 元？`)) return;
-    const res = await fetch(`/api/ledgers/${ledger.id}/entries/${entryId}`, {
+  async function del(entry: Entry) {
+    const ok = await confirm({
+      title: `删除 "${entry.category}"？`,
+      body: `${(entry.amountCents / 100).toFixed(2)} 元`,
+      danger: true,
+      confirmText: '删除',
+    });
+    if (!ok) return;
+    const res = await fetch(`/api/ledgers/${ledger.id}/entries/${entry.id}`, {
       method: 'DELETE',
     });
     if (res.ok) startTransition(() => router.refresh());
@@ -176,7 +190,7 @@ export default function GeneralView({
                 <div key={cat}>
                   <div className="flex items-baseline justify-between text-sm">
                     <span className="flex items-center gap-1.5">
-                      <span>{iconOf(cat)}</span>
+                      <span>{iconOf(cat, ledger.customCategories)}</span>
                       <span>{cat}</span>
                     </span>
                     <span className="num text-ink-700 dark:text-ink-300">
@@ -231,7 +245,9 @@ export default function GeneralView({
                   <EntryRow
                     key={e.id}
                     entry={e}
-                    onDelete={() => del(e.id, e.category, e.amountCents)}
+                    customCategoriesJson={ledger.customCategories}
+                    onEdit={() => setEditing(e)}
+                    onDelete={() => del(e)}
                     onZoomImage={setZoomImg}
                   />
                 ))}
@@ -245,6 +261,11 @@ export default function GeneralView({
         <RecordModal
           ledgerId={ledger.id}
           ledgerName={ledger.name}
+          customCategoriesJson={ledger.customCategories}
+          onManageCategories={() => {
+            setShowRecord(false);
+            setShowCategoryManager(true);
+          }}
           onClose={() => setShowRecord(false)}
           onSaved={() => {
             setShowRecord(false);
@@ -253,12 +274,41 @@ export default function GeneralView({
         />
       )}
 
+      {editing && (
+        <EditEntryModal
+          ledgerId={ledger.id}
+          customCategoriesJson={ledger.customCategories}
+          entry={editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null);
+            startTransition(() => router.refresh());
+          }}
+        />
+      )}
+
       {showSettings && (
         <SettingsModal
           ledger={ledger}
+          onManageCategories={() => {
+            setShowSettings(false);
+            setShowCategoryManager(true);
+          }}
           onClose={() => setShowSettings(false)}
           onSaved={() => {
             setShowSettings(false);
+            startTransition(() => router.refresh());
+          }}
+        />
+      )}
+
+      {showCategoryManager && (
+        <CategoryManagerModal
+          ledgerId={ledger.id}
+          customCategoriesJson={ledger.customCategories}
+          onClose={() => setShowCategoryManager(false)}
+          onSaved={() => {
+            setShowCategoryManager(false);
             startTransition(() => router.refresh());
           }}
         />
@@ -271,10 +321,14 @@ export default function GeneralView({
 
 function EntryRow({
   entry,
+  customCategoriesJson,
+  onEdit,
   onDelete,
   onZoomImage,
 }: {
   entry: Entry;
+  customCategoriesJson: string | null;
+  onEdit: () => void;
   onDelete: () => void;
   onZoomImage: (url: string) => void;
 }) {
@@ -282,7 +336,7 @@ function EntryRow({
   return (
     <div className="flex items-center gap-3 p-3 rounded-2xl bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700">
       <div className="w-9 h-9 rounded-xl bg-ink-50 dark:bg-ink-700 flex items-center justify-center text-lg shrink-0">
-        {iconOf(entry.category)}
+        {iconOf(entry.category, customCategoriesJson)}
       </div>
       <div className="flex-1 min-w-0">
         <div className="text-sm font-medium truncate">{entry.category}</div>
@@ -314,6 +368,14 @@ function EntryRow({
         <Money cents={entry.amountCents} />
       </div>
       <button
+        onClick={onEdit}
+        className="text-ink-400 hover:text-ink-700 dark:hover:text-ink-100 text-xs px-1"
+        aria-label="编辑"
+        title="编辑"
+      >
+        ✎
+      </button>
+      <button
         onClick={onDelete}
         className="text-ink-300 hover:text-red-500 text-xs px-1"
         aria-label="删除"
@@ -324,64 +386,246 @@ function EntryRow({
   );
 }
 
+// ==================== 记账 / 编辑 通用表单 ====================
+
+function EntryForm({
+  ledgerName,
+  customCategoriesJson,
+  initial,
+  saving,
+  error,
+  onSubmit,
+  onCancel,
+  onManageCategories,
+  submitText,
+}: {
+  ledgerName: string;
+  customCategoriesJson: string | null;
+  initial?: Partial<Entry>;
+  saving: boolean;
+  error: string;
+  onSubmit: (data: {
+    direction: 'income' | 'expense';
+    category: string;
+    amountCents: number;
+    tags: string | null;
+    note: string | null;
+    imageUrls: string[];
+    occurredAt: string;
+  }) => void;
+  onCancel: () => void;
+  onManageCategories?: () => void;
+  submitText: string;
+}) {
+  const initialDir = (initial?.direction as 'income' | 'expense') ?? 'expense';
+  const [direction, setDirection] = useState<'expense' | 'income'>(initialDir);
+  const expenseCats = effectiveCategories(customCategoriesJson, 'expense');
+  const incomeCats = effectiveCategories(customCategoriesJson, 'income');
+  const options = direction === 'expense' ? expenseCats : incomeCats;
+  const initialCategory =
+    initial?.category ??
+    (direction === 'expense'
+      ? expenseCats[0]?.name ?? '其它支出'
+      : incomeCats[0]?.name ?? '其它收入');
+  const [category, setCategory] = useState<string>(initialCategory);
+  const [amount, setAmount] = useState(
+    initial?.amountCents ? (initial.amountCents / 100).toFixed(2) : '',
+  );
+  const [tags, setTags] = useState(initial?.tags ?? '');
+  const [note, setNote] = useState(initial?.note ?? '');
+  const [imageUrls, setImageUrls] = useState<string[]>(initial?.imageUrls ?? []);
+  const [occurredAt, setOccurredAt] = useState(
+    toLocalInput(initial?.occurredAt ? new Date(initial.occurredAt) : new Date()),
+  );
+
+  function submit() {
+    const cents = yuanToCents(amount);
+    if (cents === null || cents === 0) return;
+    if (!category) return;
+    onSubmit({
+      direction,
+      category,
+      amountCents: cents,
+      tags: tags.trim() || null,
+      note: note.trim() || null,
+      imageUrls,
+      occurredAt: localInputToISO(occurredAt),
+    });
+  }
+
+  return (
+    <>
+      <h3 className="text-lg font-medium mb-4">{ledgerName} · {submitText}</h3>
+
+      <div className="flex gap-2 mb-4">
+        <button
+          onClick={() => {
+            setDirection('expense');
+            setCategory(expenseCats[0]?.name ?? '其它支出');
+          }}
+          className={`flex-1 py-2.5 rounded-2xl text-sm ${
+            direction === 'expense'
+              ? 'bg-ink-900 dark:bg-ink-100 text-white dark:text-ink-900'
+              : 'bg-ink-50 dark:bg-ink-800'
+          }`}
+        >
+          支出
+        </button>
+        <button
+          onClick={() => {
+            setDirection('income');
+            setCategory(incomeCats[0]?.name ?? '其它收入');
+          }}
+          className={`flex-1 py-2.5 rounded-2xl text-sm ${
+            direction === 'income'
+              ? 'bg-ink-900 dark:bg-ink-100 text-white dark:text-ink-900'
+              : 'bg-ink-50 dark:bg-ink-800'
+          }`}
+        >
+          收入
+        </button>
+      </div>
+
+      <div className="flex items-baseline justify-between mb-1">
+        <label className="text-xs text-ink-500">类别</label>
+        {onManageCategories && (
+          <button
+            onClick={onManageCategories}
+            className="text-[11px] text-ink-500 underline"
+          >
+            管理类别
+          </button>
+        )}
+      </div>
+      <div className="grid grid-cols-4 gap-2">
+        {options.map((c) => (
+          <button
+            key={c.name}
+            onClick={() => setCategory(c.name)}
+            className={`p-2 rounded-2xl text-center transition ${
+              category === c.name
+                ? 'bg-ink-900 dark:bg-ink-100 text-white dark:text-ink-900'
+                : 'bg-ink-50 dark:bg-ink-800'
+            }`}
+          >
+            <div className="text-lg leading-none">{c.icon}</div>
+            <div className="text-[10px] mt-1 truncate">{c.name}</div>
+          </button>
+        ))}
+      </div>
+
+      <label className="block text-xs text-ink-500 mt-4 mb-1">金额（元）</label>
+      <input
+        inputMode="decimal"
+        placeholder="0.00"
+        value={amount}
+        onChange={(e) => setAmount(e.target.value)}
+        className="w-full px-4 py-4 text-2xl num rounded-2xl bg-ink-50 dark:bg-ink-800 border border-ink-200 dark:border-ink-700 focus:outline-none focus:ring-2 focus:ring-ink-400"
+      />
+
+      <label className="block text-xs text-ink-500 mt-3 mb-1">标签（逗号分隔）</label>
+      <input
+        value={tags ?? ''}
+        onChange={(e) => setTags(e.target.value)}
+        maxLength={200}
+        placeholder="午饭, 同事"
+        className={inputCls}
+      />
+
+      <label className="block text-xs text-ink-500 mt-3 mb-1">备注</label>
+      <input
+        value={note ?? ''}
+        onChange={(e) => setNote(e.target.value)}
+        maxLength={500}
+        className={inputCls}
+      />
+
+      <div className="mt-3">
+        <label className="block text-xs text-ink-500 mb-1">小票/图片</label>
+        <ImageUploader
+          value={imageUrls}
+          onChange={setImageUrls}
+          namePrefix={ledgerName}
+          max={4}
+        />
+      </div>
+
+      <label className="block text-xs text-ink-500 mt-3 mb-1">发生时间</label>
+      <input
+        type="datetime-local"
+        value={occurredAt}
+        onChange={(e) => setOccurredAt(e.target.value)}
+        className={inputCls}
+      />
+
+      {error && <p className="text-red-500 text-sm mt-2">{error}</p>}
+      <div className="mt-4 flex gap-2">
+        <button onClick={onCancel} className="flex-1 py-3 rounded-2xl bg-ink-50 dark:bg-ink-800">
+          取消
+        </button>
+        <button
+          onClick={submit}
+          disabled={saving}
+          className="flex-1 py-3 rounded-2xl bg-ink-900 dark:bg-ink-100 text-white dark:text-ink-900 disabled:opacity-50"
+        >
+          {saving ? '保存中…' : submitText}
+        </button>
+      </div>
+    </>
+  );
+}
+
+function ModalShell({
+  children,
+  onClose,
+}: {
+  children: React.ReactNode;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-md"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-md bg-white dark:bg-ink-900 rounded-t-3xl sm:rounded-3xl p-6 max-h-[90dvh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
 function RecordModal({
   ledgerId,
   ledgerName,
+  customCategoriesJson,
   onClose,
   onSaved,
+  onManageCategories,
 }: {
   ledgerId: string;
   ledgerName: string;
+  customCategoriesJson: string | null;
   onClose: () => void;
   onSaved: () => void;
+  onManageCategories: () => void;
 }) {
-  const [direction, setDirection] = useState<'expense' | 'income'>('expense');
-  const [category, setCategory] = useState<string>('餐饮');
-  const [customCategoryMode, setCustomCategoryMode] = useState(false);
-  const [customCategory, setCustomCategory] = useState('');
-  const [amount, setAmount] = useState('');
-  const [tags, setTags] = useState('');
-  const [note, setNote] = useState('');
-  const [imageUrls, setImageUrls] = useState<string[]>([]);
-  const [occurredAt, setOccurredAt] = useState(toLocalInput(new Date()));
-  const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
 
-  const options =
-    direction === 'expense' ? GENERAL_EXPENSE_CATEGORIES : GENERAL_INCOME_CATEGORIES;
-
-  async function save() {
+  async function submit(data: Parameters<Parameters<typeof EntryForm>[0]['onSubmit']>[0]) {
     setError('');
-    const cents = yuanToCents(amount);
-    if (cents === null || cents === 0) {
-      setError('金额格式不正确');
-      return;
-    }
-    const finalCategory = customCategoryMode ? customCategory.trim() : category;
-    if (!finalCategory) {
-      setError('请选择类别');
-      return;
-    }
-    // 自定义类别方向以当前 toggle 为准
-    const finalDirection = ALL_GENERAL_CATEGORIES.find((c) => c.name === finalCategory)?.direction ?? direction;
-
     setSaving(true);
     try {
       const res = await fetch(`/api/ledgers/${ledgerId}/entries`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          direction: finalDirection,
-          category: finalCategory,
-          amountCents: cents,
-          tags: tags.trim() || null,
-          note: note.trim() || null,
-          imageUrls,
-          occurredAt: localInputToISO(occurredAt),
-        }),
+        body: JSON.stringify(data),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || '保存失败');
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error || '保存失败');
       onSaved();
     } catch (e) {
       setError(e instanceof Error ? e.message : '保存失败');
@@ -391,145 +635,375 @@ function RecordModal({
   }
 
   return (
+    <ModalShell onClose={onClose}>
+      <EntryForm
+        ledgerName={ledgerName}
+        customCategoriesJson={customCategoriesJson}
+        saving={saving}
+        error={error}
+        onSubmit={submit}
+        onCancel={onClose}
+        onManageCategories={onManageCategories}
+        submitText="保存"
+      />
+    </ModalShell>
+  );
+}
+
+function EditEntryModal({
+  ledgerId,
+  customCategoriesJson,
+  entry,
+  onClose,
+  onSaved,
+}: {
+  ledgerId: string;
+  customCategoriesJson: string | null;
+  entry: Entry;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  async function submit(data: Parameters<Parameters<typeof EntryForm>[0]['onSubmit']>[0]) {
+    setError('');
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/ledgers/${ledgerId}/entries/${entry.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error || '保存失败');
+      onSaved();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '保存失败');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <ModalShell onClose={onClose}>
+      <EntryForm
+        ledgerName="编辑记录"
+        customCategoriesJson={customCategoriesJson}
+        initial={entry}
+        saving={saving}
+        error={error}
+        onSubmit={submit}
+        onCancel={onClose}
+        submitText="保存修改"
+      />
+    </ModalShell>
+  );
+}
+
+// ==================== 类别管理 ====================
+
+function CategoryManagerModal({
+  ledgerId,
+  customCategoriesJson,
+  onClose,
+  onSaved,
+}: {
+  ledgerId: string;
+  customCategoriesJson: string | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [state, setState] = useState<CustomCategoriesJson>(() =>
+    parseCustom(customCategoriesJson),
+  );
+  const [tab, setTab] = useState<GeneralCategoryDirection>('expense');
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [showAdd, setShowAdd] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const confirm = useConfirm();
+  const alert = useAlert();
+  const toast = useToast();
+
+  const effective = useMemo(
+    () => effectiveCategories(JSON.stringify(state), tab),
+    [state, tab],
+  );
+
+  function toggle(name: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  }
+
+  async function batchDelete() {
+    if (selected.size === 0) return;
+    const names = [...selected];
+    const ok = await confirm({
+      title: `删除 ${names.length} 个类别？`,
+      body: `${names.join('、')}\n\n已有的记账条目不会受影响，只是这些类别不再出现在选择列表里。`,
+      danger: true,
+      confirmText: '删除',
+    });
+    if (!ok) return;
+    setState((prev) => {
+      // 从 added 里过滤掉，同时把预设加入 hidden
+      const addedFiltered = prev.added.filter((c) => !selected.has(c.name));
+      const hidden = new Set(prev.hidden);
+      for (const n of selected) hidden.add(n);
+      return { added: addedFiltered, hidden: [...hidden] };
+    });
+    setSelected(new Set());
+  }
+
+  function addNew(cat: GeneralCategory) {
+    setState((prev) => {
+      // 如果之前是隐藏的同名，取消隐藏
+      const hidden = prev.hidden.filter((h) => h !== cat.name);
+      const withoutSame = prev.added.filter((a) => a.name !== cat.name);
+      return { added: [...withoutSame, cat], hidden };
+    });
+    setShowAdd(false);
+    toast({ message: `已添加类别 "${cat.name}"`, kind: 'success' });
+  }
+
+  async function save() {
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/ledgers/${ledgerId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ customCategories: state }),
+      });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error || '保存失败');
+      onSaved();
+    } catch (e) {
+      await alert({
+        title: '保存失败',
+        body: e instanceof Error ? e.message : '未知错误',
+        danger: true,
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function resetAll() {
+    const ok = await confirm({
+      title: '还原所有默认类别？',
+      body: '会取消所有隐藏，但保留已添加的自定义类别。',
+      confirmText: '还原',
+    });
+    if (!ok) return;
+    setState((prev) => ({ ...prev, hidden: [] }));
+    setSelected(new Set());
+  }
+
+  return (
+    <ModalShell onClose={onClose}>
+      <div className="flex items-baseline justify-between mb-4">
+        <h3 className="text-lg font-medium">管理类别</h3>
+        <button onClick={resetAll} className="text-xs text-ink-500 underline">
+          还原默认
+        </button>
+      </div>
+
+      <div className="flex gap-2 mb-3">
+        <button
+          onClick={() => {
+            setTab('expense');
+            setSelected(new Set());
+          }}
+          className={`flex-1 py-2 rounded-2xl text-sm ${
+            tab === 'expense'
+              ? 'bg-ink-900 dark:bg-ink-100 text-white dark:text-ink-900'
+              : 'bg-ink-50 dark:bg-ink-800'
+          }`}
+        >
+          支出
+        </button>
+        <button
+          onClick={() => {
+            setTab('income');
+            setSelected(new Set());
+          }}
+          className={`flex-1 py-2 rounded-2xl text-sm ${
+            tab === 'income'
+              ? 'bg-ink-900 dark:bg-ink-100 text-white dark:text-ink-900'
+              : 'bg-ink-50 dark:bg-ink-800'
+          }`}
+        >
+          收入
+        </button>
+      </div>
+
+      <div className="grid grid-cols-3 gap-2 mb-3">
+        {effective.map((c) => {
+          const isSel = selected.has(c.name);
+          return (
+            <button
+              key={c.name}
+              onClick={() => toggle(c.name)}
+              className={`p-3 rounded-2xl text-center transition relative border-2 ${
+                isSel
+                  ? 'bg-red-50 dark:bg-red-950/40 border-red-400'
+                  : 'bg-ink-50 dark:bg-ink-800 border-transparent'
+              }`}
+            >
+              <div className="text-2xl leading-none">{c.icon}</div>
+              <div className="text-[11px] mt-1 truncate">{c.name}</div>
+              {isSel && (
+                <div className="absolute top-1 right-1 w-4 h-4 rounded-full bg-red-500 text-white text-[10px] flex items-center justify-center">
+                  ✓
+                </div>
+              )}
+            </button>
+          );
+        })}
+        <button
+          onClick={() => setShowAdd(true)}
+          className="p-3 rounded-2xl border-2 border-dashed border-ink-300 dark:border-ink-600 text-ink-500 text-xs flex items-center justify-center min-h-[64px]"
+        >
+          + 新增
+        </button>
+      </div>
+
+      {selected.size > 0 && (
+        <button
+          onClick={batchDelete}
+          className="w-full py-2.5 rounded-2xl bg-red-500 text-white text-sm font-medium mb-3"
+        >
+          删除选中 ({selected.size})
+        </button>
+      )}
+
+      <div className="mt-4 flex gap-2">
+        <button onClick={onClose} className="flex-1 py-3 rounded-2xl bg-ink-50 dark:bg-ink-800">
+          取消
+        </button>
+        <button
+          onClick={save}
+          disabled={saving}
+          className="flex-1 py-3 rounded-2xl bg-ink-900 dark:bg-ink-100 text-white dark:text-ink-900 disabled:opacity-50"
+        >
+          {saving ? '保存中…' : '保存'}
+        </button>
+      </div>
+
+      {showAdd && (
+        <AddCategoryModal
+          direction={tab}
+          existingNames={effective.map((c) => c.name)}
+          onCancel={() => setShowAdd(false)}
+          onAdd={addNew}
+        />
+      )}
+    </ModalShell>
+  );
+}
+
+function AddCategoryModal({
+  direction,
+  existingNames,
+  onCancel,
+  onAdd,
+}: {
+  direction: GeneralCategoryDirection;
+  existingNames: string[];
+  onCancel: () => void;
+  onAdd: (c: GeneralCategory) => void;
+}) {
+  const [name, setName] = useState('');
+  const [icon, setIcon] = useState<string>('🌟');
+  const [error, setError] = useState('');
+
+  function confirmAdd() {
+    const n = name.trim();
+    if (!n) {
+      setError('请输入类别名');
+      return;
+    }
+    if (n.length > 12) {
+      setError('类别名不超过 12 个字符');
+      return;
+    }
+    if (existingNames.includes(n)) {
+      setError('该类别名已存在');
+      return;
+    }
+    onAdd({ name: n, icon, direction });
+  }
+
+  return (
     <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40"
-      onClick={onClose}
+      className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-md"
+      onClick={onCancel}
     >
       <div
-        className="w-full max-w-md bg-white dark:bg-ink-900 rounded-t-3xl sm:rounded-3xl p-6 max-h-[90dvh] overflow-y-auto"
+        className="w-full max-w-md bg-white dark:bg-ink-900 rounded-t-3xl sm:rounded-3xl p-6 max-h-[85dvh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="text-lg font-medium mb-4">{ledgerName} · 记一笔</h3>
+        <h3 className="text-lg font-medium mb-4">
+          新增{direction === 'expense' ? '支出' : '收入'}类别
+        </h3>
 
-        <div className="flex gap-2 mb-4">
-          <button
-            onClick={() => {
-              setDirection('expense');
-              setCategory('餐饮');
-              setCustomCategoryMode(false);
-            }}
-            className={`flex-1 py-2.5 rounded-2xl text-sm ${
-              direction === 'expense'
-                ? 'bg-ink-900 dark:bg-ink-100 text-white dark:text-ink-900'
-                : 'bg-ink-50 dark:bg-ink-800'
-            }`}
-          >
-            支出
-          </button>
-          <button
-            onClick={() => {
-              setDirection('income');
-              setCategory('工资');
-              setCustomCategoryMode(false);
-            }}
-            className={`flex-1 py-2.5 rounded-2xl text-sm ${
-              direction === 'income'
-                ? 'bg-ink-900 dark:bg-ink-100 text-white dark:text-ink-900'
-                : 'bg-ink-50 dark:bg-ink-800'
-            }`}
-          >
-            收入
-          </button>
+        <label className="block text-xs text-ink-500 mb-1">类别名</label>
+        <input
+          autoFocus
+          value={name}
+          onChange={(e) => {
+            setName(e.target.value);
+            setError('');
+          }}
+          placeholder="例：健身、买菜、副业A"
+          maxLength={12}
+          className={inputCls}
+        />
+
+        <label className="block text-xs text-ink-500 mt-4 mb-2">
+          图标（当前 <span className="text-lg">{icon}</span>）
+        </label>
+        <div className="space-y-3 max-h-[40dvh] overflow-y-auto rounded-2xl bg-ink-50 dark:bg-ink-800 p-2">
+          {ICON_LIBRARY.map((g) => (
+            <div key={g.group}>
+              <div className="text-[10px] text-ink-500 px-1 mb-1">{g.group}</div>
+              <div className="grid grid-cols-8 gap-1">
+                {g.icons.map((emo) => (
+                  <button
+                    key={emo}
+                    onClick={() => setIcon(emo)}
+                    className={`aspect-square rounded-lg text-xl leading-none flex items-center justify-center transition ${
+                      icon === emo
+                        ? 'bg-ink-900 dark:bg-ink-100 ring-2 ring-ink-500'
+                        : 'bg-white dark:bg-ink-700'
+                    }`}
+                  >
+                    {emo}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
-
-        <label className="block text-xs text-ink-500 mb-1">类别</label>
-        {customCategoryMode ? (
-          <div className="flex gap-2">
-            <input
-              autoFocus
-              value={customCategory}
-              onChange={(e) => setCustomCategory(e.target.value)}
-              placeholder="自定义类别名"
-              maxLength={20}
-              className={inputCls}
-            />
-            <button
-              onClick={() => setCustomCategoryMode(false)}
-              className="px-3 rounded-2xl bg-ink-50 dark:bg-ink-800 text-sm"
-            >
-              返回
-            </button>
-          </div>
-        ) : (
-          <div className="grid grid-cols-4 gap-2">
-            {options.map((c) => (
-              <button
-                key={c.name}
-                onClick={() => setCategory(c.name)}
-                className={`p-2 rounded-2xl text-center transition ${
-                  category === c.name
-                    ? 'bg-ink-900 dark:bg-ink-100 text-white dark:text-ink-900'
-                    : 'bg-ink-50 dark:bg-ink-800'
-                }`}
-              >
-                <div className="text-lg leading-none">{c.icon}</div>
-                <div className="text-[10px] mt-1">{c.name}</div>
-              </button>
-            ))}
-            <button
-              onClick={() => setCustomCategoryMode(true)}
-              className="p-2 rounded-2xl border-2 border-dashed border-ink-300 dark:border-ink-600 text-ink-500 text-[10px]"
-            >
-              + 自定义
-            </button>
-          </div>
-        )}
-
-        <label className="block text-xs text-ink-500 mt-4 mb-1">金额（元）</label>
-        <input
-          inputMode="decimal"
-          placeholder="0.00"
-          value={amount}
-          onChange={(e) => setAmount(e.target.value)}
-          className="w-full px-4 py-4 text-2xl num rounded-2xl bg-ink-50 dark:bg-ink-800 border border-ink-200 dark:border-ink-700 focus:outline-none focus:ring-2 focus:ring-ink-400"
-        />
-
-        <label className="block text-xs text-ink-500 mt-3 mb-1">标签（逗号分隔）</label>
-        <input
-          value={tags}
-          onChange={(e) => setTags(e.target.value)}
-          maxLength={200}
-          placeholder="午饭, 同事"
-          className={inputCls}
-        />
-
-        <label className="block text-xs text-ink-500 mt-3 mb-1">备注</label>
-        <input
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          maxLength={500}
-          className={inputCls}
-        />
-
-        <div className="mt-3">
-          <label className="block text-xs text-ink-500 mb-1">小票/图片</label>
-          <ImageUploader
-            value={imageUrls}
-            onChange={setImageUrls}
-            namePrefix={ledgerName}
-            max={4}
-          />
-        </div>
-
-        <label className="block text-xs text-ink-500 mt-3 mb-1">发生时间</label>
-        <input
-          type="datetime-local"
-          value={occurredAt}
-          onChange={(e) => setOccurredAt(e.target.value)}
-          className={inputCls}
-        />
 
         {error && <p className="text-red-500 text-sm mt-2">{error}</p>}
+
         <div className="mt-4 flex gap-2">
-          <button onClick={onClose} className="flex-1 py-3 rounded-2xl bg-ink-50 dark:bg-ink-800">
+          <button
+            onClick={onCancel}
+            className="flex-1 py-3 rounded-2xl bg-ink-50 dark:bg-ink-800"
+          >
             取消
           </button>
           <button
-            onClick={save}
-            disabled={saving}
-            className="flex-1 py-3 rounded-2xl bg-ink-900 dark:bg-ink-100 text-white dark:text-ink-900 disabled:opacity-50"
+            onClick={confirmAdd}
+            className="flex-1 py-3 rounded-2xl bg-ink-900 dark:bg-ink-100 text-white dark:text-ink-900"
           >
-            {saving ? '保存中…' : '保存'}
+            添加
           </button>
         </div>
       </div>
@@ -541,12 +1015,13 @@ function SettingsModal({
   ledger,
   onClose,
   onSaved,
+  onManageCategories,
 }: {
   ledger: LedgerMeta;
   onClose: () => void;
   onSaved: () => void;
+  onManageCategories: () => void;
 }) {
-  const router = useRouter();
   const [name, setName] = useState(ledger.name);
   const [budgetYuan, setBudgetYuan] = useState(
     ledger.budgetCents ? (ledger.budgetCents / 100).toFixed(2) : '',
@@ -589,51 +1064,51 @@ function SettingsModal({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40"
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-md bg-white dark:bg-ink-900 rounded-t-3xl sm:rounded-3xl p-6"
-        onClick={(e) => e.stopPropagation()}
+    <ModalShell onClose={onClose}>
+      <h3 className="text-lg font-medium mb-4">账本设置</h3>
+
+      <label className="block text-xs text-ink-500 mb-1">名称</label>
+      <input
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        maxLength={50}
+        className={inputCls}
+      />
+
+      <label className="block text-xs text-ink-500 mt-3 mb-1">月度预算（元，留空关闭）</label>
+      <input
+        inputMode="decimal"
+        value={budgetYuan}
+        onChange={(e) => setBudgetYuan(e.target.value)}
+        placeholder="0"
+        className={inputCls}
+      />
+
+      <button
+        onClick={onManageCategories}
+        className="mt-4 w-full py-3 rounded-2xl bg-ink-50 dark:bg-ink-800 text-sm text-left px-4 flex items-center justify-between"
       >
-        <h3 className="text-lg font-medium mb-4">账本设置</h3>
+        <span>管理类别</span>
+        <span className="text-ink-400">›</span>
+      </button>
 
-        <label className="block text-xs text-ink-500 mb-1">名称</label>
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          maxLength={50}
-          className={inputCls}
-        />
-
-        <label className="block text-xs text-ink-500 mt-3 mb-1">月度预算（元，留空关闭）</label>
-        <input
-          inputMode="decimal"
-          value={budgetYuan}
-          onChange={(e) => setBudgetYuan(e.target.value)}
-          placeholder="0"
-          className={inputCls}
-        />
-
-        {error && <p className="text-red-500 text-sm mt-2">{error}</p>}
-        <div className="mt-4 flex gap-2">
-          <button onClick={onClose} className="flex-1 py-3 rounded-2xl bg-ink-50 dark:bg-ink-800">
-            取消
-          </button>
-          <button
-            onClick={save}
-            disabled={busy}
-            className="flex-1 py-3 rounded-2xl bg-ink-900 dark:bg-ink-100 text-white dark:text-ink-900 disabled:opacity-50"
-          >
-            {busy ? '保存中…' : '保存'}
-          </button>
-        </div>
-        <p className="mt-3 text-[11px] text-ink-400 text-center">
-          删除操作已迁移到「添加 / 删除账本」页面
-        </p>
+      {error && <p className="text-red-500 text-sm mt-2">{error}</p>}
+      <div className="mt-4 flex gap-2">
+        <button onClick={onClose} className="flex-1 py-3 rounded-2xl bg-ink-50 dark:bg-ink-800">
+          取消
+        </button>
+        <button
+          onClick={save}
+          disabled={busy}
+          className="flex-1 py-3 rounded-2xl bg-ink-900 dark:bg-ink-100 text-white dark:text-ink-900 disabled:opacity-50"
+        >
+          {busy ? '保存中…' : '保存'}
+        </button>
       </div>
-    </div>
+      <p className="mt-3 text-[11px] text-ink-400 text-center">
+        删除操作已迁移到「添加 / 删除账本」页面
+      </p>
+    </ModalShell>
   );
 }
 

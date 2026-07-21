@@ -138,3 +138,12 @@ button, a {
 .liquid .rounded-2xl {
   border-radius: 20px;
 }
+
+/* ============ 现代对话框 / Toast 动效 ============ */
+@keyframes toastIn {
+  from { opacity: 0; transform: translateY(-12px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.toast-in {
+  animation: toastIn 0.24s ease-out;
+}

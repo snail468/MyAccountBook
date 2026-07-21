@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db';
 import { requireUser } from '@/lib/session';
 
 const patchSchema = z.object({
+  direction: z.enum(['income', 'expense']).optional(),
   category: z.string().trim().min(1).max(32).optional(),
   amountCents: z.number().int().positive().max(1_000_000_00).optional(),
   tags: z.string().max(200).nullable().optional(),
@@ -37,6 +38,7 @@ export async function PATCH(
   const p = parsed.data;
 
   const data: Record<string, unknown> = {};
+  if (p.direction !== undefined) data.direction = p.direction;
   if (p.category !== undefined) data.category = p.category;
   if (p.amountCents !== undefined) data.amountCents = p.amountCents;
   if (p.tags !== undefined) data.tags = p.tags?.trim() || null;

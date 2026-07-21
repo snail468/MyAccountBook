@@ -7,6 +7,7 @@ import { yuanToCents } from '@/lib/money';
 import { rewardMethodLabel } from '@/lib/rewardMethod';
 import type { Stage } from '@/lib/amounts';
 import type { ClientEvent } from './types';
+import { useConfirm } from '@/components/ui/Dialog';
 
 const STAGE_TITLE: Record<Stage, string> = {
   predicted: '预测收入',
@@ -158,10 +159,17 @@ function AmountRow({
   onDeleted: () => void;
 }) {
   const [busy, setBusy] = useState(false);
+  const confirm = useConfirm();
   const isLegacy = amount.id.startsWith('legacy:');
 
   async function del() {
-    if (!confirm(`删除这条 ${(amount.cents / 100).toFixed(2)} 元？`)) return;
+    const ok = await confirm({
+      title: '删除这条金额？',
+      body: `${(amount.cents / 100).toFixed(2)} 元`,
+      danger: true,
+      confirmText: '删除',
+    });
+    if (!ok) return;
     setBusy(true);
     const res = await fetch(`/api/events/${eventId}/amounts/${amount.id}`, {
       method: 'DELETE',

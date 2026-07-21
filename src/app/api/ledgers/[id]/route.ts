@@ -13,6 +13,21 @@ const patchSchema = z.object({
   baseCurrency: z.string().length(3).nullable().optional(),
   startDate: z.string().datetime().nullable().optional(),
   endDate: z.string().datetime().nullable().optional(),
+  customCategories: z
+    .object({
+      added: z
+        .array(
+          z.object({
+            name: z.string().trim().min(1).max(20),
+            icon: z.string().min(1).max(8),
+            direction: z.enum(['income', 'expense']),
+          }),
+        )
+        .max(50),
+      hidden: z.array(z.string().max(20)).max(50),
+    })
+    .nullable()
+    .optional(),
 });
 
 async function ensureOwn(id: string, userId: string) {
@@ -49,6 +64,9 @@ export async function PATCH(
   if (p.baseCurrency !== undefined) data.baseCurrency = p.baseCurrency;
   if (p.startDate !== undefined) data.startDate = p.startDate ? new Date(p.startDate) : null;
   if (p.endDate !== undefined) data.endDate = p.endDate ? new Date(p.endDate) : null;
+  if (p.customCategories !== undefined) {
+    data.customCategories = p.customCategories ? JSON.stringify(p.customCategories) : null;
+  }
 
   await prisma.ledger.update({ where: { id }, data });
   return NextResponse.json({ ok: true });

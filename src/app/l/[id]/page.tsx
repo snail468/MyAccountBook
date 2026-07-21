@@ -30,6 +30,7 @@ export default async function LedgerPage({ params }: { params: Promise<{ id: str
             name: ledger.name,
             icon: ledger.icon,
             budgetCents: ledger.budgetCents,
+            customCategories: ledger.customCategories,
           }}
           entries={entries.map((e) => ({
             id: e.id,

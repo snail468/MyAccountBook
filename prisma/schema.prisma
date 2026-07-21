@@ -1,5 +1,6 @@
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
 }
 
 datasource db {
@@ -106,6 +107,8 @@ model Ledger {
 
   // 普通账本：月度总预算
   budgetCents Int?
+  // 普通账本：类别自定义（JSON）—— { added: {name,icon,direction}[], hidden: string[] }
+  customCategories String?
 
   // 旅游账本：本币 + 日期
   baseCurrency String?

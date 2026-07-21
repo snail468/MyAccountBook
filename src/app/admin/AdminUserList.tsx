@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { formatShort } from '@/lib/datetime';
+import { useAlert, useConfirm, useToast } from '@/components/ui/Dialog';
 
 type U = {
   id: string;
@@ -22,6 +23,9 @@ export default function AdminUserList({
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
+  const confirm = useConfirm();
+  const alert = useAlert();
+  const toast = useToast();
   const [showCreate, setShowCreate] = useState(false);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -62,19 +66,26 @@ export default function AdminUserList({
   }
 
   async function delUser(id: string, name: string) {
-    if (!confirm(`删除用户 "${name}"？该用户的所有账本数据会一并清除，且不可恢复！`)) return;
+    const ok = await confirm({
+      title: `删除用户 "${name}"？`,
+      body: '该用户的所有账本数据会一并清除，且不可恢复。',
+      danger: true,
+      confirmText: '删除',
+    });
+    if (!ok) return;
     const res = await fetch(`/api/admin/users/${id}`, { method: 'DELETE' });
     if (res.ok) startTransition(() => router.refresh());
     else {
       const data = await res.json().catch(() => ({}));
-      alert(data.error || '删除失败');
+      await alert({ title: '删除失败', body: data.error || '未知错误', danger: true });
     }
   }
 
   async function toggleRole(u: U) {
     const next = u.role === 'admin' ? 'user' : 'admin';
     const verb = next === 'admin' ? '升为管理员' : '降级为普通用户';
-    if (!confirm(`确定把 "${u.username}" ${verb}？`)) return;
+    const ok = await confirm({ title: `${verb}?`, body: `将把 "${u.username}" ${verb}。` });
+    if (!ok) return;
     const res = await fetch(`/api/admin/users/${u.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -83,31 +94,32 @@ export default function AdminUserList({
     if (res.ok) startTransition(() => router.refresh());
     else {
       const data = await res.json().catch(() => ({}));
-      alert(data.error || '操作失败');
+      await alert({ title: '操作失败', body: data.error || '未知错误', danger: true });
     }
   }
 
   async function resetPwd(u: U) {
-    const newPwd = prompt(`为 "${u.username}" 输入新密码 (≥ 6 位)`);
-    if (!newPwd || newPwd.length < 6) {
-      if (newPwd !== null) alert('密码至少 6 位');
+    const newPwd = window.prompt(`为 "${u.username}" 输入新密码 (≥ 6 位)`);
+    if (newPwd === null) return;
+    if (newPwd.length < 6) {
+      await alert({ title: '密码太短', body: '至少 6 位。', danger: true });
       return;
     }
-    if (
-      !confirm(
-        `确定把 "${u.username}" 的密码重置吗？\n\n新密码：${newPwd}\n\n对方需要用这个新密码登录`,
-      )
-    )
-      return;
+    const ok = await confirm({
+      title: `重置 "${u.username}" 的密码?`,
+      body: `新密码：${newPwd}\n对方需要用这个新密码登录。`,
+      confirmText: '重置',
+    });
+    if (!ok) return;
     const res = await fetch(`/api/admin/users/${u.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ password: newPwd }),
     });
-    if (res.ok) alert('已重置');
+    if (res.ok) toast({ message: '已重置', kind: 'success' });
     else {
       const data = await res.json().catch(() => ({}));
-      alert(data.error || '重置失败');
+      await alert({ title: '重置失败', body: data.error || '未知错误', danger: true });
     }
   }
 

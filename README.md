@@ -168,6 +168,85 @@ sudo certbot --nginx -d your.domain.com
 
 ---
 
+## Cloudflare Pages 部署（Serverless · 全球 CDN · 免运维）
+
+除了 Docker 自建，本项目也支持部署到 **Cloudflare Pages** —— 全球边缘节点秒开、免维护、零成本起步（免费额度即可跑一个个人账本）。数据库切换到 **Turso**（远端 SQLite）、图片走 **R2**（S3 兼容对象存储），Prisma schema 和业务代码完全复用。
+
+### A. 一次性准备（约 10 分钟）
+
+1. **注册 Cloudflare 账号** → 创建 Pages / Workers（免费套餐即可）
+2. **注册 Turso**（<https://turso.tech>）
+   ```bash
+   # 装 CLI（macOS/Linux/WSL）
+   curl -sSfL https://get.tur.so/install.sh | bash
+   turso auth login
+   # 建库
+   turso db create myaccountbook
+   # 拿连接串 & token
+   turso db show myaccountbook --url          # → libsql://xxx.turso.io
+   turso db tokens create myaccountbook       # → eyJhbGc...
+   ```
+3. **建 R2 存储桶**
+   - Cloudflare 面板 → R2 → Create bucket，命名 `myaccountbook-uploads`
+   - R2 → Manage R2 API Tokens → Create API token（权限 Object Read & Write），记下 `Account ID` / `Access Key` / `Secret Key`
+4. **初始化数据库表**（一次性）
+   ```bash
+   # 在本项目根目录：
+   npm install
+   # 用 Turso URL 直接 push schema
+   DATABASE_URL="libsql://xxx.turso.io?authToken=eyJhbGc..." \
+     npx prisma db push
+   ```
+
+### B. 项目配置
+
+1. **登录 wrangler**（Cloudflare CLI，随包安装）
+   ```bash
+   npm install                     # 会拉 wrangler + @opennextjs/cloudflare
+   npx wrangler login
+   ```
+
+2. **写入 secrets**（不会明文出现在 `wrangler.toml` 里）
+   ```bash
+   npx wrangler secret put SESSION_SECRET        # 粘贴 openssl rand -base64 32 的输出
+   npx wrangler secret put TURSO_DATABASE_URL    # libsql://xxx.turso.io
+   npx wrangler secret put TURSO_AUTH_TOKEN
+   npx wrangler secret put R2_ACCOUNT_ID
+   npx wrangler secret put R2_ACCESS_KEY
+   npx wrangler secret put R2_SECRET_KEY
+   npx wrangler secret put R2_BUCKET             # myaccountbook-uploads
+   ```
+
+### C. 构建与部署
+
+```bash
+# 本地预览
+npm run preview:cf
+
+# 正式发布
+npm run deploy:cf
+```
+
+首次 deploy 会创建 `myaccountbook` Worker/Pages 项目，输出访问 URL（形如 `https://myaccountbook.你的subdomain.workers.dev`）。绑定自定义域名后即可作为 PWA 装到手机主屏。
+
+### D. 后续更新
+
+改代码 → `npm run deploy:cf` 即可。数据库和 R2 是独立服务，Worker 更新不影响存量数据。
+
+### 与 Docker 版本共存
+
+代码通过环境变量自动判断走本地 SQLite/文件系统还是 Turso/R2：
+
+| 环境变量存在 | 数据库 | 图片 |
+|---|---|---|
+| （都没设） | 本地 SQLite (`data/app.db`) | 本地文件系统 (`data/uploads/`) |
+| `TURSO_DATABASE_URL` | Turso 远端 SQLite | ↑ |
+| `R2_ACCOUNT_ID` 等 | ↑ | Cloudflare R2 |
+
+同一份代码可以同时跑 Docker（内网/自建服务器）和 CF（对外公开），完全不互相干扰。
+
+---
+
 ## 数据备份
 
 数据只有一个 SQLite 文件，备份 = 复制：

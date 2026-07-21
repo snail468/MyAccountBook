@@ -1,0 +1,18 @@
+# Cloudflare Workers / Pages 配置 —— 部署时使用
+# 详见 README「Cloudflare Pages 部署」章节
+# 实际入口 / 静态资源目录由 @opennextjs/cloudflare 自动生成
+name = "myaccountbook"
+compatibility_date = "2025-01-15"
+compatibility_flags = ["nodejs_compat_v2"]
+
+# 非敏感环境变量。敏感值请用 `npx wrangler secret put NAME`：
+#   SESSION_SECRET      —— 会话加密密钥（openssl rand -base64 32）
+#   TURSO_DATABASE_URL  —— libsql://xxx.turso.io
+#   TURSO_AUTH_TOKEN    —— Turso 令牌
+#   R2_ACCOUNT_ID       —— Cloudflare 账号 ID
+#   R2_ACCESS_KEY       —— R2 API access key
+#   R2_SECRET_KEY       —— R2 API secret
+#   R2_BUCKET           —— 存储桶名
+[vars]
+NODE_ENV = "production"
+COOKIE_SECURE = "true"

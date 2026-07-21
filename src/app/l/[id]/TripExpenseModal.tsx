@@ -14,11 +14,28 @@ const CATEGORIES = ['餐饮', '交通', '住宿', '门票', '购物', '娱乐', 
 
 type SplitMode = 'even' | 'partial' | 'ratio';
 
+export type EditingExpense = {
+  id: string;
+  title: string;
+  category: string;
+  phase: 'pre' | 'during';
+  currency: string;
+  amountForeignCents: number;
+  rate: number;
+  amountBaseCents: number;
+  note: string | null;
+  imageUrls: string[];
+  occurredAt: string;
+  payerId: string;
+  splits: { memberId: string; shareCents: number }[];
+};
+
 export default function TripExpenseModal({
   ledgerId,
   baseCurrency,
   members,
   defaultPhase,
+  editing,
   onClose,
   onSaved,
 }: {
@@ -26,36 +43,53 @@ export default function TripExpenseModal({
   baseCurrency: string;
   members: Member[];
   defaultPhase: 'pre' | 'during';
+  editing?: EditingExpense;
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [title, setTitle] = useState('');
-  const [category, setCategory] = useState('餐饮');
-  const [phase, setPhase] = useState<'pre' | 'during'>(defaultPhase);
-  const [currency, setCurrency] = useState(baseCurrency);
-  const [amount, setAmount] = useState('');
-  const [rate, setRate] = useState('1');
-  const [rateLoading, setRateLoading] = useState(false);
-  const [payerId, setPayerId] = useState(members[0]?.id ?? '');
-  const [splitMode, setSplitMode] = useState<SplitMode>('even');
-  // even/partial: selected member ids
-  const [selectedMembers, setSelectedMembers] = useState<Set<string>>(
-    () => new Set(members.map((m) => m.id)),
+  const isEdit = !!editing;
+  const [title, setTitle] = useState(editing?.title ?? '');
+  const [category, setCategory] = useState(editing?.category ?? '餐饮');
+  const [phase, setPhase] = useState<'pre' | 'during'>(editing?.phase ?? defaultPhase);
+  const [currency, setCurrency] = useState(editing?.currency ?? baseCurrency);
+  const [amount, setAmount] = useState(
+    editing ? (editing.amountForeignCents / 100).toFixed(2) : '',
   );
-  // ratio: memberId → weight
+  const [rate, setRate] = useState(editing ? String(editing.rate) : '1');
+  const [rateLoading, setRateLoading] = useState(false);
+  const [payerId, setPayerId] = useState(editing?.payerId ?? members[0]?.id ?? '');
+  // 从初始 splits 推导模式
+  const initialSplitMode: SplitMode = editing ? 'ratio' : 'even';
+  const [splitMode, setSplitMode] = useState<SplitMode>(initialSplitMode);
+  const [selectedMembers, setSelectedMembers] = useState<Set<string>>(() => {
+    if (editing) return new Set(editing.splits.map((s) => s.memberId));
+    return new Set(members.map((m) => m.id));
+  });
+  // ratio: memberId → weight。编辑时直接用 shareCents 当权重（比例一致即可）
   const [ratios, setRatios] = useState<Record<string, number>>(() => {
     const o: Record<string, number> = {};
     for (const m of members) o[m.id] = 1;
+    if (editing) {
+      for (const s of editing.splits) {
+        o[s.memberId] = Math.max(1, Math.round(s.shareCents / 100));
+      }
+      for (const m of members) {
+        if (!editing.splits.find((s) => s.memberId === m.id)) o[m.id] = 0;
+      }
+    }
     return o;
   });
-  const [note, setNote] = useState('');
-  const [imageUrls, setImageUrls] = useState<string[]>([]);
-  const [occurredAt, setOccurredAt] = useState(toLocalInput(new Date()));
+  const [note, setNote] = useState(editing?.note ?? '');
+  const [imageUrls, setImageUrls] = useState<string[]>(editing?.imageUrls ?? []);
+  const [occurredAt, setOccurredAt] = useState(
+    editing ? toLocalInput(new Date(editing.occurredAt)) : toLocalInput(new Date()),
+  );
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
-  // 当币种变化时：先看内存，再拉实时汇率
+  // 当币种变化时：先看内存，再拉实时汇率（编辑时首屏用已存汇率，不覆写）
   useEffect(() => {
+    if (isEdit && currency === editing?.currency) return;
     if (currency === baseCurrency) {
       setRate('1');
       return;
@@ -77,7 +111,7 @@ export default function TripExpenseModal({
       })
       .catch(() => {})
       .finally(() => setRateLoading(false));
-  }, [currency, baseCurrency]);
+  }, [currency, baseCurrency, isEdit, editing?.currency]);
 
   const amountForeignCents = yuanToCents(amount);
   const rateNum = Number(rate);
@@ -162,8 +196,11 @@ export default function TripExpenseModal({
     }
     setSaving(true);
     try {
-      const res = await fetch(`/api/ledgers/${ledgerId}/expenses`, {
-        method: 'POST',
+      const url = isEdit
+        ? `/api/ledgers/${ledgerId}/expenses/${editing!.id}`
+        : `/api/ledgers/${ledgerId}/expenses`;
+      const res = await fetch(url, {
+        method: isEdit ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: title.trim(),
@@ -198,7 +235,7 @@ export default function TripExpenseModal({
         className="w-full max-w-md bg-white dark:bg-ink-900 rounded-t-3xl sm:rounded-3xl p-6 max-h-[90dvh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="text-lg font-medium mb-4">记一笔</h3>
+        <h3 className="text-lg font-medium mb-4">{isEdit ? '编辑记录' : '记一笔'}</h3>
 
         <div className="flex gap-2 mb-3">
           <button
