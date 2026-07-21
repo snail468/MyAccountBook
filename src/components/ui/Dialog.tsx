@@ -120,6 +120,20 @@ export function useToast() {
 function DialogHost({ state, close }: { state: DialogState; close: () => void }) {
   const [visible, setVisible] = useState(false);
 
+  // 关闭逻辑放前面，避免 useEffect 里引用后面才声明的 const（TS strict TDZ）
+  const finish = (ok: boolean) => {
+    if (!state) return;
+    const s = state; // 显式捕获，setTimeout 闭包里保住 narrow
+    setVisible(false);
+    window.setTimeout(() => {
+      if (s.kind === 'confirm') s.resolve(ok);
+      else s.resolve();
+      close();
+    }, 160);
+  };
+  const handleConfirm = () => finish(true);
+  const handleCancel = () => finish(false);
+
   useEffect(() => {
     if (!state) {
       setVisible(false);
@@ -142,23 +156,6 @@ function DialogHost({ state, close }: { state: DialogState; close: () => void })
   }, [state]);
 
   if (!state) return null;
-
-  const handleConfirm = () => {
-    setVisible(false);
-    window.setTimeout(() => {
-      if (state.kind === 'confirm') state.resolve(true);
-      else state.resolve();
-      close();
-    }, 160);
-  };
-  const handleCancel = () => {
-    setVisible(false);
-    window.setTimeout(() => {
-      if (state.kind === 'confirm') state.resolve(false);
-      else state.resolve();
-      close();
-    }, 160);
-  };
 
   const isConfirm = state.kind === 'confirm';
   const opts = state.opts;

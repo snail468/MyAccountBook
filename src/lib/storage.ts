@@ -6,7 +6,7 @@
 // 存储的 key 结构与文件系统一致：`<userId>/<yyyy-mm>/<hash>.<ext>`
 // 上传后返回 URL 形如 `/api/uploads/<userId>/<yyyy-mm>/<hash>.<ext>` —— 前端不变
 
-import { createHash } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
 
 export type StoredFile = {
   key: string; // 相对路径 userId/yyyy-mm/xxx.ext
@@ -63,7 +63,11 @@ export async function getObject(key: string): Promise<ReadResult> {
   const stream = createReadStream(full);
   const web = new ReadableStream<Uint8Array>({
     start(ctrl) {
-      stream.on('data', (c) => ctrl.enqueue(c instanceof Buffer ? new Uint8Array(c) : c));
+      stream.on('data', (chunk) => {
+        // 不设 encoding 时 chunk 是 Buffer；转成 Uint8Array 视图入队
+        const buf = chunk as Buffer;
+        ctrl.enqueue(new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength));
+      });
       stream.on('end', () => ctrl.close());
       stream.on('error', (e) => ctrl.error(e));
     },
@@ -202,7 +206,6 @@ async function hmac(key: Uint8Array, msg: string): Promise<Uint8Array> {
     const buf = await crypto.subtle.sign('HMAC', cryptoKey, new TextEncoder().encode(msg));
     return new Uint8Array(buf);
   }
-  const { createHmac } = require('node:crypto');
   return new Uint8Array(createHmac('sha256', key).update(msg).digest());
 }
 

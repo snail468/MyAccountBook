@@ -117,7 +117,8 @@ function detectSilenceHead(buf: AudioBuffer): number {
 
 async function loadBuffer(key: SoundKey): Promise<void> {
   if (buffers[key]) return;
-  if (pendingDecodes[key]) return pendingDecodes[key];
+  const inflight = pendingDecodes[key];
+  if (inflight) return inflight;
   const ctx = getAC();
   if (!ctx) return;
   const p = (async () => {
