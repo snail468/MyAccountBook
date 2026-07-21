@@ -200,9 +200,11 @@ sudo certbot --nginx -d your.domain.com
 
 ### B. 项目配置
 
-1. **登录 wrangler**（Cloudflare CLI，随包安装）
+1. **安装 CF 部署工具链**（这几个依赖 Docker 部署用不到，所以刻意没塞进 `package.json` 主 dep 里避免拖累镜像 & lock 冲突）
+
    ```bash
-   npm install                     # 会拉 wrangler + @opennextjs/cloudflare
+   npm install                     # 常规依赖
+   npm run cf:setup                # 加装 wrangler + @opennextjs/cloudflare + @libsql/client + @prisma/adapter-libsql
    npx wrangler login
    ```
 
