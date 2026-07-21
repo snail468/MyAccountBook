@@ -73,6 +73,8 @@ export default function AdminUserList({
 
   async function toggleRole(u: U) {
     const next = u.role === 'admin' ? 'user' : 'admin';
+    const verb = next === 'admin' ? '升为管理员' : '降级为普通用户';
+    if (!confirm(`确定把 "${u.username}" ${verb}？`)) return;
     const res = await fetch(`/api/admin/users/${u.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -86,8 +88,17 @@ export default function AdminUserList({
   }
 
   async function resetPwd(u: U) {
-    const newPwd = prompt(`为 "${u.username}" 重置密码 (≥ 6 位)`);
-    if (!newPwd || newPwd.length < 6) return;
+    const newPwd = prompt(`为 "${u.username}" 输入新密码 (≥ 6 位)`);
+    if (!newPwd || newPwd.length < 6) {
+      if (newPwd !== null) alert('密码至少 6 位');
+      return;
+    }
+    if (
+      !confirm(
+        `确定把 "${u.username}" 的密码重置吗？\n\n新密码：${newPwd}\n\n对方需要用这个新密码登录`,
+      )
+    )
+      return;
     const res = await fetch(`/api/admin/users/${u.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },

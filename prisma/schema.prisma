@@ -101,6 +101,8 @@ model Ledger {
   color     String?
   order     Int      @default(0)
   archived  Boolean  @default(false)
+  // 软删除：非空 = 在回收站；60 天后 cleanup 会硬删
+  deletedAt DateTime?
 
   // 普通账本：月度总预算
   budgetCents Int?

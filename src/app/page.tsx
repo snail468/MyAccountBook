@@ -15,7 +15,7 @@ async function loadDashboard(userId: string) {
   await ensureLegacyMigrated();
 
   const ledgers = await prisma.ledger.findMany({
-    where: { userId, archived: false },
+    where: { userId, archived: false, deletedAt: null },
     orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
   });
 
@@ -154,7 +154,7 @@ export default async function HomePage() {
   const showCombined = s.hasWork && s.hasTaoyuan;
 
   // 预取所有可能的目标路由
-  const prefetchRoutes: string[] = ['/ledgers/new'];
+  const prefetchRoutes: string[] = ['/ledgers'];
   if (s.hasWork) prefetchRoutes.push('/work', '/work/expenses');
   if (s.hasTaoyuan) prefetchRoutes.push('/taoyuan');
   if (user.role === 'admin') prefetchRoutes.push('/admin');
@@ -297,14 +297,14 @@ export default async function HomePage() {
         ))}
 
         <Link
-          href="/ledgers/new"
+          href="/ledgers"
           className="flex items-center justify-between p-5 rounded-2xl border-2 border-dashed border-ink-300 dark:border-ink-600 text-ink-500 active:scale-[0.98] transition"
         >
           <div className="flex items-center gap-3">
             <span className="text-xl">＋</span>
             <div>
-              <div className="text-lg font-medium">添加账本</div>
-              <div className="text-xs mt-0.5">从预设库选一个新账本</div>
+              <div className="text-lg font-medium">添加 / 删除账本</div>
+              <div className="text-xs mt-0.5">新增账本 · 恢复回收站 · 管理已有</div>
             </div>
           </div>
           <span>›</span>

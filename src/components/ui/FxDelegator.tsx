@@ -40,13 +40,15 @@ export default function FxDelegator() {
   const pathname = usePathname();
   const { lightEnabled, soundEnabled, ready } = useUI();
 
-  // 用户开启声音后就预下载 + 解码
+  // App 一 ready 就预加载两段 mp3（约 30KB 总量，零负担）
+  // 这样用户任何时候开启声音，都能立刻发声，避免第一次点击解码/下载卡壳
   useEffect(() => {
-    if (ready && soundEnabled) preloadSounds();
-  }, [ready, soundEnabled]);
+    if (ready) preloadSounds();
+  }, [ready]);
 
-  // iOS 冷启动锁死：在第一次 pointerdown 里同步解锁 AudioContext
-  // 这个监听绑在 document 上，且是"捕获阶段 + 一次性"，永远在其他任何点击处理之前跑
+  // iOS/Android 冷启动：第一次 pointerdown 里对 <audio> 元素做一次 muted play + pause
+  // 让浏览器把该 <audio> 元素标记为"用户手势允许自动播放"，后续 .play() 无阻拦
+  // 用捕获阶段 + 一次性监听，保证在其它 handler 之前先跑
   useEffect(() => {
     if (!ready) return;
     let done = false;

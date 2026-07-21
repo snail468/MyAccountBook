@@ -45,6 +45,12 @@ export default function EntryRow(props: Props) {
   }
 
   async function unrefund() {
+    if (
+      !confirm(
+        `确认未回款，恢复出项吗？\n\n"${props.category}" ${formatYuan(props.amountCents)} 元`,
+      )
+    )
+      return;
     const prev = optimisticRefundedAt;
     setOptimisticRefundedAt(null);
     try {
@@ -99,10 +105,12 @@ export default function EntryRow(props: Props) {
         <div className={`font-medium truncate ${refunded ? 'line-through' : ''}`}>
           {props.category}
         </div>
-        <div className="text-[11px] text-ink-500 truncate mt-0.5">
-          {formatShort(props.occurredAt)}
+        <div className="text-[11px] text-ink-500 mt-0.5 leading-tight">
+          <div className="truncate">{formatShort(props.occurredAt)}</div>
           {refunded && optimisticRefundedAt && (
-            <> · 回款 {formatShort(optimisticRefundedAt)}</>
+            <div className="truncate text-emerald-600 dark:text-emerald-400">
+              回款于 {formatShort(optimisticRefundedAt)}
+            </div>
           )}
         </div>
         {props.note && (

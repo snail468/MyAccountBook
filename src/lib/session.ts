@@ -3,6 +3,7 @@ import { cookies } from 'next/headers';
 import { prisma } from '@/lib/db';
 import { ensureAdminBootstrap } from '@/lib/adminBootstrap';
 import { ensureLedgersForUser } from '@/lib/ledgerBootstrap';
+import { migrateArchivedIfNeeded, purgeExpiredTrash } from '@/lib/ledgerTrash';
 
 export type SessionData = {
   userId?: string;
@@ -57,5 +58,8 @@ export async function requireUserWithRole(): Promise<
   if (!user) return null;
   // 幂等：为该用户补齐 work/taoyuan 的 Ledger 元数据（老用户升级路径）
   await ensureLedgersForUser(user.id);
+  // 回收站维护（进程级幂等）
+  await migrateArchivedIfNeeded();
+  await purgeExpiredTrash();
   return user;
 }

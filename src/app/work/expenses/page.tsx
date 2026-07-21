@@ -89,10 +89,12 @@ export default async function ExpensesPage() {
                         <div className={`text-sm font-medium truncate ${refunded ? 'line-through' : ''}`}>
                           {e.category}
                         </div>
-                        <div className="text-[11px] text-ink-500 truncate mt-0.5">
-                          {formatShort(e.occurredAt)}
+                        <div className="text-[11px] text-ink-500 mt-0.5 leading-tight">
+                          <div className="truncate">{formatShort(e.occurredAt)}</div>
                           {refunded && e.refundedAt && (
-                            <> · 回款 {formatShort(e.refundedAt)}</>
+                            <div className="truncate text-emerald-600 dark:text-emerald-400">
+                              回款于 {formatShort(e.refundedAt)}
+                            </div>
                           )}
                         </div>
                         {e.note && (

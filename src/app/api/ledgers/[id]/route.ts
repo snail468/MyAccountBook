@@ -54,10 +54,10 @@ export async function PATCH(
   return NextResponse.json({ ok: true });
 }
 
-// 删除：内置账本（work/taoyuan）不真删，只 archived；实际数据在 Entry / Event 里
-// 用户自建的 general/travel 才真删（连带 cascade）
+// 删除：软删除到回收站（deletedAt = now），60 天后由 cleanup 硬删
+// 支持 ?permanent=1 立即硬删（回收站里的"永久删除"）
 export async function DELETE(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const user = await requireUser();
@@ -66,11 +66,16 @@ export async function DELETE(
   const own = await ensureOwn(id, user.id);
   if (!own) return NextResponse.json({ error: '不存在' }, { status: 404 });
 
-  if (own.kind === 'work' || own.kind === 'taoyuan') {
-    // 仅从首页隐藏；数据保留
-    await prisma.ledger.update({ where: { id }, data: { archived: true } });
-    return NextResponse.json({ ok: true, kept: true });
+  const url = new URL(req.url);
+  const permanent = url.searchParams.get('permanent') === '1';
+
+  if (permanent) {
+    await prisma.ledger.delete({ where: { id } });
+    return NextResponse.json({ ok: true, permanent: true });
   }
-  await prisma.ledger.delete({ where: { id } });
+  await prisma.ledger.update({
+    where: { id },
+    data: { deletedAt: new Date(), archived: true },
+  });
   return NextResponse.json({ ok: true });
 }

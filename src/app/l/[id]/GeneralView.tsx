@@ -588,19 +588,6 @@ function SettingsModal({
     }
   }
 
-  async function del() {
-    if (!confirm(`删除账本 "${ledger.name}"？所有记录会一并清除，且不可恢复！`)) return;
-    setBusy(true);
-    const res = await fetch(`/api/ledgers/${ledger.id}`, { method: 'DELETE' });
-    if (res.ok) {
-      window.location.href = '/';
-    } else {
-      const data = await res.json().catch(() => ({}));
-      alert(data.error || '删除失败');
-      setBusy(false);
-    }
-  }
-
   return (
     <div
       className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40"
@@ -642,13 +629,9 @@ function SettingsModal({
             {busy ? '保存中…' : '保存'}
           </button>
         </div>
-        <button
-          onClick={del}
-          disabled={busy}
-          className="mt-3 w-full py-2.5 rounded-2xl bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 text-sm disabled:opacity-50"
-        >
-          删除此账本
-        </button>
+        <p className="mt-3 text-[11px] text-ink-400 text-center">
+          删除操作已迁移到「添加 / 删除账本」页面
+        </p>
       </div>
     </div>
   );
