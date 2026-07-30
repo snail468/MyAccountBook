@@ -200,7 +200,20 @@ sudo certbot --nginx -d your.domain.com
 
 ## Cloudflare Pages 部署（Serverless · 全球 CDN · 免运维）
 
-除了 Docker 自建，本项目也支持部署到 **Cloudflare Pages** —— 全球边缘节点秒开、免维护、零成本起步（免费额度即可跑一个个人账本）。数据库切换到 **Turso**（远端 SQLite）、图片走 **R2**（S3 兼容对象存储），Prisma schema 和业务代码完全复用。
+除了 Docker 自建，本项目也支持部署到 **Cloudflare Workers** —— 全球边缘节点秒开、免维护。数据库切换到 **Turso**（远端 SQLite）、图片走 **R2**（S3 兼容对象存储），Prisma schema 和业务代码完全复用。
+
+> ### ⚠️ 免费套餐上登录会失败
+>
+> 密码哈希目前用的是 `bcryptjs`（cost=10），约消耗 **60–100ms 纯 CPU**，
+> 而 Workers **免费套餐每次调用的 CPU 上限是 10ms** —— 注册和登录会因
+> `Worker exceeded CPU time limit` 而失败，进不去任何账本页。
+>
+> 三条路：
+> - 用 **Workers 付费套餐**（默认 30s CPU），不受影响
+> - 等把密码哈希换成 Web Crypto PBKDF2（Workers 原生实现，快一个数量级）
+> - 只在 Docker 部署上验证需要登录的功能
+>
+> 其余部分（静态资源、中间件、CSP、页面渲染）在免费套餐上都正常。
 
 ### A. 一次性准备（约 10 分钟）
 
@@ -228,18 +241,36 @@ sudo certbot --nginx -d your.domain.com
      npx prisma migrate deploy
    ```
 
-   > 如果这个 Turso 库是在 v1 时期用 `db push` 建的，先跑一次
-   > `DATABASE_URL="..." npm run prisma:baseline` 再 `migrate deploy`。
+   `migrate deploy` 会把 `prisma/migrations/` 下**全部**迁移按序应用，
+   包含安全字段那一版（`sessionVersion` / `failedLoginCount` / `lockedUntil`）。
+   跑完可以用 `DATABASE_URL="..." npm run prisma:status` 确认显示 `up to date`。
+
+   > 如果这个 Turso 库是在 v1 时期用 `db push` 建的，表已经存在，
+   > 直接 `migrate deploy` 会因为 "table already exists" 失败。先 baseline：
+   >
+   > ```bash
+   > DATABASE_URL="libsql://...?authToken=..." npm run prisma:baseline
+   > DATABASE_URL="libsql://...?authToken=..." npx prisma migrate deploy
+   > ```
 
 ### B. 项目配置
 
-1. **安装 CF 部署工具链**（这几个依赖 Docker 部署用不到，所以刻意没塞进 `package.json` 主 dep 里避免拖累镜像 & lock 冲突）
+1. **安装 CF 部署工具链**（这几个依赖只有 CF 部署用得到）
 
    ```bash
    npm install                     # 常规依赖
    npm run cf:setup                # 加装 wrangler + @opennextjs/cloudflare + @libsql/client + @prisma/adapter-libsql
    npx wrangler login
    ```
+
+   > **`cf:setup` 会把这 4 个包写进 `package.json` 和 `package-lock.json`。**
+   > 提交它们会让 Docker 构建的 `npm ci` 也装上这批 CF 专用包，镜像白白变大。
+   > 跑完后请**不要提交**这两个文件的改动（`git checkout -- package.json package-lock.json`），
+   > 或者改用不落盘的装法：
+   >
+   > ```bash
+   > npm install --no-save @opennextjs/cloudflare wrangler @libsql/client @prisma/adapter-libsql
+   > ```
 
 2. **写入 secrets**（不会明文出现在 `wrangler.toml` 里）
    ```bash
@@ -255,14 +286,31 @@ sudo certbot --nginx -d your.domain.com
 ### C. 构建与部署
 
 ```bash
-# 本地预览
+# 先构建产物（生成 .open-next/）
+npm run build:cf
+
+# 本地在 workerd 里预览 —— 和线上同一个运行时
 npm run preview:cf
 
 # 正式发布
 npm run deploy:cf
 ```
 
-首次 deploy 会创建 `myaccountbook` Worker/Pages 项目，输出访问 URL（形如 `https://myaccountbook.你的subdomain.workers.dev`）。绑定自定义域名后即可作为 PWA 装到手机主屏。
+首次 deploy 会创建 `myaccountbook` Worker，输出访问 URL（形如 `https://myaccountbook.你的subdomain.workers.dev`）。绑定自定义域名后即可作为 PWA 装到手机主屏。
+
+**`wrangler.toml` 里的 `main` 和 `[assets]` 是必填项**，指向 `build:cf` 的产物。
+`@opennextjs/cloudflare` 不会自动写进去，缺了会报
+`Missing entry-point to Worker script or to assets directory`。
+
+预览时可以这样自查（不需要 Turso 也能验证大半）：
+
+```bash
+curl -sI http://localhost:8787/login | grep -i -E 'content-security-policy|x-content-type'
+curl -s http://localhost:8787/api/health
+```
+
+`/api/health` 在没配 Turso 时应返回 `503 {"status":"degraded","db":"error"}` ——
+这恰好证明它做了真实的数据库往返，而不是只回一句 ok。
 
 ### D. 后续更新
 

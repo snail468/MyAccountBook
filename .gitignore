@@ -4,6 +4,10 @@ out
 build
 dist
 
+# @opennextjs/cloudflare 的构建产物
+.open-next
+.wrangler
+
 # TS 增量编译缓存
 *.tsbuildinfo
 
