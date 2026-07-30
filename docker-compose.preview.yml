@@ -1,0 +1,46 @@
+# 并行预览实例 —— 用来和现有生产实例对比体验，不影响生产。
+#
+# 与 docker-compose.yml 的三处关键差异：
+#   1. 容器名不同（myaccountbook-preview），不会顶掉生产容器
+#   2. 端口 3001（生产是 3000）
+#   3. **数据目录不同**（./data-preview），这是最重要的一条 —— 见下方警告
+#
+# ⚠️ 绝对不要让两个实例共用同一个 data 目录
+#   新版启动时会跑 `prisma migrate deploy`，给库加三个字段
+#   （sessionVersion / failedLoginCount / lockedUntil）并写入 _prisma_migrations。
+#   而老版启动时跑的是 `prisma db push --accept-data-loss`，它按老 schema 对齐，
+#   会把那三个字段**直接删掉**。两个容器轮流启动 = 反复加列删列，
+#   属于实打实的数据损坏风险。
+#
+# 用法见 README「并行部署一个预览实例做对比」章节。
+
+services:
+  app:
+    # 手动触发 Actions 构建分支后，把这里换成实际的镜像标签。
+    # 标签名会打印在 Actions 的任务摘要里，通常是分支名（斜杠变成短横线）
+    # 或 sha-xxxxxxx。也可以用 IMAGE_TAG 环境变量覆盖：
+    #   IMAGE_TAG=sha-3fa8a2a docker compose -f docker-compose.preview.yml up -d
+    image: ghcr.io/snail46/myaccountbook:${IMAGE_TAG:-refactor-data-safety-and-pagination}
+    container_name: myaccountbook-preview
+    restart: unless-stopped
+    ports:
+      # 宿主机 3001 → 容器 3000。生产占着 3000，别改成一样的。
+      - "3001:3000"
+    environment:
+      # 预览实例用**自己的**密钥，别复用生产的那个。
+      # 生成：openssl rand -base64 32
+      SESSION_SECRET: "${SESSION_SECRET:?请在 .env 里设置 SESSION_SECRET（至少 32 字符）}"
+      DATABASE_URL: "file:/data/app.db"
+      # 通过 http://IP:3001 访问时必须是 false，否则浏览器拒收登录 cookie
+      COOKIE_SECURE: "${COOKIE_SECURE:-false}"
+      NODE_ENV: production
+    volumes:
+      # 独立数据目录 —— 与生产的 ./data 完全隔离
+      - ./data-preview:/data
+    healthcheck:
+      # /api/health 会真查一次数据库，volume 没挂对能立刻发现
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s

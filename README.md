@@ -159,6 +159,118 @@ docker compose up -d
 > 完成后 `data/` 下会多一个 `.prisma-baselined` 标记文件，**不要删它**。
 > 万一需要跳过自动迁移（例如手工修数据库），用 `SKIP_DB_MIGRATE=true` 启动。
 
+### D2. 并行部署一个预览实例做对比
+
+想在不动生产的前提下试新版本（比如某个功能分支），可以在同一台服务器上
+跑第二个实例：**不同端口、不同容器名、不同数据目录**。
+
+#### 第 1 步 · 让 Actions 构建分支镜像
+
+默认只有 push 到 `main` 才会构建。功能分支要手动触发：
+
+1. GitHub 仓库 → **Actions** 标签
+2. 左侧选 **Build & publish Docker image**
+3. 右上 **Run workflow** → **Branch** 下拉里选你要的分支 → 点 **Run workflow**
+4. 等构建完成（约 5–10 分钟，要出 amd64 + arm64 两个架构）
+5. 点进这次运行，**任务摘要里会直接列出可拉取的镜像标签**，复制即可
+
+标签规则：分支名里的斜杠会变成短横线。例如
+`refactor/data-safety-and-pagination` → `refactor-data-safety-and-pagination`。
+另外总会有一个 `sha-xxxxxxx` 标签指向这次的确切提交，想固定版本用它更稳。
+
+> `latest` 标签带 `enable={{is_default_branch}}` 守卫，**只有 `main` 会产出**。
+> 所以手动构建分支不会影响生产实例的 `docker compose pull`。
+
+#### 第 2 步 · 准备预览实例的目录与数据
+
+```bash
+mkdir -p ~/myaccountbook-preview && cd ~/myaccountbook-preview
+
+curl -O https://raw.githubusercontent.com/snail46/MyAccountBook/main/docker-compose.preview.yml
+
+cat > .env <<EOF
+SESSION_SECRET=$(openssl rand -base64 32)
+COOKIE_SECURE=false
+IMAGE_TAG=refactor-data-safety-and-pagination
+EOF
+chmod 600 .env
+```
+
+想拿真实数据对比体验，就**复制**一份生产库过来（注意是复制，不是共用）：
+
+```bash
+mkdir -p ~/myaccountbook-preview/data-preview
+
+cd ~/myaccountbook
+docker compose stop           # 停一下保证文件一致，WAL 模式下热拷可能漏事务
+cp data/app.db ~/myaccountbook-preview/data-preview/app.db
+cp -r data/uploads ~/myaccountbook-preview/data-preview/ 2>/dev/null || true
+docker compose start
+```
+
+不复制也行，预览实例会是个空库，首次访问 `/register` 注册第一个账号即可。
+
+#### 第 3 步 · 启动
+
+```bash
+cd ~/myaccountbook-preview
+docker compose -f docker-compose.preview.yml pull
+docker compose -f docker-compose.preview.yml up -d
+docker compose -f docker-compose.preview.yml logs -f
+```
+
+日志里会看到迁移过程：
+
+```
+[entrypoint] 检测到 db push 时代的老数据库，先 baseline 到 0_init（不改表结构）...
+[entrypoint] 应用数据库迁移...
+[entrypoint] 启动服务 (port 3000)...
+```
+
+访问 `http://<服务器IP>:3001`。生产实例仍在 3000，两边互不干扰。
+
+确认数据库通了：
+
+```bash
+curl http://127.0.0.1:3001/api/health
+# {"status":"ok","db":"ok","latencyMs":1}
+```
+
+#### ⚠️ 两条务必注意
+
+**一、绝对不要让两个实例共用同一个 data 目录。**
+新版启动时跑 `prisma migrate deploy`，给库加三个字段
+（`sessionVersion` / `failedLoginCount` / `lockedUntil`）；
+而老版跑的是 `prisma db push --accept-data-loss`，它按老 schema 对齐，
+会把那三个字段**直接删掉**。两个容器轮流启动 = 反复加列删列，
+是实打实的数据损坏风险。`docker-compose.preview.yml` 里已经用
+`./data-preview` 隔开了，别去改它。
+
+**二、复制那一刻起两边数据就分叉了。**
+在预览实例里记的账不会出现在生产，反之亦然。对比体验没问题，
+但**不要**两边同时当正式账本用。
+
+#### 对比完之后
+
+不想要了，整个删掉：
+
+```bash
+cd ~/myaccountbook-preview
+docker compose -f docker-compose.preview.yml down
+cd ~ && rm -rf ~/myaccountbook-preview
+```
+
+觉得可以了，就把分支合进 `main`，然后在生产实例上正常升级：
+
+```bash
+cp ~/myaccountbook/data/app.db ~/backups/app-before-upgrade.db   # 先备份
+cd ~/myaccountbook
+docker compose pull
+docker compose up -d
+```
+
+容器启动时会自动 baseline 老库再增量迁移，无需手工操作。
+
 ### E.（推荐）加 HTTPS + 域名
 
 PWA 在非本地环境**必须** HTTPS 才能安装到主屏。用 Nginx + Certbot 一次性搞定：
