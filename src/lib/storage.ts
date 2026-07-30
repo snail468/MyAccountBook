@@ -82,6 +82,67 @@ export async function getObject(key: string): Promise<ReadResult> {
   };
 }
 
+// ==== 删除 ====
+// 条目/活动/账本被硬删时调用，避免存储只增不减。
+// 失败只记日志不抛错 —— 删业务数据是主操作，清图片是尽力而为的附带操作，
+// 不能因为一张图删不掉就让用户的删除操作失败。
+export async function deleteObject(key: string): Promise<boolean> {
+  try {
+    if (isR2Configured()) {
+      return await r2Delete(key);
+    }
+    const { join, resolve, sep, normalize } = await import('node:path');
+    const { unlink } = await import('node:fs/promises');
+    const root = process.env.UPLOAD_ROOT || join(process.cwd(), 'data', 'uploads');
+    const rootResolved = resolve(root);
+    const rel = normalize(key);
+    // 与 getObject 相同的穿越防护：绝不允许删到上传根目录之外
+    if (rel.includes(`..${sep}`) || rel.startsWith(`..${sep}`) || rel === '..') return false;
+    const full = resolve(root, rel);
+    if (!full.startsWith(rootResolved + sep)) return false;
+    await unlink(full);
+    return true;
+  } catch (err) {
+    // ENOENT 属于正常情况（图片可能早就被删了 / 从没写成功过）
+    if ((err as NodeJS.ErrnoException)?.code !== 'ENOENT') {
+      console.warn('[storage] deleteObject failed:', key, err);
+    }
+    return false;
+  }
+}
+
+/**
+ * 把 `/api/uploads/<userId>/<...>` 形式的 URL 还原成存储 key。
+ * 非本站上传的 URL（用户手填的外链）返回 null，调用方跳过即可。
+ */
+export function keyFromUploadUrl(url: string): string | null {
+  const PREFIX = '/api/uploads/';
+  if (!url.startsWith(PREFIX)) return null;
+  const rest = url.slice(PREFIX.length).split('?')[0];
+  if (!rest) return null;
+  try {
+    const key = rest
+      .split('/')
+      .map((s) => decodeURIComponent(s))
+      .join('/');
+    if (key.includes('..')) return null;
+    return key;
+  } catch {
+    return null;
+  }
+}
+
+/** 批量删除一组上传 URL 对应的对象，返回实际删掉的数量 */
+export async function deleteUploadUrls(urls: string[]): Promise<number> {
+  let n = 0;
+  for (const u of urls) {
+    const key = keyFromUploadUrl(u);
+    if (!key) continue;
+    if (await deleteObject(key)) n += 1;
+  }
+  return n;
+}
+
 // ==================== R2（S3 兼容 API）====================
 // 用 AWS SigV4 手写签名，避免拉 aws-sdk 巨型依赖，Node/Workers 都能跑
 
@@ -121,9 +182,18 @@ async function r2Get(key: string): Promise<ReadResult> {
   };
 }
 
+async function r2Delete(key: string): Promise<boolean> {
+  const bucket = process.env.R2_BUCKET!;
+  const url = `${r2Endpoint()}/${bucket}/${key}`;
+  const headers = await signR2Request('DELETE', url);
+  const res = await fetch(url, { method: 'DELETE', headers });
+  // S3 语义：删不存在的对象也返回 204，这里一并当成功
+  return res.ok || res.status === 404;
+}
+
 // —— SigV4 for R2（region=auto, service=s3）——
 async function signR2Request(
-  method: 'GET' | 'PUT',
+  method: 'GET' | 'PUT' | 'DELETE',
   urlStr: string,
   body?: Uint8Array,
   contentType?: string,

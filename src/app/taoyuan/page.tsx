@@ -2,66 +2,56 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { requireUser } from '@/lib/session';
 import { prisma } from '@/lib/db';
-import { combineAmounts } from '@/lib/amounts';
-import { parseRewardMethods } from '@/lib/rewardMethod';
 import { ensureLegacyMigrated } from '@/lib/legacyMigrate';
+import { buildEventTree } from '@/lib/taoyuanSerialize';
+import { CREATED_DESC_ORDER, slicePageByCreated } from '@/lib/pagination';
 import Prefetcher from '@/components/ui/Prefetcher';
 import TaoyuanClient from './TaoyuanClient';
-import type { ClientEvent } from './types';
 
 export const dynamic = 'force-dynamic';
 
-type RawEvent = Awaited<ReturnType<typeof loadRaw>>[number];
+// 已完成归档每页条数。活跃项不分页，所以这里可以给得小一点。
+const PAID_PAGE_SIZE = 20;
 
-async function loadRaw(userId: string) {
-  return prisma.event.findMany({
-    where: { userId },
-    include: {
-      amounts: {
-        orderBy: { occurredAt: 'asc' },
+async function loadTaoyuan(userId: string) {
+  const include = { amounts: { orderBy: { occurredAt: 'asc' as const } } };
+
+  const [activeTop, paidTop] = await Promise.all([
+    // 活跃项（未到账）全量加载：数量天然有界，且 MergeBar 合并需要看到全部候选
+    prisma.event.findMany({
+      where: {
+        userId,
+        parentId: null,
+        status: { in: ['published', 'predicted', 'announced'] },
       },
-    },
-    orderBy: [{ createdAt: 'desc' }],
-  });
-}
-
-function serialize(ev: RawEvent, children: ClientEvent[] = []): ClientEvent {
-  return {
-    id: ev.id,
-    title: ev.title,
-    status: ev.status,
-    participate: ev.participate,
-    startAt: ev.startAt?.toISOString() ?? null,
-    deadline: ev.deadline?.toISOString() ?? null,
-    content: ev.content,
-    reward: ev.reward,
-    rewardMethods: parseRewardMethods(ev.rewardMethods, ev.rewardMethod),
-    contentImages: parseImages(ev.contentImages),
-    topicTag: ev.topicTag,
-    amounts: combineAmounts(ev.amounts, {
-      predictedCents: ev.predictedCents,
-      announcedCents: ev.announcedCents,
-      paidCents: ev.paidCents,
-      predictedAt: ev.predictedAt,
-      announcedAt: ev.announcedAt,
-      paidAt: ev.paidAt,
-      rewardMethod: ev.rewardMethod,
+      include,
+      orderBy: CREATED_DESC_ORDER,
     }),
-    note: ev.note,
-    parentId: ev.parentId,
-    children,
-  };
-}
+    // 已到账归档：只取第一页，其余靠 /api/events/paid 翻页
+    prisma.event.findMany({
+      where: { userId, parentId: null, status: 'paid' },
+      include,
+      orderBy: CREATED_DESC_ORDER,
+      take: PAID_PAGE_SIZE + 1,
+    }),
+  ]);
 
-function parseImages(v: string | null): string[] {
-  if (!v) return [];
-  try {
-    const arr = JSON.parse(v);
-    if (Array.isArray(arr)) return arr.filter((x) => typeof x === 'string');
-  } catch {
-    // ignore
-  }
-  return [];
+  const paidPage = slicePageByCreated(paidTop, PAID_PAGE_SIZE);
+  const loadedTop = [...activeTop, ...paidPage.items];
+
+  const children =
+    loadedTop.length > 0
+      ? await prisma.event.findMany({
+          where: { userId, parentId: { in: loadedTop.map((e) => e.id) } },
+          include,
+        })
+      : [];
+
+  return {
+    events: buildEventTree(loadedTop, children),
+    paidCursor: paidPage.nextCursor,
+    activeCount: activeTop.length,
+  };
 }
 
 export default async function TaoyuanPage() {
@@ -70,22 +60,7 @@ export default async function TaoyuanPage() {
 
   await ensureLegacyMigrated();
 
-  const raw = await loadRaw(user.id);
-
-  const childrenByParent = new Map<string, ClientEvent[]>();
-  const topLevel: RawEvent[] = [];
-  for (const ev of raw) {
-    if (ev.parentId) {
-      const arr = childrenByParent.get(ev.parentId) ?? [];
-      arr.push(serialize(ev));
-      childrenByParent.set(ev.parentId, arr);
-    } else {
-      topLevel.push(ev);
-    }
-  }
-  const events: ClientEvent[] = topLevel.map((ev) =>
-    serialize(ev, childrenByParent.get(ev.id) ?? []),
-  );
+  const data = await loadTaoyuan(user.id);
 
   return (
     <div className="px-6 pt-14 pb-24">
@@ -95,7 +70,7 @@ export default async function TaoyuanPage() {
         <h1 className="text-2xl font-semibold flex-1">桃源账本</h1>
       </div>
 
-      <TaoyuanClient events={events} />
+      <TaoyuanClient initialEvents={data.events} initialPaidCursor={data.paidCursor} />
     </div>
   );
 }

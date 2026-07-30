@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { requireUser } from '@/lib/session';
+import { cleanupCollectedImages, collectLedgerImageUrls } from '@/lib/imageCleanup';
 
 const patchSchema = z.object({
   name: z.string().trim().min(1).max(50).optional(),
@@ -88,7 +89,10 @@ export async function DELETE(
   const permanent = url.searchParams.get('permanent') === '1';
 
   if (permanent) {
+    // 先收集图片 URL（删掉账本后级联删了条目就查不到了），删完再清文件
+    const imageUrls = await collectLedgerImageUrls(id);
     await prisma.ledger.delete({ where: { id } });
+    await cleanupCollectedImages(imageUrls);
     return NextResponse.json({ ok: true, permanent: true });
   }
   await prisma.ledger.update({

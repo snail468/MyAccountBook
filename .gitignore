@@ -4,6 +4,9 @@ out
 build
 dist
 
+# TS 增量编译缓存
+*.tsbuildinfo
+
 # env
 .env
 .env.local

@@ -71,9 +71,14 @@ async function configureSqlite(client: PrismaClient) {
     return;
   }
   try {
-    await client.$executeRawUnsafe('PRAGMA journal_mode=WAL');
-    await client.$executeRawUnsafe('PRAGMA busy_timeout=5000');
-    await client.$executeRawUnsafe('PRAGMA synchronous=NORMAL');
+    // 必须用 $queryRawUnsafe 而不是 $executeRawUnsafe：
+    // PRAGMA journal_mode=WAL 会返回一行结果（新的 journal 模式名），
+    // 而 $executeRawUnsafe 在 SQLite 上遇到返回值会直接报
+    // "Execute returned results, which is not allowed in SQLite"。
+    // 这个错以前被 catch 吞掉只打了条 warn —— 结果 WAL 其实一直没开成。
+    await client.$queryRawUnsafe('PRAGMA journal_mode=WAL');
+    await client.$queryRawUnsafe('PRAGMA busy_timeout=5000');
+    await client.$queryRawUnsafe('PRAGMA synchronous=NORMAL');
     global.__xydWalConfigured = true;
   } catch (err) {
     console.warn('[db] configure sqlite failed:', err);

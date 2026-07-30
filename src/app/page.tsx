@@ -22,19 +22,18 @@ async function loadDashboard(userId: string) {
   const hasWork = ledgers.some((l) => l.kind === 'work');
   const hasTaoyuan = ledgers.some((l) => l.kind === 'taoyuan');
 
-  // 工作数据
-  const workEntries = hasWork
-    ? await prisma.entry.findMany({
+  // 工作数据 —— 用 SQL 聚合，不再把全部条目拉进内存
+  const workSums = hasWork
+    ? await prisma.entry.groupBy({
+        by: ['direction'],
         where: { userId },
-        select: { direction: true, amountCents: true },
+        _sum: { amountCents: true },
       })
     : [];
-  const B = workEntries
-    .filter((e) => e.direction === 'income')
-    .reduce((a, e) => a + e.amountCents, 0);
-  const expenseTotal = workEntries
-    .filter((e) => e.direction === 'expense')
-    .reduce((a, e) => a + e.amountCents, 0);
+  const workSumOf = (dir: string) =>
+    workSums.find((r) => r.direction === dir)?._sum.amountCents ?? 0;
+  const B = workSumOf('income');
+  const expenseTotal = workSumOf('expense');
 
   // 桃源数据
   const paidAmounts = hasTaoyuan
@@ -72,6 +71,51 @@ async function loadDashboard(userId: string) {
     : 0;
 
   // 其它自建账本的小卡片数据
+  //
+  // 原来这里是 for 循环里逐个账本发查询（N+1）—— 账本一多首页就线性变慢。
+  // 现在改成按类型各发一组 groupBy，总查询数固定为 3 条，与账本数量无关。
+  const generalIds = ledgers.filter((l) => l.kind === 'general').map((l) => l.id);
+  const travelIds = ledgers.filter((l) => l.kind === 'travel').map((l) => l.id);
+
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+
+  const [generalSums, travelSums, travelMemberCounts] = await Promise.all([
+    generalIds.length > 0
+      ? prisma.generalEntry.groupBy({
+          by: ['ledgerId', 'direction'],
+          where: {
+            ledgerId: { in: generalIds },
+            occurredAt: { gte: monthStart, lt: monthEnd },
+          },
+          _sum: { amountCents: true },
+        })
+      : Promise.resolve([]),
+    travelIds.length > 0
+      ? prisma.tripExpense.groupBy({
+          by: ['ledgerId'],
+          where: { ledgerId: { in: travelIds } },
+          _sum: { amountBaseCents: true },
+        })
+      : Promise.resolve([]),
+    travelIds.length > 0
+      ? prisma.tripMember.groupBy({
+          by: ['ledgerId'],
+          where: { ledgerId: { in: travelIds } },
+          _count: { _all: true },
+        })
+      : Promise.resolve([]),
+  ]);
+
+  const generalSumOf = (ledgerId: string, dir: string) =>
+    generalSums.find((r) => r.ledgerId === ledgerId && r.direction === dir)?._sum
+      .amountCents ?? 0;
+  const travelTotalOf = (ledgerId: string) =>
+    travelSums.find((r) => r.ledgerId === ledgerId)?._sum.amountBaseCents ?? 0;
+  const travelMembersOf = (ledgerId: string) =>
+    travelMemberCounts.find((r) => r.ledgerId === ledgerId)?._count._all ?? 0;
+
   const otherLedgers = ledgers.filter((l) => l.kind === 'general' || l.kind === 'travel');
   const ledgerCards: {
     id: string;
@@ -82,54 +126,26 @@ async function loadDashboard(userId: string) {
     accent: string | null;
   }[] = [];
   for (const l of otherLedgers) {
+    let summary: string;
     if (l.kind === 'general') {
-      // 本月支出
-      const now = new Date();
-      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-      const rows = await prisma.generalEntry.findMany({
-        where: {
-          ledgerId: l.id,
-          occurredAt: { gte: monthStart },
-        },
-        select: { direction: true, amountCents: true },
-      });
-      const income = rows
-        .filter((r) => r.direction === 'income')
-        .reduce((a, r) => a + r.amountCents, 0);
-      const expense = rows
-        .filter((r) => r.direction === 'expense')
-        .reduce((a, r) => a + r.amountCents, 0);
-      let summary = `本月支出 ${(expense / 100).toFixed(2)} · 收入 ${(income / 100).toFixed(2)}`;
+      const income = generalSumOf(l.id, 'income');
+      const expense = generalSumOf(l.id, 'expense');
+      summary = `本月支出 ${(expense / 100).toFixed(2)} · 收入 ${(income / 100).toFixed(2)}`;
       if (l.budgetCents && l.budgetCents > 0) {
-        const pct = Math.round((expense / l.budgetCents) * 100);
-        summary += ` · 预算 ${pct}%`;
+        summary += ` · 预算 ${Math.round((expense / l.budgetCents) * 100)}%`;
       }
-      ledgerCards.push({
-        id: l.id,
-        kind: l.kind,
-        name: l.name,
-        icon: l.icon,
-        summary,
-        accent: null,
-      });
-    } else if (l.kind === 'travel') {
-      const totalRow = await prisma.tripExpense.aggregate({
-        where: { ledgerId: l.id },
-        _sum: { amountBaseCents: true },
-        _count: true,
-      });
-      const membersCount = await prisma.tripMember.count({ where: { ledgerId: l.id } });
-      const total = totalRow._sum.amountBaseCents ?? 0;
-      const summary = `${membersCount} 人 · 已花 ${(total / 100).toFixed(2)} ${l.baseCurrency ?? ''}`;
-      ledgerCards.push({
-        id: l.id,
-        kind: l.kind,
-        name: l.name,
-        icon: l.icon,
-        summary,
-        accent: null,
-      });
+    } else {
+      const total = travelTotalOf(l.id);
+      summary = `${travelMembersOf(l.id)} 人 · 已花 ${(total / 100).toFixed(2)} ${l.baseCurrency ?? ''}`;
     }
+    ledgerCards.push({
+      id: l.id,
+      kind: l.kind,
+      name: l.name,
+      icon: l.icon,
+      summary,
+      accent: null,
+    });
   }
 
   return {

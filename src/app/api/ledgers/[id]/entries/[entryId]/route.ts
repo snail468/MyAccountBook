@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { requireUser } from '@/lib/session';
+import { cleanupImagesAfterDelete, cleanupRemovedImages } from '@/lib/imageCleanup';
 
 const patchSchema = z.object({
   direction: z.enum(['income', 'expense']).optional(),
@@ -16,7 +17,8 @@ const patchSchema = z.object({
 async function ensureOwn(ledgerId: string, entryId: string, userId: string) {
   const entry = await prisma.generalEntry.findUnique({
     where: { id: entryId },
-    select: { ledgerId: true, ledger: { select: { userId: true } } },
+    // imageUrls 一并取出：删除/改图时要拿它清理不再被引用的文件
+    select: { ledgerId: true, imageUrls: true, ledger: { select: { userId: true } } },
   });
   if (!entry || entry.ledgerId !== ledgerId || entry.ledger.userId !== userId) return null;
   return entry;
@@ -49,6 +51,11 @@ export async function PATCH(
     data.occurredAt = p.occurredAt ? new Date(p.occurredAt) : new Date();
 
   await prisma.generalEntry.update({ where: { id: entryId }, data });
+
+  // 用户在编辑里移掉的图片，清理掉不再被任何记录引用的那些
+  if (p.imageUrls !== undefined) {
+    await cleanupRemovedImages(own.imageUrls, p.imageUrls);
+  }
   return NextResponse.json({ ok: true });
 }
 
@@ -62,5 +69,7 @@ export async function DELETE(
   const own = await ensureOwn(id, entryId, user.id);
   if (!own) return NextResponse.json({ error: '不存在' }, { status: 404 });
   await prisma.generalEntry.delete({ where: { id: entryId } });
+  // 删完再清图：此时引用计数查询不会把自己算进去
+  await cleanupImagesAfterDelete(own.imageUrls);
   return NextResponse.json({ ok: true });
 }

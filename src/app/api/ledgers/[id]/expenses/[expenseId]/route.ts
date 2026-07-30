@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { requireUser } from '@/lib/session';
+import { cleanupImagesAfterDelete, cleanupRemovedImages } from '@/lib/imageCleanup';
 
 const splitSchema = z.object({
   memberId: z.string().min(1),
@@ -25,7 +26,8 @@ const patchSchema = z.object({
 async function ensureOwn(ledgerId: string, expenseId: string, userId: string) {
   const exp = await prisma.tripExpense.findUnique({
     where: { id: expenseId },
-    select: { ledgerId: true, ledger: { select: { userId: true } } },
+    // imageUrls 一并取出：删除/改图时要拿它清理不再被引用的文件
+    select: { ledgerId: true, imageUrls: true, ledger: { select: { userId: true } } },
   });
   if (!exp || exp.ledgerId !== ledgerId || exp.ledger.userId !== userId) return null;
   return exp;
@@ -125,6 +127,11 @@ export async function PATCH(
     }
   });
 
+  // 用户在编辑里移掉的小票照片，清理掉不再被任何记录引用的那些
+  if (p.imageUrls !== undefined) {
+    await cleanupRemovedImages(own.imageUrls, p.imageUrls);
+  }
+
   return NextResponse.json({ ok: true });
 }
 
@@ -138,5 +145,7 @@ export async function DELETE(
   const own = await ensureOwn(id, expenseId, user.id);
   if (!own) return NextResponse.json({ error: '不存在' }, { status: 404 });
   await prisma.tripExpense.delete({ where: { id: expenseId } });
+  // 删完再清图：此时引用计数查询不会把自己算进去
+  await cleanupImagesAfterDelete(own.imageUrls);
   return NextResponse.json({ ok: true });
 }

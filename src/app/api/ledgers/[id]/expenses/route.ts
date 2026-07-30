@@ -2,6 +2,14 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { requireUser } from '@/lib/session';
+import { parseImageUrls } from '@/lib/imageCleanup';
+import {
+  cursorWhere,
+  decodeCursor,
+  parsePageSize,
+  slicePage,
+  TIME_DESC_ORDER,
+} from '@/lib/pagination';
 
 const splitSchema = z.object({
   memberId: z.string().min(1),
@@ -29,6 +37,87 @@ async function ownLedger(id: string, userId: string) {
   });
   if (!l || l.userId !== userId) return null;
   return l;
+}
+
+// GET /api/ledgers/<id>/expenses?phase=during&cursor=<游标>&limit=50
+//     /api/ledgers/<id>/expenses?all=1   → 不分页返回全部（趣味报告用）
+//
+// 趣味报告要算"最烧钱的一天""恩格尔系数"这类跨全量的统计，SQLite 没法用 groupBy
+// 表达按天聚合，所以给它一个显式的全量出口 —— 只在用户点开报告时才调，
+// 不影响列表页的首屏。
+export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const user = await requireUser();
+  if (!user) return NextResponse.json({ error: '未登录' }, { status: 401 });
+  const { id } = await params;
+  const own = await ownLedger(id, user.id);
+  if (!own) return NextResponse.json({ error: '账本不存在' }, { status: 404 });
+  if (own.kind !== 'travel') {
+    return NextResponse.json({ error: '仅旅游账本可用' }, { status: 400 });
+  }
+
+  const url = new URL(req.url);
+  const all = url.searchParams.get('all') === '1';
+  const phaseParam = url.searchParams.get('phase');
+  const phase = phaseParam === 'pre' || phaseParam === 'during' ? phaseParam : undefined;
+
+  const include = {
+    splits: true,
+    payer: { select: { id: true, displayName: true } },
+  } as const;
+
+  const serialize = (e: {
+    id: string;
+    title: string;
+    category: string;
+    phase: string;
+    currency: string;
+    amountForeignCents: number;
+    rate: number;
+    amountBaseCents: number;
+    note: string | null;
+    imageUrls: string | null;
+    occurredAt: Date;
+    payerId: string;
+    payer: { displayName: string };
+    splits: { memberId: string; shareCents: number }[];
+  }) => ({
+    id: e.id,
+    title: e.title,
+    category: e.category,
+    phase: e.phase as 'pre' | 'during',
+    currency: e.currency,
+    amountForeignCents: e.amountForeignCents,
+    rate: e.rate,
+    amountBaseCents: e.amountBaseCents,
+    note: e.note,
+    imageUrls: parseImageUrls(e.imageUrls),
+    occurredAt: e.occurredAt.toISOString(),
+    payerId: e.payerId,
+    payerName: e.payer.displayName,
+    splits: e.splits.map((s) => ({ memberId: s.memberId, shareCents: s.shareCents })),
+  });
+
+  if (all) {
+    const rows = await prisma.tripExpense.findMany({
+      where: { ledgerId: id },
+      include,
+      orderBy: TIME_DESC_ORDER,
+    });
+    return NextResponse.json({ expenses: rows.map(serialize), nextCursor: null });
+  }
+
+  const limit = parsePageSize(url.searchParams.get('limit'));
+  const cursor = decodeCursor(url.searchParams.get('cursor'));
+
+  const rows = await prisma.tripExpense.findMany({
+    where: { ledgerId: id, ...(phase ? { phase } : {}), ...cursorWhere(cursor) },
+    include,
+    orderBy: TIME_DESC_ORDER,
+    take: limit + 1,
+  });
+
+  const { items, nextCursor } = slicePage(rows, limit);
+  return NextResponse.json({ expenses: items.map(serialize), nextCursor });
 }
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {

@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useMemo, useState, useTransition } from 'react';
+import { useEffect, useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import Money from '@/components/ui/Money';
 import Lightbox from '@/components/ui/Lightbox';
@@ -38,12 +38,25 @@ type LedgerMeta = {
   customCategories: string | null;
 };
 
+export type GeneralSummary = {
+  monthStartISO: string;
+  monthEndISO: string;
+  income: number;
+  expense: number;
+  topCats: { category: string; cents: number }[];
+};
+
 export default function GeneralView({
   ledger,
-  entries,
+  summary,
+  initialEntries,
+  initialCursor,
 }: {
   ledger: LedgerMeta;
-  entries: Entry[];
+  /** 本月汇总由服务端用 SQL 聚合算好 —— 分页后客户端手里没有全量数据，算不出来 */
+  summary: GeneralSummary;
+  initialEntries: Entry[];
+  initialCursor: string | null;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -54,32 +67,62 @@ export default function GeneralView({
   const [showCategoryManager, setShowCategoryManager] = useState(false);
   const confirm = useConfirm();
 
-  // 本月过滤
-  const monthStart = useMemo(() => {
-    const d = new Date();
-    return new Date(d.getFullYear(), d.getMonth(), 1);
-  }, []);
-  const thisMonth = entries.filter(
-    (e) => new Date(e.occurredAt).getTime() >= monthStart.getTime(),
+  // —— 分页 ——
+  const [extraEntries, setExtraEntries] = useState<Entry[]>([]);
+  const [cursor, setCursor] = useState<string | null>(initialCursor);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [loadError, setLoadError] = useState('');
+
+  // router.refresh() 后服务端会重新给第一页 —— 把已加载的后续页丢掉，
+  // 否则新增/删除的条目会和旧的分页数据打架（重复或缺失）。
+  const firstPageSig = initialEntries.map((e) => e.id).join(',');
+  useEffect(() => {
+    setExtraEntries([]);
+    setCursor(initialCursor);
+    setLoadError('');
+  }, [firstPageSig, initialCursor]);
+
+  // 挂着过夜时自动翻篇：到次日零点触发一次 refresh，让"本月"边界跟上
+  useEffect(() => {
+    const now = new Date();
+    const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    const ms = tomorrow.getTime() - now.getTime();
+    const timer = setTimeout(() => router.refresh(), ms + 1000);
+    return () => clearTimeout(timer);
+  }, [router]);
+
+  const entries = useMemo(
+    () => [...initialEntries, ...extraEntries],
+    [initialEntries, extraEntries],
   );
-  const income = thisMonth
-    .filter((e) => e.direction === 'income')
-    .reduce((a, e) => a + e.amountCents, 0);
-  const expense = thisMonth
-    .filter((e) => e.direction === 'expense')
-    .reduce((a, e) => a + e.amountCents, 0);
-  const net = income - expense;
 
-  // 类别排行
-  const byCat = new Map<string, number>();
-  for (const e of thisMonth.filter((e) => e.direction === 'expense')) {
-    byCat.set(e.category, (byCat.get(e.category) ?? 0) + e.amountCents);
+  async function loadMore() {
+    if (!cursor || loadingMore) return;
+    setLoadingMore(true);
+    setLoadError('');
+    try {
+      const res = await fetch(
+        `/api/ledgers/${ledger.id}/entries?cursor=${encodeURIComponent(cursor)}`,
+        { cache: 'no-store' },
+      );
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error || '加载失败');
+      setExtraEntries((prev) => [...prev, ...(j.entries as Entry[])]);
+      setCursor(j.nextCursor ?? null);
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : '加载失败');
+    } finally {
+      setLoadingMore(false);
+    }
   }
-  const topCats = [...byCat.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 5);
 
-  // 按天分组
+  const monthStart = useMemo(() => new Date(summary.monthStartISO), [summary.monthStartISO]);
+  const income = summary.income;
+  const expense = summary.expense;
+  const net = income - expense;
+  const topCats: [string, number][] = summary.topCats.map((c) => [c.category, c.cents]);
+
+  // 按天分组（只对已加载的条目分组）
   const grouped = new Map<string, Entry[]>();
   for (const e of entries) {
     const d = new Date(e.occurredAt);
@@ -255,6 +298,22 @@ export default function GeneralView({
             </section>
           );
         })}
+
+        {cursor && (
+          <button
+            onClick={loadMore}
+            disabled={loadingMore}
+            className="w-full py-3 rounded-2xl bg-ink-50 dark:bg-ink-800 border border-ink-200 dark:border-ink-700 text-sm text-ink-500 active:scale-[0.98] transition disabled:opacity-60"
+          >
+            {loadingMore ? '加载中…' : '加载更早的记录'}
+          </button>
+        )}
+        {!cursor && entries.length > 0 && (
+          <div className="text-center text-[11px] text-ink-400 py-2">已经到底了</div>
+        )}
+        {loadError && (
+          <p className="text-red-500 text-xs text-center">{loadError}</p>
+        )}
       </div>
 
       {showRecord && (

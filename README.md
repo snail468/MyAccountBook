@@ -28,12 +28,18 @@ cp .env.example .env
 
 # 3. 初始化数据库（会在 data/app.db 创建 SQLite 文件）
 mkdir -p data
-npx prisma db push
+npx prisma migrate deploy
 
 # 4. 启动
 npm run dev
 # 打开 http://localhost:3000
 ```
+
+> **数据库变更走 migration，不要用 `db push`。**
+> 改完 `prisma/schema.prisma` 后跑 `npm run prisma:migrate -- --name 你的改动说明`，
+> 它会在 `prisma/migrations/` 下生成一份带版本的 SQL 并提交到 git。
+> 服务器端由 `docker-entrypoint.sh` 自动跑 `migrate deploy` 增量应用。
+> `npm run prisma:status` 可以查看当前数据库落后哪些迁移。
 
 首次访问会跳到 `/register` 注册第一个账号。
 
@@ -127,6 +133,11 @@ docker compose up -d
 
 数据保存在 `~/myaccountbook/data/app.db`，容器重建不丢数据。
 
+> **从 v1（`db push` 时代）升级上来的部署无需任何手工操作。** 容器启动时会检测到
+> 老数据库、自动把初始迁移 baseline 掉（只登记不改表），之后只增量应用新迁移。
+> 完成后 `data/` 下会多一个 `.prisma-baselined` 标记文件，**不要删它**。
+> 万一需要跳过自动迁移（例如手工修数据库），用 `SKIP_DB_MIGRATE=true` 启动。
+
 ### E.（推荐）加 HTTPS + 域名
 
 PWA 在非本地环境**必须** HTTPS 才能安装到主屏。用 Nginx + Certbot 一次性搞定：
@@ -193,10 +204,13 @@ sudo certbot --nginx -d your.domain.com
    ```bash
    # 在本项目根目录：
    npm install
-   # 用 Turso URL 直接 push schema
+   # 用 Turso URL 应用迁移
    DATABASE_URL="libsql://xxx.turso.io?authToken=eyJhbGc..." \
-     npx prisma db push
+     npx prisma migrate deploy
    ```
+
+   > 如果这个 Turso 库是在 v1 时期用 `db push` 建的，先跑一次
+   > `DATABASE_URL="..." npm run prisma:baseline` 再 `migrate deploy`。
 
 ### B. 项目配置
 

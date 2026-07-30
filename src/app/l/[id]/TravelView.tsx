@@ -1,12 +1,12 @@
 'use client';
 
 import Link from 'next/link';
-import { useMemo, useState, useTransition } from 'react';
+import { useEffect, useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import Money from '@/components/ui/Money';
 import Lightbox from '@/components/ui/Lightbox';
 import { formatShort } from '@/lib/datetime';
-import { computeSettlement } from '@/lib/settlement';
+import type { NetBalance, Transfer } from '@/lib/settlement';
 import TripExpenseModal from './TripExpenseModal';
 import TripMembersModal from './TripMembersModal';
 import TripFunReport from './TripFunReport';
@@ -43,11 +43,27 @@ type LedgerMeta = {
 export default function TravelView({
   ledger,
   members,
-  expenses,
+  preTotal,
+  duringTotal,
+  balances,
+  transfers,
+  preExpenses,
+  preCursor,
+  duringExpenses,
+  duringCursor,
 }: {
   ledger: LedgerMeta;
   members: Member[];
-  expenses: Expense[];
+  /** 阶段合计、成员净额、最优结算全部由服务端聚合算好 ——
+   *  结算必须基于全量数据，客户端分页后手里只有片段，算出来是错的 */
+  preTotal: number;
+  duringTotal: number;
+  balances: NetBalance[];
+  transfers: Transfer[];
+  preExpenses: Expense[];
+  preCursor: string | null;
+  duringExpenses: Expense[];
+  duringCursor: string | null;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -59,33 +75,78 @@ export default function TravelView({
   const [zoomImg, setZoomImg] = useState<string | null>(null);
   const confirm = useConfirm();
 
-  const phaseList = expenses.filter((e) => e.phase === phase);
-  const preTotal = expenses
-    .filter((e) => e.phase === 'pre')
-    .reduce((a, e) => a + e.amountBaseCents, 0);
-  const duringTotal = expenses
-    .filter((e) => e.phase === 'during')
-    .reduce((a, e) => a + e.amountBaseCents, 0);
+  // —— 每个阶段各自一套分页状态 ——
+  const [extra, setExtra] = useState<Record<'pre' | 'during', Expense[]>>({
+    pre: [],
+    during: [],
+  });
+  const [cursors, setCursors] = useState<Record<'pre' | 'during', string | null>>({
+    pre: preCursor,
+    during: duringCursor,
+  });
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [loadError, setLoadError] = useState('');
 
-  // 净额（本币）
-  const balances = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const m of members) map.set(m.id, 0);
-    for (const e of expenses) {
-      // 付款人 +total；每个分摊成员 -share
-      map.set(e.payerId, (map.get(e.payerId) ?? 0) + e.amountBaseCents);
-      for (const s of e.splits) {
-        map.set(s.memberId, (map.get(s.memberId) ?? 0) - s.shareCents);
-      }
+  // 服务端重新给了首页 → 丢弃已加载的后续页，避免与新增/删除后的数据打架
+  const firstPageSig =
+    preExpenses.map((e) => e.id).join(',') + '|' + duringExpenses.map((e) => e.id).join(',');
+  useEffect(() => {
+    setExtra({ pre: [], during: [] });
+    setCursors({ pre: preCursor, during: duringCursor });
+    setLoadError('');
+  }, [firstPageSig, preCursor, duringCursor]);
+
+  const phaseList = useMemo(
+    () =>
+      phase === 'pre'
+        ? [...preExpenses, ...extra.pre]
+        : [...duringExpenses, ...extra.during],
+    [phase, preExpenses, duringExpenses, extra],
+  );
+
+  async function loadMore() {
+    const cursor = cursors[phase];
+    if (!cursor || loadingMore) return;
+    setLoadingMore(true);
+    setLoadError('');
+    try {
+      const res = await fetch(
+        `/api/ledgers/${ledger.id}/expenses?phase=${phase}&cursor=${encodeURIComponent(cursor)}`,
+        { cache: 'no-store' },
+      );
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error || '加载失败');
+      setExtra((prev) => ({ ...prev, [phase]: [...prev[phase], ...(j.expenses as Expense[])] }));
+      setCursors((prev) => ({ ...prev, [phase]: j.nextCursor ?? null }));
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : '加载失败');
+    } finally {
+      setLoadingMore(false);
     }
-    return [...map.entries()].map(([id, net]) => ({
-      memberId: id,
-      name: members.find((m) => m.id === id)?.displayName ?? '?',
-      netCents: net,
-    }));
-  }, [members, expenses]);
+  }
 
-  const transfers = useMemo(() => computeSettlement(balances), [balances]);
+  // 趣味报告要算"最烧钱的一天""恩格尔系数"这类跨全量的统计 ——
+  // 打开弹窗时才按需拉全量，不拖慢列表首屏
+  const [reportExpenses, setReportExpenses] = useState<Expense[] | null>(null);
+  const [reportLoading, setReportLoading] = useState(false);
+
+  async function openReport() {
+    setReportLoading(true);
+    setLoadError('');
+    try {
+      const res = await fetch(`/api/ledgers/${ledger.id}/expenses?all=1`, {
+        cache: 'no-store',
+      });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error || '加载失败');
+      setReportExpenses(j.expenses as Expense[]);
+      setShowReport(true);
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : '报告生成失败');
+    } finally {
+      setReportLoading(false);
+    }
+  }
 
   async function del(exp: Expense) {
     const ok = await confirm({
@@ -195,6 +256,17 @@ export default function TravelView({
             onZoomImage={setZoomImg}
           />
         ))}
+
+        {cursors[phase] && (
+          <button
+            onClick={loadMore}
+            disabled={loadingMore}
+            className="w-full py-3 rounded-2xl bg-ink-50 dark:bg-ink-800 border border-ink-200 dark:border-ink-700 text-sm text-ink-500 active:scale-[0.98] transition disabled:opacity-60"
+          >
+            {loadingMore ? '加载中…' : '加载更早的记录'}
+          </button>
+        )}
+        {loadError && <p className="text-red-500 text-xs text-center">{loadError}</p>}
       </div>
 
       {transfers.length > 0 && (
@@ -217,10 +289,11 @@ export default function TravelView({
             ))}
           </div>
           <button
-            onClick={() => setShowReport(true)}
-            className="mt-3 w-full py-2.5 rounded-xl bg-emerald-600 dark:bg-emerald-500 text-white text-sm font-medium"
+            onClick={openReport}
+            disabled={reportLoading}
+            className="mt-3 w-full py-2.5 rounded-xl bg-emerald-600 dark:bg-emerald-500 text-white text-sm font-medium disabled:opacity-60"
           >
-            生成趣味报告
+            {reportLoading ? '生成中…' : '生成趣味报告'}
           </button>
         </div>
       )}
@@ -277,11 +350,11 @@ export default function TravelView({
         />
       )}
 
-      {showReport && (
+      {showReport && reportExpenses && (
         <TripFunReport
           ledger={ledger}
           members={members}
-          expenses={expenses}
+          expenses={reportExpenses}
           balances={balances}
           transfers={transfers}
           onClose={() => setShowReport(false)}
