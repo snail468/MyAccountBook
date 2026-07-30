@@ -20,6 +20,7 @@
   - [2.7 工程化](#27-工程化)
   - [2.8 Cloudflare 部署（已放弃并移除）](#28-cloudflare-部署已放弃并移除)
   - [2.9 过程中发现并修掉的既有 Bug](#29-过程中发现并修掉的既有-bug)
+  - [2.10 分支预览部署时暴露的问题](#210-分支预览部署时暴露的问题本轮改动自身引入)
 - [四、待做](#四待做)
 - [五、验证与部署命令速查](#五验证与部署命令速查)
 
@@ -72,7 +73,8 @@
   - 全新库 → 直接建表
   - v1 时期 `db push` 建的老库 → 先 baseline（只登记不执行），再增量应用
   - 已迁移过的库 → 只跑新迁移
-- 用 `/data/.prisma-baselined` 标记文件区分，避免在容器里做 SQLite 内省
+- 判据是 `migrate deploy` 的真实结果：撞上 P3005 才 baseline 再重试，其他错误直接退出
+  （最初用 `/data/.prisma-baselined` 标记文件区分，实际部署时翻车了 —— 见 2.10）
 - 支持 `SKIP_DB_MIGRATE=true` 跳过（手工修库时用）
 - 新增 npm scripts：`prisma:status`、`prisma:baseline`
 
@@ -389,6 +391,18 @@ prisma:error [unenv] fs.readdir is not implemented yet!
   PBKDF2 走原生实现，同样强度下 CPU 占用低得多
 - `db.ts` 的 WAL 修复、`session.destroy()` 渲染期异常、
   客户端组件误引 prisma（见 2.9）
+
+### 2.10 分支预览部署时暴露的问题（本轮改动自身引入）
+
+前两条本地怎么测都测不出来 —— 都只在「HTTP 部署 + 真实数据目录」这个组合下才出现。
+
+| # | 问题 | 表现与修法 |
+|---|---|---|
+| 1 | CSP 无条件带 `upgrade-insecure-requests` | 通过 `http://IP:3001` 访问时，浏览器把 `/_next/static` 的 CSS、JS 和所有同源导航全升级到 https，而服务端只监听 HTTP → 页面完全没样式、点任何链接都报 `ERR_SSL_PROTOCOL_ERROR`。改成按请求真实协议判断（`x-forwarded-proto` 第一跳，否则 `nextUrl.protocol`），HTTPS 下照旧发送 |
+| 2 | 用 `/data/.prisma-baselined` 标记文件判断「是否已纳入 migrate 管理」 | 标记的是**目录**而不是**库**。预览实例先用空库跑起来生成了标记，事后把生产库（`db push` 时代、无 `_prisma_migrations`）拷进同一目录 → baseline 分支被跳过 → `migrate deploy` 报 P3005，配上 `restart: unless-stopped` 就是无限 crashloop。改成先试 deploy、只在 P3005 时补 baseline 再重试 |
+
+**教训**：不要用「旁路的痕迹」代替「对目标本身的检查」。标记文件、时间戳、缓存标志
+这类东西一旦与真实对象解耦，就会在最不该出错的时候给出一个自信的错误答案。
 
 ---
 

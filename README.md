@@ -154,10 +154,15 @@ docker compose up -d
 
 数据保存在 `~/myaccountbook/data/app.db`，容器重建不丢数据。
 
-> **从 v1（`db push` 时代）升级上来的部署无需任何手工操作。** 容器启动时会检测到
-> 老数据库、自动把初始迁移 baseline 掉（只登记不改表），之后只增量应用新迁移。
-> 完成后 `data/` 下会多一个 `.prisma-baselined` 标记文件，**不要删它**。
+> **从 v1（`db push` 时代）升级上来的部署无需任何手工操作。** 容器启动时先尝试
+> `migrate deploy`，只要撞上 P3005（库里有表但没有迁移历史）就自动把初始迁移
+> baseline 掉（只登记不改表）再重试，之后只增量应用新迁移。判据是数据库的真实
+> 状态，所以事后替换 `app.db`（比如把生产库拷进预览实例）也能正常识别。
 > 万一需要跳过自动迁移（例如手工修数据库），用 `SKIP_DB_MIGRATE=true` 启动。
+>
+> 早期版本用 `data/.prisma-baselined` 标记文件做判据，换过 `app.db` 之后会误判成
+> 「已迁移」，导致 P3005 无限 crashloop。如果你的数据目录里还留着这个文件，删掉即可，
+> 现在的逻辑不再读它。
 
 ### D2. 并行部署一个预览实例做对比
 
@@ -222,10 +227,16 @@ docker compose -f docker-compose.preview.yml logs -f
 日志里会看到迁移过程：
 
 ```
-[entrypoint] 检测到 db push 时代的老数据库，先 baseline 到 0_init（不改表结构）...
 [entrypoint] 应用数据库迁移...
+Error: P3005
+The database schema is not empty.
+[entrypoint] 检测到 db push 时代的老数据库，baseline 到 0_init（不改表结构）后重试...
+Migration 0_init marked as applied.
 [entrypoint] 启动服务 (port 3000)...
 ```
+
+那行 `Error: P3005` 是**预期输出** —— 它就是「这是个 db push 时代的老库」的判据，
+紧跟着的 baseline + 重试才是结论。只有重试之后仍然失败，容器才会真的退出。
 
 访问 `http://<服务器IP>:3001`。生产实例仍在 3000，两边互不干扰。
 
