@@ -12,7 +12,20 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
-function buildCsp(nonce: string): string {
+/**
+ * 当前请求是否走在 HTTPS 上。反代终止 TLS 时看 x-forwarded-proto，
+ * 直连时看 URL 自身的协议。
+ */
+function isHttps(req: NextRequest): boolean {
+  const forwarded = req.headers.get('x-forwarded-proto');
+  if (forwarded) {
+    // 多层代理会串成 "https, http"，第一跳才是客户端看到的协议
+    return forwarded.split(',')[0].trim().toLowerCase() === 'https';
+  }
+  return req.nextUrl.protocol === 'https:';
+}
+
+function buildCsp(nonce: string, https: boolean): string {
   return [
     "default-src 'self'",
     // strict-dynamic 让带 nonce 的脚本可以动态加载 chunk，
@@ -31,7 +44,11 @@ function buildCsp(nonce: string): string {
     "form-action 'self'",
     "object-src 'none'",
     "frame-ancestors 'none'",
-    'upgrade-insecure-requests',
+    // ⚠️ 只在 HTTPS 下发。HTTP 部署（http://IP:3000 这种）如果发了这条，
+    // 浏览器会把 /_next/static 下的 CSS、JS 以及所有同源导航统统升级到 https，
+    // 而服务端只监听 HTTP —— 结果是页面没样式、点任何链接都报
+    // ERR_SSL_PROTOCOL_ERROR。HTTPS 下这条仍然有价值（兜住漏网的 http 资源）。
+    ...(https ? ['upgrade-insecure-requests'] : []),
   ].join('; ');
 }
 
@@ -72,7 +89,7 @@ export function middleware(req: NextRequest) {
   }
 
   const nonce = crypto.randomUUID().replace(/-/g, '');
-  const csp = buildCsp(nonce);
+  const csp = buildCsp(nonce, isHttps(req));
 
   const requestHeaders = new Headers(req.headers);
   requestHeaders.set('x-nonce', nonce);
