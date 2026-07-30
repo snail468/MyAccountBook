@@ -22,6 +22,7 @@
     "turso:status": "node scripts/turso-migrate.mjs --status",
     "turso:baseline": "node scripts/turso-migrate.mjs --baseline",
     "turso:gen-sql": "node scripts/gen-turso-sql.mjs",
+    "turso:copy": "node scripts/copy-to-turso.mjs",
     "postinstall": "prisma generate",
     "build:cf": "prisma generate && opennextjs-cloudflare build",
     "deploy:cf": "opennextjs-cloudflare deploy",

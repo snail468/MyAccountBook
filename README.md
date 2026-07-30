@@ -378,6 +378,76 @@ Cloudflare 会自己 `npm ci` → `npm run build:cf` → `npx wrangler deploy`�
 **push 到生产分支就自动重新部署**，什么都不用做。
 在 Worker 的 **Deployments** 标签能看每次构建的日志，出错也能一键回滚到上一版。
 
+### 把 Docker 上的存量数据搬到 Turso
+
+已经在 Docker 上用出数据了，想搬到 Worker 版这边 —— 用
+`scripts/copy-to-turso.mjs`。它逐表复制行，**密码哈希一并搬过去，
+用户用原来的密码就能登录**（旧的 bcrypt 哈希会在首次登录时自动升级成 PBKDF2）。
+
+> **为什么不用「导出 JSON → 导入还原」**：`/api/export/json` 刻意
+> **不导出密码哈希**（备份文件在用户手里，不该带哈希），用它还原所有人都得
+> 重设密码。而且导入端还没做。两边都是 SQLite 的情况下直接搬行更合适。
+
+**第 1 步 · 把数据库文件从服务器拷到本地**
+
+数据库就一个文件。服务器上先停机保证一致性，再拷出来：
+
+```bash
+cd ~/myaccountbook
+docker compose stop
+cp data/app.db /tmp/app.db
+docker compose start
+```
+
+然后从本地把 `/tmp/app.db` 拉下来。不想敲命令的话用
+[WinSCP](https://winscp.net/)（图形化 SFTP 客户端）连服务器直接拖文件。
+
+> 停机是为了避免拷到写入一半的状态。WAL 模式下正在运行时直接拷 `app.db`
+> 可能漏掉 `-wal` 里还没合并的事务。
+
+**第 2 步 · 确认目标库已建表但还没数据**
+
+如果你已经在 Worker 上注册过账号，Turso 里就有数据了。搬之前需要清空 ——
+在 Turso 面板的 SQL 控制台执行：
+
+```sql
+DELETE FROM "TripSplit";     DELETE FROM "TripExpense";
+DELETE FROM "TripMember";    DELETE FROM "GeneralEntry";
+DELETE FROM "EventAmount";   DELETE FROM "Event";
+DELETE FROM "Entry";         DELETE FROM "Ledger";
+DELETE FROM "User";          DELETE FROM "CurrencyRate";
+```
+
+（顺序是照外键依赖来的，反了会报错。`_prisma_migrations` 不要删。）
+
+**第 3 步 · 搬**
+
+```powershell
+$env:SOURCE_DB          = "C:/Users/你/Downloads/app.db"
+$env:TURSO_DATABASE_URL = "libsql://myaccountbook-xxx.turso.io"
+$env:TURSO_AUTH_TOKEN   = "eyJhbGc..."
+
+npm run turso:copy -- --dry-run   # 先看会搬多少行，不写入
+npm run turso:copy                # 真正搬
+```
+
+脚本会：
+
+- 只搬**两边都有的列** —— 老版本 Docker 库没有 `sessionVersion` /
+  `failedLoginCount` / `lockedUntil`，这三列交给目标库的默认值
+- `Event` 的合并关系（自引用 `parentId`）分两遍处理，先插入再回填，
+  避免父活动还没插入就触发外键错误
+- 搬完逐表核对行数，不一致就报错退出
+- 目标库已有用户时拒绝执行（除非加 `--force`）
+
+**第 4 步 · 图片（如果你用过上传功能）**
+
+图片不在数据库里，在 Docker 的 `data/uploads/`。要让历史记录里的图片能显示，
+得把这个目录整体上传到 R2 桶，保持原有的路径结构。
+Cloudflare 面板的 R2 页面支持直接拖拽上传文件夹。
+
+不搬图片的话，其它数据完全正常，只是老记录里的图片位置显示空白。
+
 ### 构建失败对照表
 
 | 日志里的报错 | 原因 | 怎么修 |
