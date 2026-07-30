@@ -12,10 +12,6 @@ export default tseslint.config(
   {
     ignores: [
       '.next/**',
-      // @opennextjs/cloudflare 的产物 —— 里面有近三万个打包后的文件，
-      // 漏掉这条会让 lint 和 next build（内置 lint 步骤）一起炸
-      '.open-next/**',
-      '.wrangler/**',
       'node_modules/**',
       'out/**',
       'build/**',
