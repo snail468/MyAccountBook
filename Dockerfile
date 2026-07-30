@@ -19,6 +19,13 @@ RUN apk add --no-cache openssl libc6-compat
 ENV NEXT_TELEMETRY_DISABLED=1
 # 构建期使用一个占位 DB URL，避免 Prisma 初始化报错；实际数据库在运行时挂载
 ENV DATABASE_URL="file:./build-placeholder.db"
+# 同理给一个占位会话密钥。next build 会把 NODE_ENV 设成 production，
+# 而 "Collecting page data" 阶段会 import 所有路由模块 ——
+# lib/env.ts 在模块作用域校验密钥，缺了就会让构建失败。
+# 代码里已用 NEXT_PHASE 识别构建期放行，这里再显式给一个是双重保险。
+# 这个值**不会**进入最终镜像：runner 是独立的 FROM 阶段，ENV 不继承，
+# 真密钥由 docker-compose 在运行时注入。
+ENV SESSION_SECRET="build-time-placeholder-value-never-used-at-runtime"
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npx prisma generate
