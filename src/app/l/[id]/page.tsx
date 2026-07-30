@@ -5,7 +5,7 @@ import { prisma } from '@/lib/db';
 import Prefetcher from '@/components/ui/Prefetcher';
 import { parseImageUrls } from '@/lib/imageCleanup';
 import { DEFAULT_PAGE_SIZE, slicePage, TIME_DESC_ORDER } from '@/lib/pagination';
-import { computeSettlement } from '@/lib/settlement';
+import { computeSettlementSafe } from '@/lib/settlement';
 import GeneralView from './GeneralView';
 import TravelView from './TravelView';
 
@@ -128,7 +128,9 @@ async function loadTravel(ledgerId: string) {
     name: m.displayName,
     netCents: (paidMap.get(m.id) ?? 0) - (owedMap.get(m.id) ?? 0),
   }));
-  const transfers = computeSettlement(balances);
+  // 用容错版本：老账本可能在旧的宽容校验下存了不守恒的分摊，
+  // 那种历史数据不该让整页 500，而应该在界面上提示用户去修那笔账
+  const { transfers, error: settlementError } = computeSettlementSafe(balances);
 
   const serialize = (e: {
     id: string;
@@ -177,6 +179,7 @@ async function loadTravel(ledgerId: string) {
     duringTotal: sumOfPhase('during'),
     balances,
     transfers,
+    settlementError,
     preExpenses: pre.items.map(serialize),
     preCursor: pre.nextCursor,
     duringExpenses: during.items.map(serialize),
@@ -238,6 +241,7 @@ export default async function LedgerPage({ params }: { params: Promise<{ id: str
           duringTotal={data.duringTotal}
           balances={data.balances}
           transfers={data.transfers}
+          settlementError={data.settlementError}
           preExpenses={data.preExpenses}
           preCursor={data.preCursor}
           duringExpenses={data.duringExpenses}

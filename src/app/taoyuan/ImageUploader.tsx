@@ -65,7 +65,7 @@ export default function ImageUploader({
       <div className="grid grid-cols-3 gap-2">
         {value.map((url, i) => (
           <div key={i} className="relative aspect-square rounded-lg overflow-hidden bg-ink-100 dark:bg-ink-700">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
+            { }
             <img src={url} alt="" className="w-full h-full object-cover" />
             <button
               type="button"

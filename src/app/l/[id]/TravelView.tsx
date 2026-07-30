@@ -47,6 +47,7 @@ export default function TravelView({
   duringTotal,
   balances,
   transfers,
+  settlementError,
   preExpenses,
   preCursor,
   duringExpenses,
@@ -60,6 +61,8 @@ export default function TravelView({
   duringTotal: number;
   balances: NetBalance[];
   transfers: Transfer[];
+  /** 老账本可能存了不守恒的分摊，此时结算无法计算，把原因显示出来 */
+  settlementError: string | null;
   preExpenses: Expense[];
   preCursor: string | null;
   duringExpenses: Expense[];
@@ -269,6 +272,21 @@ export default function TravelView({
         {loadError && <p className="text-red-500 text-xs text-center">{loadError}</p>}
       </div>
 
+      {settlementError && (
+        <div className="mt-6 rounded-3xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 p-4">
+          <div className="text-xs text-amber-800 dark:text-amber-300 font-medium mb-1">
+            结算暂时算不出来
+          </div>
+          <p className="text-[11px] text-amber-700 dark:text-amber-400 leading-relaxed">
+            这个账本里有分摊金额之和与总额不一致的记录（早期版本的宽松校验留下的）。
+            逐笔打开「编辑」再保存一次即可修正 —— 现在保存时分摊金额由服务端重算，不会再出现偏差。
+          </p>
+          <p className="text-[10px] text-amber-600 dark:text-amber-500 mt-1.5 font-mono break-all">
+            {settlementError}
+          </p>
+        </div>
+      )}
+
       {transfers.length > 0 && (
         <div className="mt-6 rounded-3xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 p-4">
           <div className="text-xs text-emerald-800 dark:text-emerald-300 font-medium mb-2">
@@ -412,7 +430,7 @@ function ExpenseRow({
                   className="w-8 h-8 rounded overflow-hidden bg-ink-100 dark:bg-ink-700"
                   aria-label={`查看图 ${i + 1}`}
                 >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  { }
                   <img src={url} alt="" className="w-full h-full object-cover" />
                 </button>
               ))}

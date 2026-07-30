@@ -121,7 +121,7 @@ export default function Lightbox({
       onPointerCancel={onPointerUp}
       style={{ touchAction: 'none' }}
     >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
+      { }
       <img
         src={src}
         alt=""

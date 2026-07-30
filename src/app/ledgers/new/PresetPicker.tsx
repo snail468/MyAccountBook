@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { COMMON_CURRENCIES } from '@/lib/currency';
 import { localInputToISO } from '@/lib/datetime';
 
@@ -56,7 +55,6 @@ export default function PresetPicker({
   hasWork: boolean;
   hasTaoyuan: boolean;
 }) {
-  const router = useRouter();
   const [picked, setPicked] = useState<Preset | null>(null);
 
   const [name, setName] = useState('');

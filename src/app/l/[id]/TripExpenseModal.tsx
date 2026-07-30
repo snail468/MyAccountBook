@@ -5,6 +5,11 @@ import { COMMON_CURRENCIES } from '@/lib/currency';
 import { yuanToCents } from '@/lib/money';
 import { localInputToISO, toLocalInput } from '@/lib/datetime';
 import ImageUploader from '@/app/taoyuan/ImageUploader';
+import {
+  allocateByWeight,
+  type ShareEntry,
+  type WeightEntry,
+} from '@/lib/splitAllocation';
 import type { Member } from './TravelView';
 
 // 每个行程本地记住上次用过的汇率（内存级；关掉页面就没）
@@ -133,44 +138,32 @@ export default function TripExpenseModal({
     setRatios((prev) => ({ ...prev, [id]: Math.max(0, v) }));
   }
 
-  // 计算分摊数组
-  function calcSplits(): { memberId: string; shareCents: number }[] {
-    if (amountBaseCents <= 0) return [];
-    if (splitMode === 'even' || splitMode === 'partial') {
-      const targets = splitMode === 'even'
-        ? members.map((m) => m.id)
-        : [...selectedMembers];
-      if (targets.length === 0) return [];
-      const base = Math.floor(amountBaseCents / targets.length);
-      const remainder = amountBaseCents - base * targets.length;
-      return targets.map((id, i) => ({
-        memberId: id,
-        shareCents: base + (i < remainder ? 1 : 0),
-      }));
+  // 只算「谁参与 + 权重」，具体金额交给 allocateByWeight。
+  // 三种模式的差别仅在于权重怎么来：平摊是全 1，按比例是各自的比重。
+  function calcAllocation(): WeightEntry[] {
+    if (splitMode === 'even') {
+      return members.map((m) => ({ memberId: m.id, weight: 1 }));
     }
-    // ratio
-    const totalWeight = Object.values(ratios).reduce((a, b) => a + b, 0);
-    if (totalWeight <= 0) return [];
-    const raw: { memberId: string; share: number }[] = [];
-    for (const m of members) {
-      const w = ratios[m.id] ?? 0;
-      raw.push({ memberId: m.id, share: (amountBaseCents * w) / totalWeight });
+    if (splitMode === 'partial') {
+      return [...selectedMembers].map((id) => ({ memberId: id, weight: 1 }));
     }
-    // 四舍五入后校准：把误差累到最后一个非零份额
-    const result = raw.map((r) => ({
-      memberId: r.memberId,
-      shareCents: Math.round(r.share),
-    }));
-    const sum = result.reduce((a, r) => a + r.shareCents, 0);
-    const diff = amountBaseCents - sum;
-    if (diff !== 0) {
-      const idx = result.findIndex((r) => r.shareCents > 0);
-      if (idx >= 0) result[idx].shareCents += diff;
-    }
-    return result.filter((r) => r.shareCents > 0);
+    return members
+      .filter((m) => (ratios[m.id] ?? 0) > 0)
+      .map((m) => ({ memberId: m.id, weight: ratios[m.id] }));
   }
 
-  const splits = calcSplits();
+  const allocation = calcAllocation();
+
+  // 预览用的是**和服务端完全同一个函数**，所以界面上显示的每一分钱
+  // 就是最终落库的金额，不会出现"看到的和存的不一样"。
+  const splits: ShareEntry[] = (() => {
+    if (amountBaseCents <= 0 || allocation.length === 0) return [];
+    try {
+      return allocateByWeight(amountBaseCents, allocation);
+    } catch {
+      return [];
+    }
+  })();
 
   async function save() {
     setError('');
@@ -210,7 +203,8 @@ export default function TripExpenseModal({
           amountForeignCents,
           rate: rateNum,
           payerId,
-          splits,
+          // 提交权重而不是金额：服务端重算，保证 sum(shares) 恒等于总额
+          allocation,
           note: note.trim() || null,
           imageUrls,
           occurredAt: localInputToISO(occurredAt),

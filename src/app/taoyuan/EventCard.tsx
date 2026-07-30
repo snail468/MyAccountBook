@@ -159,7 +159,7 @@ export default function EventCard({
                   className="aspect-square rounded-lg overflow-hidden bg-ink-100 dark:bg-ink-700"
                   aria-label={`查看图片 ${i + 1}`}
                 >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  { }
                   <img src={url} alt="" className="w-full h-full object-cover" />
                 </button>
               ))}

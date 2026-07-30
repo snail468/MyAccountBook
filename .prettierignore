@@ -1,0 +1,11 @@
+.next
+node_modules
+out
+build
+dist
+data
+prisma/data
+prisma/migrations
+package-lock.json
+*.tsbuildinfo
+next-env.d.ts

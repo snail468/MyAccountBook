@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { requireUser } from '@/lib/session';
 import { parseImageUrls } from '@/lib/imageCleanup';
+import { resolveShares } from '@/lib/resolveShares';
 import {
   cursorWhere,
   decodeCursor,
@@ -16,19 +17,31 @@ const splitSchema = z.object({
   shareCents: z.number().int().nonnegative().max(1_000_000_00),
 });
 
-const bodySchema = z.object({
-  title: z.string().trim().min(1).max(100),
-  category: z.string().trim().min(1).max(32),
-  phase: z.enum(['pre', 'during']),
-  currency: z.string().length(3),
-  amountForeignCents: z.number().int().positive().max(1_000_000_00),
-  rate: z.number().positive().max(1_000_000),
-  payerId: z.string().min(1),
-  splits: z.array(splitSchema).min(1).max(50),
-  note: z.string().max(500).optional().nullable(),
-  imageUrls: z.array(z.string().max(500)).max(9).optional(),
-  occurredAt: z.string().datetime().optional().nullable(),
+const allocationSchema = z.object({
+  memberId: z.string().min(1),
+  weight: z.number().positive().max(1_000_000),
 });
+
+const bodySchema = z
+  .object({
+    title: z.string().trim().min(1).max(100),
+    category: z.string().trim().min(1).max(32),
+    phase: z.enum(['pre', 'during']),
+    currency: z.string().length(3),
+    amountForeignCents: z.number().int().positive().max(1_000_000_00),
+    rate: z.number().positive().max(1_000_000),
+    payerId: z.string().min(1),
+    // 首选：只给「谁参与 + 权重」，金额由服务端用最大余额法算，保证守恒
+    allocation: z.array(allocationSchema).min(1).max(50).optional(),
+    // 兼容旧客户端：直接给精确金额，服务端做**零容差**校验
+    splits: z.array(splitSchema).min(1).max(50).optional(),
+    note: z.string().max(500).optional().nullable(),
+    imageUrls: z.array(z.string().max(500)).max(9).optional(),
+    occurredAt: z.string().datetime().optional().nullable(),
+  })
+  .refine((v) => v.allocation || v.splits, {
+    message: '需要提供 allocation 或 splits',
+  });
 
 async function ownLedger(id: string, userId: string) {
   const l = await prisma.ledger.findUnique({
@@ -144,7 +157,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!memberIds.has(p.payerId)) {
     return NextResponse.json({ error: '付款人不在成员列表' }, { status: 400 });
   }
-  for (const s of p.splits) {
+  const participants = p.allocation ?? p.splits ?? [];
+  for (const s of participants) {
     if (!memberIds.has(s.memberId)) {
       return NextResponse.json({ error: '分摊成员不在成员列表' }, { status: 400 });
     }
@@ -152,14 +166,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   const amountBaseCents = Math.round(p.amountForeignCents * p.rate);
 
-  // 分摊金额之和必须等于本币总额（允许 1 分误差）
-  const sumShares = p.splits.reduce((a, s) => a + s.shareCents, 0);
-  if (Math.abs(sumShares - amountBaseCents) > Math.max(2, p.splits.length)) {
-    return NextResponse.json(
-      { error: `分摊之和 ${(sumShares / 100).toFixed(2)} 与本币总额 ${(amountBaseCents / 100).toFixed(2)} 不匹配` },
-      { status: 400 },
-    );
+  const resolved = resolveShares(amountBaseCents, p.allocation, p.splits);
+  if (!resolved.ok) {
+    return NextResponse.json({ error: resolved.reason }, { status: 400 });
   }
+  const splits = resolved.shares;
 
   const created = await prisma.$transaction(async (tx) => {
     const e = await tx.tripExpense.create({
@@ -179,7 +190,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       },
     });
     await tx.tripSplit.createMany({
-      data: p.splits.map((s) => ({
+      data: splits.map((s) => ({
         expenseId: e.id,
         memberId: s.memberId,
         shareCents: s.shareCents,

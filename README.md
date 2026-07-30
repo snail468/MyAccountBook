@@ -38,6 +38,22 @@ npm run dev
 # 打开 http://localhost:3000
 ```
 
+### 开发时的检查
+
+```bash
+npm run verify        # typecheck + lint + 单测，提交前跑一遍
+npm test              # 只跑单测
+npm run test:watch    # 改代码自动重跑
+npm run format        # Prettier 格式化
+```
+
+单测只覆盖**纯函数**（`src/**/*.test.ts`），重点是直接决定钱数对不对的那几个：
+`splitAllocation`（分摊守恒）、`settlement`（结算守恒）、`tax`（档位边界）、
+`money`（元分换算）、`pagination`（游标）、`passwordPolicy`、`imageSniff`。
+涉及数据库和 Next 运行时的部分靠 `npm run build` 加真实请求验证。
+
+CI（`.github/workflows/ci.yml`）在每次 push 和 PR 上跑同样这四道检查。
+
 > **数据库变更走 migration，不要用 `db push`。**
 > 改完 `prisma/schema.prisma` 后跑 `npm run prisma:migrate -- --name 你的改动说明`，
 > 它会在 `prisma/migrations/` 下生成一份带版本的 SQL 并提交到 git。

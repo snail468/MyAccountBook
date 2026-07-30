@@ -1,9 +1,8 @@
 import { PrismaClient } from '@prisma/client';
 
 declare global {
-  // eslint-disable-next-line no-var
+  // dev 模式下 HMR 会反复求值模块，用 global 缓存实例避免连接数爆掉
   var prisma: PrismaClient | undefined;
-  // eslint-disable-next-line no-var
   var __xydWalConfigured: boolean | undefined;
 }
 
@@ -15,7 +14,9 @@ declare global {
 // 产生 "Module not found" 警告；CF 构建时才真正 require 到。
 function opaqueRequire(id: string): unknown {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-implied-eval, no-new-func
+    // Function('return require')() 是故意的：直接写 require() 或 import() 会被
+    // webpack 静态分析到，Docker 构建（没装这两个 CF 专用包）就会报
+    // "Module not found"。绕过分析后，只有 CF 构建真正加载得到。
     const req = Function('return require')() as NodeJS.Require;
     return req(id);
   } catch {
