@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next';
+import { headers } from 'next/headers';
 import './globals.css';
 import { UIProvider } from '@/components/ui/UIProvider';
 import { DialogProvider } from '@/components/ui/Dialog';
@@ -43,11 +44,23 @@ const THEME_INIT_SCRIPT = `
 }catch(_){}})();
 `;
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+const SW_REGISTER_SCRIPT = `
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function() {
+    navigator.serviceWorker.register('/sw.js').catch(function() {});
+  });
+}
+`;
+
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // middleware 为每个请求生成 nonce —— 内联脚本带上它才能通过严格 CSP，
+  // 不用退回 'unsafe-inline'
+  const nonce = (await headers()).get('x-nonce') ?? undefined;
+
   return (
     <html lang="zh-CN">
       <head>
-        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+        <script nonce={nonce} dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>
       <body>
         <UIProvider>
@@ -58,17 +71,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <div className="mx-auto max-w-md min-h-dvh pb-20">{children}</div>
           </DialogProvider>
         </UIProvider>
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
-              if ('serviceWorker' in navigator) {
-                window.addEventListener('load', function() {
-                  navigator.serviceWorker.register('/sw.js').catch(function() {});
-                });
-              }
-            `,
-          }}
-        />
+        <script nonce={nonce} dangerouslySetInnerHTML={{ __html: SW_REGISTER_SCRIPT }} />
       </body>
     </html>
   );

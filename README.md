@@ -26,8 +26,11 @@ npm install
 cp .env.example .env
 # 编辑 .env，把 SESSION_SECRET 换成 openssl rand -base64 32 生成的值
 
-# 3. 初始化数据库（会在 data/app.db 创建 SQLite 文件）
-mkdir -p data
+# 3. 初始化数据库
+#    注意：Prisma 对 SQLite 相对路径是**相对 prisma/schema.prisma 所在目录**解析的，
+#    所以 DATABASE_URL="file:./data/app.db" 实际生成的是 prisma/data/app.db。
+#    想放在项目根的 data/ 下就写 "file:../data/app.db"，或直接用绝对路径。
+#    Docker 部署用的是绝对路径 file:/data/app.db，不受这个坑影响。
 npx prisma migrate deploy
 
 # 4. 启动
@@ -287,6 +290,25 @@ App 内也提供 **导出 CSV** 按钮供随时下载。
 - 在 `/admin` 里可以新建用户 / 重置密码 / 升降级 / 删除
 - 已注册的老用户不受影响，密码/账本数据都保留
 - 管理员不能删除自己，且系统至少保留一个管理员
+- 普通用户在首页有 **"修改密码"** 入口，不用再找管理员
+
+---
+
+## 安全说明
+
+- **密码策略**：至少 8 位，拒绝常见弱口令、含用户名、纯连续数字/字母、单字符重复。
+  刻意不强制"大写+数字+符号"——那只会逼出 `Password1!` 这类又难记又好猜的密码。
+- **登录限流**：按用户名累计连续失败，5 次锁 1 分钟、10 次锁 5 分钟、15 次锁 15 分钟、
+  20 次锁 1 小时，成功即清零。用递增锁而非永久锁，避免知道用户名就能把人锁在门外。
+- **会话失效**：改密码或管理员重置密码后，其它设备上已签发的 cookie 立即作废
+  （靠 `User.sessionVersion` 校验），当前设备换发新会话不被踢下线。
+- **CSRF**：所有写操作校验 `Origin`/`Referer` 同源，缺失即拒绝。
+- **CSP**：`middleware.ts` 为每个请求生成 nonce，脚本白名单为 `'self' + nonce + strict-dynamic`，
+  没有 `unsafe-inline`。同时下发 `nosniff` / `Referrer-Policy` / `Permissions-Policy` /
+  `X-Frame-Options` / HSTS，并移除 `X-Powered-By`。
+- **上传校验**：只认文件内容魔数（jpg/png/webp/gif），不信任客户端声明的 MIME；
+  存储路径改为内容寻址 `<userId>/<yyyy-mm>/<sha256前24位>.<ext>`。
+- **SESSION_SECRET**：生产环境缺失或短于 32 字符时**拒绝启动**。
 
 **如果已有部署想启用管理员机制**：直接拉取最新镜像 `docker compose pull && docker compose up -d`，启动时会自动把最早注册的用户升为 admin，其它用户默认 role=user。
 

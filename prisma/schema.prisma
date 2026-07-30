@@ -15,6 +15,15 @@ model User {
   role         String   @default("user")
   createdAt    DateTime @default(now())
 
+  // 会话失效：改密码 / 管理员重置 / 强制下线时 +1。
+  // 已签发的 cookie 里带着旧值，校验不过就当未登录 ——
+  // 否则 iron-session 的 30 天有效期内，改完密码旧会话依然能用。
+  sessionVersion Int @default(0)
+
+  // 登录限流：连续失败累加，成功清零。lockedUntil 到点前拒绝尝试。
+  failedLoginCount Int       @default(0)
+  lockedUntil      DateTime?
+
   entries       Entry[]
   events        Event[]
   ledgers       Ledger[]

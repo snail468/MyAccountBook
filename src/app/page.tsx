@@ -3,16 +3,25 @@ import { redirect } from 'next/navigation';
 import { requireUserWithRole } from '@/lib/session';
 import { prisma } from '@/lib/db';
 import { ensureLegacyMigrated } from '@/lib/legacyMigrate';
+import { ensureUserSetupOnce, maintenanceTick, runStartupTasks } from '@/lib/bootstrap';
 import { parseRewardMethods } from '@/lib/rewardMethod';
 import LogoutButton from '@/components/LogoutButton';
 import ExportButton from '@/components/ExportButton';
+import ChangePasswordButton from '@/components/ChangePasswordButton';
 import Money from '@/components/ui/Money';
 import Prefetcher from '@/components/ui/Prefetcher';
 
 export const dynamic = 'force-dynamic';
 
 async function loadDashboard(userId: string) {
+  // 全局一次性初始化（admin bootstrap / 归档迁移），进程级 flag 去重
+  await runStartupTasks();
   await ensureLegacyMigrated();
+  // 兜底：升级前就已登录、会话还没过期的老用户走不到登录路径，
+  // 在这里把 Ledger 元数据补上（进程级去重，每用户只跑一次）
+  await ensureUserSetupOnce(userId);
+  // 回收站到期清理的触发点，内部有 1 小时节流
+  await maintenanceTick();
 
   const ledgers = await prisma.ledger.findMany({
     where: { userId, archived: false, deletedAt: null },
@@ -327,6 +336,8 @@ export default async function HomePage() {
         </Link>
 
         <ExportButton />
+
+        <ChangePasswordButton />
 
         {user.role === 'admin' && (
           <Link

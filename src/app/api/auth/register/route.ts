@@ -2,11 +2,13 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { hashPassword } from '@/lib/auth';
-import { getSession, requireUserWithRole } from '@/lib/session';
+import { issueSession, requireUserWithRole } from '@/lib/session';
+import { assessPassword, PASSWORD_MIN_LENGTH } from '@/lib/passwordPolicy';
+import { ensureUserSetup } from '@/lib/bootstrap';
 
 const schema = z.object({
   username: z.string().trim().min(2).max(32),
-  password: z.string().min(6).max(128),
+  password: z.string().min(PASSWORD_MIN_LENGTH).max(128),
 });
 
 // 公开注册仅允许：数据库里 0 用户时（首次 bootstrap）
@@ -15,9 +17,17 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json({ error: '用户名或密码格式不合规' }, { status: 400 });
+    return NextResponse.json(
+      { error: `用户名 2-32 字符，密码至少 ${PASSWORD_MIN_LENGTH} 字符` },
+      { status: 400 },
+    );
   }
   const { username, password } = parsed.data;
+
+  const assessment = assessPassword(password, username);
+  if (!assessment.acceptable) {
+    return NextResponse.json({ error: assessment.reason }, { status: 400 });
+  }
 
   const userCount = await prisma.user.count();
   const isBootstrap = userCount === 0;
@@ -50,10 +60,8 @@ export async function POST(req: Request) {
 
   // 仅在 bootstrap 场景为该用户直接登录；管理员开号不改变自己 session
   if (isBootstrap) {
-    const session = await getSession();
-    session.userId = user.id;
-    session.username = user.username;
-    await session.save();
+    await ensureUserSetup(user.id);
+    await issueSession(user);
   }
 
   return NextResponse.json({
