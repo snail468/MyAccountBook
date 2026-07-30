@@ -1,7 +1,9 @@
-// 存储抽象：文件系统 vs Cloudflare R2
-//   本地/Docker：文件系统（沿用旧行为，不需要任何 env）
-//   Cloudflare：设置 R2_ACCOUNT_ID / R2_ACCESS_KEY / R2_SECRET_KEY / R2_BUCKET 即启用 R2
-//     —— 用 S3 兼容 API 走 fetch，Workers/Node 都能跑
+// 存储抽象：本地文件系统 vs S3 兼容对象存储
+//   默认：写本地文件系统（不需要任何 env），随数据卷一起备份
+//   可选：填齐 R2_ACCOUNT_ID / R2_ACCESS_KEY / R2_SECRET_KEY / R2_BUCKET 即切到对象存储
+//     —— 自己签 SigV4 走 fetch，没有 aws-sdk 依赖。
+//        MinIO / Backblaze B2 / Cloudflare R2 / AWS S3 都是这套协议。
+//        变量名带 R2_ 前缀是历史原因，与服务商无关；换服务商改下面的 r2Endpoint()。
 //
 // 存储的 key 结构与文件系统一致：`<userId>/<yyyy-mm>/<hash>.<ext>`
 // 上传后返回 URL 形如 `/api/uploads/<userId>/<yyyy-mm>/<hash>.<ext>` —— 前端不变
