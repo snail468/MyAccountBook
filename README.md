@@ -53,7 +53,7 @@ npm run dev
    git add .
    git commit -m "initial commit"
    git branch -M main
-   git remote add origin https://github.com/<你的用户名>/MyAccountBook.git
+   git remote add origin https://github.com/snail46/MyAccountBook.git
    git push -u origin main
    ```
 
