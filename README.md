@@ -280,10 +280,33 @@ sudo certbot --nginx -d your.domain.com
    | 字段 | 填什么 |
    |---|---|
    | **项目名称 / Project name** | `myaccountbook` |
-   | **生产分支 / Production branch** | `main`（想先测就填 `refactor/data-safety-and-pagination`） |
+   | **生产分支 / Production branch** | 要部署的那个分支名（**见下方警告**） |
+   | **安装命令 / Install command** | `npm ci` |
    | **构建命令 / Build command** | `npm run build:cf` |
    | **部署命令 / Deploy command** | `npx wrangler deploy` |
    | **根目录 / Root directory** | 留空 |
+
+   > #### ⚠️ 两个必踩的坑
+   >
+   > **一、生产分支必须填真正含有这些改动的分支。**
+   > Cloudflare 只构建你指定的那个分支。如果 CF 部署所需的
+   > `@opennextjs/cloudflare` / `wrangler` 还没合进 `main`，却把生产分支填了
+   > `main`，构建会在最后一步失败：
+   >
+   > ```
+   > sh: 1: opennextjs-cloudflare: not found
+   > ```
+   >
+   > 怎么确认是这个原因：看构建日志里 `bun install` / `npm ci` 之后打印的
+   > 依赖列表，如果里面没有 `@opennextjs/cloudflare`，就是分支选错了。
+   >
+   > **二、安装命令要显式写 `npm ci`。**
+   > 分支上没有 `package-lock.json` 时，Cloudflare 会退回用 `bun install`，
+   > 而 bun 默认拦截 postinstall 脚本（日志里会看到
+   > `Blocked 1 postinstall`）。本项目有 6 个包带安装脚本，
+   > 其中 `esbuild` 是 `@opennextjs/cloudflare` 打包时要用的，
+   > 被拦掉就会构建失败。写死 `npm ci` 既能避开这个问题，
+   > 也保证装的版本与 `package-lock.json` 一致。
 
 4. **先不要点部署** —— 在同一页面往下找 **环境变量 / Environment variables**，
    或建完后去 **Settings → Variables and Secrets** 添加。见下一步。
@@ -354,6 +377,17 @@ Cloudflare 会自己 `npm ci` → `npm run build:cf` → `npx wrangler deploy`�
 
 **push 到生产分支就自动重新部署**，什么都不用做。
 在 Worker 的 **Deployments** 标签能看每次构建的日志，出错也能一键回滚到上一版。
+
+### 构建失败对照表
+
+| 日志里的报错 | 原因 | 怎么修 |
+|---|---|---|
+| `opennextjs-cloudflare: not found` | 生产分支选的是还没含 CF 依赖的分支 | 改生产分支，或把改动合进 `main` |
+| `Blocked N postinstall` 后构建失败 | 用了 `bun install`，postinstall 被拦 | 安装命令写死 `npm ci` |
+| `Missing entry-point to Worker script` | `wrangler.toml` 缺 `main` / `[assets]` | 本仓库已配好，检查有没有被改动 |
+| 页面 500、日志提 `SESSION_SECRET` | 密钥没填或短于 32 字符 | 回第 4 步，注意类型要选 **Secret** |
+| `/api/health` 返回 `degraded` | Turso 两个密钥不对 | 回第 4 步核对 URL 与 Token |
+| `Worker exceeded CPU time limit` | 免费套餐哈希迭代太高 | `wrangler.toml` 改 `PASSWORD_KDF_ITERATIONS = "10000"` |
 
 ---
 
