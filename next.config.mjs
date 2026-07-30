@@ -26,6 +26,17 @@ const nextConfig = {
   reactStrictMode: true,
   // 别把框架版本号写在响应头里
   poweredByHeader: false,
+  // Next 做依赖追踪时用的是 **node** 条件，所以 @libsql 那两个 isomorphic-*
+  // 包只会被复制 node.cjs / node.mjs；而 @opennextjs/cloudflare 打包时用的是
+  // **workerd** 条件，要的是 web.mjs / web.js —— 没复制过来就会报
+  //   X [ERROR] Could not resolve "@libsql/isomorphic-ws"
+  // 强制整包复制，把两套变体都带上。多出来的体积只有几 KB。
+  outputFileTracingIncludes: {
+    '**/*': [
+      './node_modules/@libsql/isomorphic-ws/**',
+      './node_modules/@libsql/isomorphic-fetch/**',
+    ],
+  },
   experimental: {
     // 让 dynamic route 的 RSC 在客户端 prefetch 缓存里保鲜 30 秒
     // 效果：任何页面 Prefetcher 拉过的首页，30 秒内返回都是即点即开

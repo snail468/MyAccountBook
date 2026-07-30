@@ -1,7 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { COMMON_CURRENCIES } from '@/lib/currency';
+// 从 currencyList 而不是 currency 导入 —— 后者 import 了 prisma，
+// 客户端组件引它会把服务端代码拖进客户端模块图
+import { COMMON_CURRENCIES } from '@/lib/currencyList';
 import { localInputToISO } from '@/lib/datetime';
 
 type Kind = 'work' | 'taoyuan' | 'general' | 'travel';

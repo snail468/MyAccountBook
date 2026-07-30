@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { COMMON_CURRENCIES } from '@/lib/currency';
+// 从 currencyList 而不是 currency 导入 —— 后者 import 了 prisma
+import { COMMON_CURRENCIES } from '@/lib/currencyList';
 import { yuanToCents } from '@/lib/money';
 import { localInputToISO, toLocalInput } from '@/lib/datetime';
 import ImageUploader from '@/app/taoyuan/ImageUploader';

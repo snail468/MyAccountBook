@@ -1,4 +1,12 @@
 import { PrismaClient } from '@prisma/client';
+import { PrismaLibSQL } from '@prisma/adapter-libsql';
+// 必须从 /web 导入，不能用默认入口：
+//   * 默认入口在 Node 下解析到 lib-esm/node.js，它依赖原生的 libsql/index.node，
+//     会被 Next 的 standalone 追踪进 Docker 产物
+//   * /web 是纯 JS、基于 fetch 的实现，Workers 和 Node 都能跑
+//   * 我们只在 TURSO_DATABASE_URL 存在时用它，那一定是远端 libsql:// 地址，
+//     不需要 /web 不支持的 file: 能力
+import { createClient } from '@libsql/client/web';
 
 declare global {
   // dev 模式下 HMR 会反复求值模块，用 global 缓存实例避免连接数爆掉
@@ -7,55 +15,32 @@ declare global {
 }
 
 // —— 双模式 ——
-//   Docker / 本地：TURSO_DATABASE_URL 未设 → 走 file:./data/app.db（保持不变）
-//   Cloudflare / 远端 SQLite：TURSO_DATABASE_URL 设了 → 用 libsql 适配器
+//   Docker / 本地：TURSO_DATABASE_URL 未设 → 走 file:./data/app.db
+//   Cloudflare / 远端 SQLite：TURSO_DATABASE_URL 设了 → 用 libsql 驱动适配器
 //
-// 用 Function('return require')() 绕开 webpack 静态分析。两个作用：
-//   1. 这两个包曾经不在 package.json 里，Docker 构建时会报 "Module not found"
-//   2. 现在它们进了 devDependencies（Cloudflare 的构建机需要），
-//      绕过分析变得**更**重要 —— 否则 @libsql/client 的原生二进制会被
-//      Next 的 standalone 追踪进产物，白白撑大 Docker 镜像。
-//      已验证：standalone 的 node_modules 里没有 @libsql / adapter-libsql。
-function opaqueRequire(id: string): unknown {
-  try {
-    // Function('return require')() 是故意的：直接写 require() 或 import() 会被
-    // webpack 静态分析到，Docker 构建（没装这两个 CF 专用包）就会报
-    // "Module not found"。绕过分析后，只有 CF 构建真正加载得到。
-    const req = Function('return require')() as NodeJS.Require;
-    return req(id);
-  } catch {
-    return null;
-  }
-}
+// 这里曾经用 Function('return require')() 动态加载适配器，绕开 webpack 静态分析。
+// 那个写法在 Cloudflare Workers 上是**坏的**：Workers 是 ESM 环境，没有 require，
+// 取 require 会抛异常、被 catch 吞掉，于是静默回退成普通 PrismaClient，
+// 接着 Prisma 去文件系统找原生查询引擎，报
+//     prisma:error [unenv] fs.readdir is not implemented yet!
+// 症状是任何需要查库的页面 500（首页因为未登录时不查库，反而看起来正常）。
+// 现在改成静态 ESM 导入 —— 这两个包已在 devDependencies 里，不存在解析不到的问题。
 
 function createPrisma(): PrismaClient {
   const tursoUrl = process.env.TURSO_DATABASE_URL;
+
   if (tursoUrl) {
-    /* eslint-disable @typescript-eslint/no-explicit-any */
-    const adapterMod = opaqueRequire('@prisma/adapter-libsql') as any;
-    const clientMod = opaqueRequire('@libsql/client') as any;
-    if (adapterMod?.PrismaLibSQL && clientMod?.createClient) {
-      try {
-        const libsql = clientMod.createClient({
-          url: tursoUrl,
-          authToken: process.env.TURSO_AUTH_TOKEN,
-        });
-        const adapter = new adapterMod.PrismaLibSQL(libsql);
-        return new PrismaClient({
-          adapter,
-          log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
-        } as any);
-      } catch (err) {
-        console.error('[db] 初始化 libsql 适配器失败，回退本地 SQLite:', err);
-      }
-    } else {
-      console.error(
-        '[db] TURSO_DATABASE_URL 已设置但 @prisma/adapter-libsql / @libsql/client 未安装。' +
-          '请先跑 npm run cf:setup。回退到本地 SQLite。',
-      );
-    }
-    /* eslint-enable */
+    const libsql = createClient({
+      url: tursoUrl,
+      authToken: process.env.TURSO_AUTH_TOKEN,
+    });
+    const adapter = new PrismaLibSQL(libsql);
+    return new PrismaClient({
+      adapter,
+      log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
+    });
   }
+
   return new PrismaClient({
     log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
   });

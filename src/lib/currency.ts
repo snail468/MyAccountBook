@@ -3,25 +3,10 @@ import { createLogger } from '@/lib/logger';
 
 const log = createLogger('currency');
 
-// 常用币种列表；base 默认 CNY
-export const COMMON_CURRENCIES: { code: string; label: string }[] = [
-  { code: 'CNY', label: '人民币 ¥' },
-  { code: 'USD', label: '美元 $' },
-  { code: 'JPY', label: '日元 ¥' },
-  { code: 'EUR', label: '欧元 €' },
-  { code: 'GBP', label: '英镑 £' },
-  { code: 'HKD', label: '港币 HK$' },
-  { code: 'TWD', label: '新台币 NT$' },
-  { code: 'KRW', label: '韩元 ₩' },
-  { code: 'SGD', label: '新加坡元 S$' },
-  { code: 'THB', label: '泰铢 ฿' },
-  { code: 'AUD', label: '澳元 A$' },
-  { code: 'CAD', label: '加元 C$' },
-  { code: 'CHF', label: '瑞士法郎 CHF' },
-  { code: 'MYR', label: '马来西亚林吉特 RM' },
-  { code: 'IDR', label: '印尼盾 Rp' },
-  { code: 'VND', label: '越南盾 ₫' },
-];
+// 币种常量已挪到 lib/currencyList.ts —— 那份是客户端安全的（不 import prisma）。
+// 这里 re-export 保持既有服务端调用方不用改。
+export { COMMON_CURRENCIES, currencyLabel } from '@/lib/currencyList';
+import { COMMON_CURRENCIES } from '@/lib/currencyList';
 
 const CACHE_TTL_HOURS = 12;
 
@@ -168,6 +153,3 @@ function ageHours(d: Date): number {
   return (Date.now() - d.getTime()) / (1000 * 60 * 60);
 }
 
-export function currencyLabel(code: string): string {
-  return COMMON_CURRENCIES.find((c) => c.code === code)?.label ?? code;
-}
