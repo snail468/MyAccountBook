@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
-import { verifyPassword } from '@/lib/auth';
+import { hashPassword, needsRehash, verifyPassword } from '@/lib/auth';
 import { issueSession } from '@/lib/session';
 import { checkLock, lockMessage, recordFailure, recordSuccess } from '@/lib/loginThrottle';
 import { ensureUserSetup, runStartupTasks } from '@/lib/bootstrap';
@@ -62,6 +62,21 @@ export async function POST(req: Request) {
   }
 
   await recordSuccess(user.id, user.failedLoginCount > 0 || user.lockedUntil !== null);
+
+  // 哈希格式升级（bcrypt → PBKDF2，或提高迭代次数）。
+  // 只在登录成功后做，此时我们手里有明文。
+  // 尽力而为：失败绝不影响本次登录 —— 下次登录还会再试一遍。
+  if (needsRehash(user.passwordHash)) {
+    try {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { passwordHash: await hashPassword(password) },
+      });
+    } catch (err) {
+      console.warn('[auth] 密码哈希升级失败，不影响登录:', err);
+    }
+  }
+
   // 老用户升级路径：补齐 work/taoyuan 的 Ledger 元数据（幂等，只在登录时跑）
   await ensureUserSetup(user.id);
   await issueSession(user);
