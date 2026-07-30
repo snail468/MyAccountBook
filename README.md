@@ -221,11 +221,143 @@ sudo certbot --nginx -d your.domain.com
 > 换到**付费套餐**（30s CPU）后，删掉 `wrangler.toml` 里那一行即可回到 600000，
 > 已有用户的密码会在下次登录时自动按新强度重算，无需重置。
 
-> ### 不要在 Cloudflare 面板里点「创建应用程序」
->
-> Worker 是 `npm run deploy:cf` 自动创建的。在面板里手动新建只会多出一个
-> 空 Worker 跟它抢名字。面板只用来做三件事：**建 R2 桶**、**拿 Account ID**、
-> **事后看日志和绑域名**。
+部署有两条路，选一条：
+
+| | 方式一：网页全图形化 | 方式二：本地命令行 |
+|---|---|---|
+| 建 Worker | 面板里连 GitHub 仓库，Cloudflare 自己构建 | `npm run deploy:cf` |
+| 每次更新 | **push 到分支就自动重新部署** | 手动再跑一次 deploy |
+| 建数据库表 | 粘贴一段 SQL 到 Turso 面板 | `npm run turso:migrate` |
+| 填密钥 | 面板表单里输入 | `npx wrangler secret put` |
+| 需要本地装东西 | **不需要** | 需要 Node + wrangler |
+
+**方式一（网页全图形化）写在下面「方式一」小节；方式二在其后。**
+
+---
+
+## 方式一：全程在网页上操作（推荐，不碰命令行）
+
+### 第 1 步 · 建 Turso 数据库
+
+1. 打开 <https://turso.tech>，用 GitHub 账号登录
+2. 左侧 **Databases** → 点 **Create Database**
+   - **Name** 填 `myaccountbook`
+   - **Region** 选离你近的，例如 `Tokyo (nrt)` 或 `Singapore (sin)`
+   - 点 **Create**
+3. 点进这个数据库，把两样东西抄到记事本里备用：
+   - **Database URL** —— 形如 `libsql://myaccountbook-你的用户名.turso.io`
+   - **Token** —— 页面上找 **Generate Token**（权限选 Read & Write），
+     形如 `eyJhbGciOi...`。**只显示一次，务必先复制**
+
+### 第 2 步 · 建表（粘贴 SQL，不用命令行）
+
+1. 在 GitHub 上打开本仓库的 **[`prisma/turso-setup.sql`](prisma/turso-setup.sql)**
+2. 点右上角的 **Copy raw file**（复制整个文件）
+3. 回到 Turso 面板，进入你刚建的数据库 → 找 **SQL Console / Shell** 标签
+4. 把内容**整段粘贴**进去，执行
+5. 验证：在同一个控制台里执行
+
+   ```sql
+   SELECT name FROM sqlite_master WHERE type='table' ORDER BY name;
+   ```
+
+   应该看到 `CurrencyRate` `Entry` `Event` `EventAmount` `GeneralEntry`
+   `Ledger` `TripExpense` `TripMember` `TripSplit` `User`
+   以及 `_prisma_migrations` 共 11 张表。
+
+> 这个文件是从 `prisma/migrations/` 自动生成的，已经把迁移记录一并写好，
+> 以后用命令行工具检查也能对上。**只在全新的空库上执行一次。**
+
+### 第 3 步 · 在 Cloudflare 面板创建 Worker（连 GitHub）
+
+1. 打开 <https://dash.cloudflare.com> → 左侧 **Workers 和 Pages**
+2. 点 **创建** → 选 **Workers** 那一栏的 **导入存储库**
+   （英文界面：**Create** → **Workers** → **Import a repository**）
+   - 如果是第一次用，会让你授权 Cloudflare 访问 GitHub，按提示装 GitHub App，
+     授权范围选 `snail46/MyAccountBook` 这一个仓库即可
+3. 选中 `MyAccountBook` 仓库，进入配置页，按下表填：
+
+   | 字段 | 填什么 |
+   |---|---|
+   | **项目名称 / Project name** | `myaccountbook` |
+   | **生产分支 / Production branch** | `main`（想先测就填 `refactor/data-safety-and-pagination`） |
+   | **构建命令 / Build command** | `npm run build:cf` |
+   | **部署命令 / Deploy command** | `npx wrangler deploy` |
+   | **根目录 / Root directory** | 留空 |
+
+4. **先不要点部署** —— 在同一页面往下找 **环境变量 / Environment variables**，
+   或建完后去 **Settings → Variables and Secrets** 添加。见下一步。
+
+### 第 4 步 · 填密钥（面板表单，类型选 Secret）
+
+在 Worker 的 **Settings（设置）→ Variables and Secrets（变量和机密）** 里
+点 **添加**，逐条加入。**类型一定要选 `Secret`（加密）而不是 `Text`**：
+
+| 名称 | 值 | 怎么来 |
+|---|---|---|
+| `SESSION_SECRET` | 32 字符以上随机串 | 见下方 |
+| `TURSO_DATABASE_URL` | `libsql://myaccountbook-xxx.turso.io` | 第 1 步抄的 |
+| `TURSO_AUTH_TOKEN` | `eyJhbGciOi...` | 第 1 步抄的 |
+
+**`SESSION_SECRET` 怎么生成（不用命令行）**：
+在浏览器里按 <kbd>F12</kbd> 打开开发者工具，切到 **Console**，粘贴执行：
+
+```js
+btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))))
+```
+
+复制输出的那串字符（含引号的话去掉引号）。
+
+> `NODE_ENV`、`COOKIE_SECURE`、`PASSWORD_KDF_ITERATIONS` 这三个
+> **不用填** —— 已经写在仓库的 `wrangler.toml` 里，部署时自动带上。
+
+### 第 5 步 · 部署
+
+回到 Worker 页面点 **部署 / Deploy**（或 **重试部署 / Retry deployment**）。
+Cloudflare 会自己 `npm ci` → `npm run build:cf` → `npx wrangler deploy`。
+
+构建日志在 Worker 页面的 **部署 / Deployments** 标签里能看到全过程。
+第一次大约 2–4 分钟。
+
+成功后会给你一个地址，形如
+`https://myaccountbook.你的subdomain.workers.dev`。
+
+### 第 6 步 · 验证并注册
+
+1. 浏览器打开 `你的地址/api/health`
+   - `{"status":"ok","db":"ok",...}` → 数据库通了 ✓
+   - `{"status":"degraded","db":"error"}` → Turso 那两个密钥填错了，回第 4 步核对
+2. 打开 `你的地址/register` 注册第一个账号
+   - 新库里 0 用户时自助注册开放，**第一个账号自动成为管理员**
+   - 密码要求：≥8 位，不能是常见弱口令、不能含用户名、不能是连续数字字母
+
+**注册能成功，就说明 15000 次哈希迭代挤进了免费版的 10ms CPU 预算。**
+若报 CPU 超限，改仓库里 `wrangler.toml` 的
+`PASSWORD_KDF_ITERATIONS = "10000"`，push 后会自动重新部署。
+
+### 第 7 步 · 图片上传（可选，跳过也能用）
+
+不配 R2 只影响「上传小票 / 活动图片」，其它功能全正常。要启用：
+
+1. Cloudflare 面板 → **R2** → **创建存储桶**，名字填 `myaccountbook-uploads`
+2. **Account ID**：在 R2 页面右侧栏，或 Workers 概览页右侧，32 位十六进制
+3. R2 页面 → **管理 R2 API 令牌** → **创建 API 令牌**
+   - 权限选 **对象读和写**
+   - 创建后记下 **Access Key ID** 与 **Secret Access Key**（只显示一次）
+4. 回 Worker 的 **Variables and Secrets**，再加四条 Secret：
+   `R2_ACCOUNT_ID`、`R2_ACCESS_KEY`、`R2_SECRET_KEY`、
+   `R2_BUCKET`（值填 `myaccountbook-uploads`）
+
+密钥保存后立即生效，不用重新部署。
+
+### 以后怎么更新
+
+**push 到生产分支就自动重新部署**，什么都不用做。
+在 Worker 的 **Deployments** 标签能看每次构建的日志，出错也能一键回滚到上一版。
+
+---
+
+## 方式二：本地命令行部署
 
 ### A. 建数据库（Turso 网页版，不需要装 CLI）
 

@@ -9,9 +9,13 @@ declare global {
 // —— 双模式 ——
 //   Docker / 本地：TURSO_DATABASE_URL 未设 → 走 file:./data/app.db（保持不变）
 //   Cloudflare / 远端 SQLite：TURSO_DATABASE_URL 设了 → 用 libsql 适配器
-// 用 Function('return require')() 绕开 webpack 静态分析 ——
-// 让 Docker 构建即便没装 @prisma/adapter-libsql / @libsql/client 也不会
-// 产生 "Module not found" 警告；CF 构建时才真正 require 到。
+//
+// 用 Function('return require')() 绕开 webpack 静态分析。两个作用：
+//   1. 这两个包曾经不在 package.json 里，Docker 构建时会报 "Module not found"
+//   2. 现在它们进了 devDependencies（Cloudflare 的构建机需要），
+//      绕过分析变得**更**重要 —— 否则 @libsql/client 的原生二进制会被
+//      Next 的 standalone 追踪进产物，白白撑大 Docker 镜像。
+//      已验证：standalone 的 node_modules 里没有 @libsql / adapter-libsql。
 function opaqueRequire(id: string): unknown {
   try {
     // Function('return require')() 是故意的：直接写 require() 或 import() 会被
