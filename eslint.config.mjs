@@ -70,4 +70,16 @@ export default tseslint.config(
       '@typescript-eslint/no-non-null-assertion': 'off',
     },
   },
+  {
+    // 运维脚本跑在 Node 里，需要声明这些全局对象，否则 no-undef 会全部报错
+    files: ['scripts/**/*.mjs'],
+    languageOptions: {
+      globals: {
+        process: 'readonly',
+        console: 'readonly',
+        crypto: 'readonly',
+        URL: 'readonly',
+      },
+    },
+  },
 );

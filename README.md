@@ -221,90 +221,160 @@ sudo certbot --nginx -d your.domain.com
 > 换到**付费套餐**（30s CPU）后，删掉 `wrangler.toml` 里那一行即可回到 600000，
 > 已有用户的密码会在下次登录时自动按新强度重算，无需重置。
 
-### A. 一次性准备（约 10 分钟）
+> ### 不要在 Cloudflare 面板里点「创建应用程序」
+>
+> Worker 是 `npm run deploy:cf` 自动创建的。在面板里手动新建只会多出一个
+> 空 Worker 跟它抢名字。面板只用来做三件事：**建 R2 桶**、**拿 Account ID**、
+> **事后看日志和绑域名**。
 
-1. **注册 Cloudflare 账号** → 创建 Pages / Workers（免费套餐即可）
-2. **注册 Turso**（<https://turso.tech>）
-   ```bash
-   # 装 CLI（macOS/Linux/WSL）
-   curl -sSfL https://get.tur.so/install.sh | bash
-   turso auth login
-   # 建库
-   turso db create myaccountbook
-   # 拿连接串 & token
-   turso db show myaccountbook --url          # → libsql://xxx.turso.io
-   turso db tokens create myaccountbook       # → eyJhbGc...
-   ```
-3. **建 R2 存储桶**
-   - Cloudflare 面板 → R2 → Create bucket，命名 `myaccountbook-uploads`
-   - R2 → Manage R2 API Tokens → Create API token（权限 Object Read & Write），记下 `Account ID` / `Access Key` / `Secret Key`
-4. **初始化数据库表**（一次性）
-   ```bash
-   # 在本项目根目录：
-   npm install
-   # 用 Turso URL 应用迁移
-   DATABASE_URL="libsql://xxx.turso.io?authToken=eyJhbGc..." \
-     npx prisma migrate deploy
-   ```
+### A. 建数据库（Turso 网页版，不需要装 CLI）
 
-   `migrate deploy` 会把 `prisma/migrations/` 下**全部**迁移按序应用，
-   包含安全字段那一版（`sessionVersion` / `failedLoginCount` / `lockedUntil`）。
-   跑完可以用 `DATABASE_URL="..." npm run prisma:status` 确认显示 `up to date`。
+Turso 的 CLI 在 Windows 上要 WSL，直接用网页版更省事。
 
-   > 如果这个 Turso 库是在 v1 时期用 `db push` 建的，表已经存在，
-   > 直接 `migrate deploy` 会因为 "table already exists" 失败。先 baseline：
-   >
-   > ```bash
-   > DATABASE_URL="libsql://...?authToken=..." npm run prisma:baseline
-   > DATABASE_URL="libsql://...?authToken=..." npx prisma migrate deploy
-   > ```
+1. 打开 <https://turso.tech> 注册/登录（可以用 GitHub 账号）
+2. 左侧 **Databases** → **Create Database**
+   - Name 填 `myaccountbook`
+   - Region 选离你近的（如 `Tokyo` / `Singapore`）
+3. 进入刚建的库，抄下两样东西：
+   - **Database URL**：形如 `libsql://myaccountbook-你的用户名.turso.io`
+   - **Token**：同页面找 **Generate Token**（权限 Read & Write），
+     形如 `eyJhbGc...`。**只显示一次，务必先复制**
 
-### B. 项目配置
+### B. 把表结构灌进去
 
-1. **安装 CF 部署工具链**（这几个依赖只有 CF 部署用得到）
+⚠️ **不要用 `prisma migrate deploy`** —— Prisma CLI 不认 `libsql://` 协议，会报
+`P1012 the URL must start with the protocol file:`（driver adapter 只在运行时生效）。
+用项目自带的脚本，它内部用 `@libsql/client`，跨平台且维护与 Prisma 互认的
+`_prisma_migrations` 记录。
 
-   ```bash
-   npm install                     # 常规依赖
-   npm run cf:setup                # 加装 wrangler + @opennextjs/cloudflare + @libsql/client + @prisma/adapter-libsql
-   npx wrangler login
-   ```
+PowerShell：
 
-   > **`cf:setup` 会把这 4 个包写进 `package.json` 和 `package-lock.json`。**
-   > 提交它们会让 Docker 构建的 `npm ci` 也装上这批 CF 专用包，镜像白白变大。
-   > 跑完后请**不要提交**这两个文件的改动（`git checkout -- package.json package-lock.json`），
-   > 或者改用不落盘的装法：
-   >
-   > ```bash
-   > npm install --no-save @opennextjs/cloudflare wrangler @libsql/client @prisma/adapter-libsql
-   > ```
+```powershell
+$env:TURSO_DATABASE_URL = "libsql://myaccountbook-你的用户名.turso.io"
+$env:TURSO_AUTH_TOKEN   = "eyJhbGc..."
 
-2. **写入 secrets**（不会明文出现在 `wrangler.toml` 里）
-   ```bash
-   npx wrangler secret put SESSION_SECRET        # 粘贴 openssl rand -base64 32 的输出
-   npx wrangler secret put TURSO_DATABASE_URL    # libsql://xxx.turso.io
-   npx wrangler secret put TURSO_AUTH_TOKEN
-   npx wrangler secret put R2_ACCOUNT_ID
-   npx wrangler secret put R2_ACCESS_KEY
-   npx wrangler secret put R2_SECRET_KEY
-   npx wrangler secret put R2_BUCKET             # myaccountbook-uploads
-   ```
+npm install --no-save @libsql/client   # 脚本只依赖这一个包
+npm run turso:migrate
+```
 
-### C. 构建与部署
+bash / WSL：
 
 ```bash
-# 先构建产物（生成 .open-next/）
+export TURSO_DATABASE_URL="libsql://myaccountbook-你的用户名.turso.io"
+export TURSO_AUTH_TOKEN="eyJhbGc..."
+npm install --no-save @libsql/client
+npm run turso:migrate
+```
+
+看到每个迁移后面跟 `ok`、末尾 `✓ 完成` 就成了。随时可以复查：
+
+```powershell
+npm run turso:status
+```
+
+脚本是幂等的，重复跑只会说「无需操作」。
+
+> **如果这个 Turso 库是 v1 时期用 `db push` 建的**（表已存在），
+> 直接跑会报 `already exists`。改用只登记不执行：
+>
+> ```powershell
+> npm run turso:baseline
+   > ```
+
+### C. 装工具链并登录
+
+```powershell
+npm install --no-save @opennextjs/cloudflare wrangler @libsql/client @prisma/adapter-libsql
+npx wrangler login
+```
+
+`wrangler login` 会弹浏览器让你授权，点同意后回到终端即可。用
+`npx wrangler whoami` 可以确认已登录。
+
+> 项目里也有个 `npm run cf:setup` 做同样的事，但它用的是 `npm i -D`，
+> **会把这 4 个包写进 `package.json` 和 `package-lock.json`** ——
+> 提交后 Docker 构建的 `npm ci` 也会装这批 CF 专用包，镜像白白变大。
+> 所以推荐上面的 `--no-save` 写法。
+
+### D. 首次部署（先建 Worker，再灌 secrets）
+
+**顺序很重要**：`wrangler secret put` 需要 Worker 已存在，所以先部署一次。
+这次部署起来的应用会因为缺 `SESSION_SECRET` 而报错，属于预期。
+
+```powershell
 npm run build:cf
-
-# 本地在 workerd 里预览 —— 和线上同一个运行时
-npm run preview:cf
-
-# 正式发布
 npm run deploy:cf
 ```
 
-首次 deploy 会创建 `myaccountbook` Worker，输出访问 URL（形如 `https://myaccountbook.你的subdomain.workers.dev`）。绑定自定义域名后即可作为 PWA 装到手机主屏。
+输出里会给出访问地址，形如
+`https://myaccountbook.你的subdomain.workers.dev` —— 记下来。
 
-**`wrangler.toml` 里的 `main` 和 `[assets]` 是必填项**，指向 `build:cf` 的产物。
+然后生成会话密钥。Windows 上没有 `openssl`，用 node 代替：
+
+```powershell
+node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+```
+
+把输出复制好，逐条写入三个 secret（每条命令会提示你粘贴值，粘贴后回车）：
+
+```powershell
+npx wrangler secret put SESSION_SECRET
+```
+
+```powershell
+npx wrangler secret put TURSO_DATABASE_URL
+```
+
+```powershell
+npx wrangler secret put TURSO_AUTH_TOKEN
+```
+
+secret 写完立即生效，不用重新部署。打开访问地址，应该能进 `/login`；
+第一次用请访问 `/register` 注册 —— 新库里 0 用户时自助注册开放，
+**首个账号自动成为管理员**。
+
+自查一下（把 URL 换成你的）：
+
+```powershell
+curl.exe https://myaccountbook.你的subdomain.workers.dev/api/health
+```
+
+返回 `{"status":"ok","db":"ok",...}` 说明数据库通了。若是
+`{"status":"degraded","db":"error"}`，就是 Turso 的两个 secret 没配对。
+
+### E. 加图片上传（R2，可选）
+
+不配 R2 的话，除了「上传小票/活动图片」之外一切正常。想启用：
+
+1. Cloudflare 面板 → **R2** → **创建存储桶**，名字填 `myaccountbook-uploads`
+2. **Account ID** 在 R2 页面右侧，或 Workers 概览页右侧栏，形如 32 位十六进制
+3. R2 页面 → **管理 R2 API 令牌** → **创建 API 令牌**
+   - 权限选 **对象读和写**（Object Read & Write）
+   - 创建后记下 **Access Key ID** 和 **Secret Access Key**（只显示一次）
+4. 写入四个 secret：
+
+```powershell
+npx wrangler secret put R2_ACCOUNT_ID
+npx wrangler secret put R2_ACCESS_KEY
+npx wrangler secret put R2_SECRET_KEY
+npx wrangler secret put R2_BUCKET
+```
+
+`R2_BUCKET` 填桶名 `myaccountbook-uploads`。
+
+### F. 本地预览（可选，用真实 Workers 运行时）
+
+```powershell
+npm run preview:cf
+```
+
+在 `http://localhost:8787` 跑的是 workerd —— 和线上同一个运行时。
+注意 `wrangler.toml` 里 `COOKIE_SECURE = "true"`，本地是 http 所以浏览器会
+拒收登录 cookie；想在本地测登录，临时把它改成 `"false"`，**别提交这个改动**。
+
+### 关于 `wrangler.toml`
+
+`main` 和 `[assets]` 是**必填项**，指向 `build:cf` 的产物。
 `@opennextjs/cloudflare` 不会自动写进去，缺了会报
 `Missing entry-point to Worker script or to assets directory`。
 
