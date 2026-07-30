@@ -110,7 +110,7 @@ CI（`.github/workflows/ci.yml`）在每次 push 和 PR 上跑同样这四道检
 
    ```bash
    mkdir -p ~/myaccountbook && cd ~/myaccountbook
-   curl -O https://raw.githubusercontent.com/<你的用户名>/MyAccountBook/main/docker-compose.yml
+   curl -O https://raw.githubusercontent.com/snail46/MyAccountBook/main/docker-compose.yml
    ```
 
 3. **生成会话密钥并写入 `.env`**
