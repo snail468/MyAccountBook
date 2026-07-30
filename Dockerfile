@@ -1,6 +1,10 @@
 # syntax=docker/dockerfile:1.7
+#
+# 基础镜像用 node:22-alpine —— Node 20 已过维护期（2026-04 EOL），
+# GitHub Actions 也在下线它。22 是当前 LTS，与 .github/workflows/ci.yml 保持一致。
+#
 # ---------- deps ----------
-FROM node:20-alpine AS deps
+FROM node:22-alpine AS deps
 WORKDIR /app
 RUN apk add --no-cache openssl libc6-compat
 COPY package.json package-lock.json* ./
@@ -9,7 +13,7 @@ RUN --mount=type=cache,target=/root/.npm \
     if [ -f package-lock.json ]; then npm ci; else npm install; fi
 
 # ---------- builder ----------
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 WORKDIR /app
 RUN apk add --no-cache openssl libc6-compat
 ENV NEXT_TELEMETRY_DISABLED=1
@@ -21,7 +25,7 @@ RUN npx prisma generate
 RUN npm run build || (npx next build)
 
 # ---------- runner ----------
-FROM node:20-alpine AS runner
+FROM node:22-alpine AS runner
 WORKDIR /app
 RUN apk add --no-cache openssl libc6-compat tini su-exec \
     && addgroup -g 1001 -S nodejs \

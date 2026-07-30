@@ -16,13 +16,15 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # Node 20 已 EOL，GitHub Actions 也在下线它。22 是当前 LTS，
+          # 与 Dockerfile 的基础镜像保持一致，避免 CI 测的和生产跑的不是一个大版本。
+          node-version: 22
+          # 注意：cache: npm 要求仓库里必须有 package-lock.json，
+          # 缺了会直接报 "Dependencies lock file is not found" 而不是降级
           cache: npm
 
-      # 有 lockfile 就用 npm ci 保证可复现，没有则退回 npm install
       - name: Install deps
-        run: |
-          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+        run: npm ci
 
       # tsc 需要生成好的 prisma client 才能过
       - name: Generate Prisma client
