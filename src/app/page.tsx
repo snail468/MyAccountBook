@@ -323,6 +323,22 @@ export default async function HomePage() {
         ))}
 
         <Link
+          href="/stats"
+          className="flex items-center justify-between p-5 rounded-2xl bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 active:scale-[0.98] transition"
+        >
+          <div className="flex items-center gap-3">
+            <span className="text-xl">📈</span>
+            <div>
+              <div className="text-lg font-medium">统计</div>
+              <div className="text-xs text-ink-500 mt-0.5">
+                月度趋势 · 类别占比 · 环比同比
+              </div>
+            </div>
+          </div>
+          <span className="text-ink-400">›</span>
+        </Link>
+
+        <Link
           href="/search"
           className="flex items-center justify-between p-5 rounded-2xl bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 active:scale-[0.98] transition"
         >
