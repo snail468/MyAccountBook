@@ -67,6 +67,10 @@ const eventAmountSchema = z.object({
   id: z.string().min(1),
   stage: z.string(),
   cents: z.number().int(),
+  // 老备份没有这两个字段，用 optional 兼容 —— 加的是可选字段，
+  // 结构没有不兼容变更，所以 BACKUP_VERSION 不必 +1
+  quantity: z.number().int().nullable().optional(),
+  itemDesc: z.string().nullable().optional(),
   note: z.string().nullable(),
   rewardMethod: z.string().nullable(),
   occurredAt: isoString,
@@ -279,6 +283,8 @@ export type PlannedEventAmount = {
   eventId: string;
   stage: string;
   cents: number;
+  quantity: number | null;
+  itemDesc: string | null;
   note: string | null;
   rewardMethod: string | null;
   occurredAt: Date;
@@ -487,6 +493,8 @@ export function planImport(backup: ParsedBackup, opts: ImportOptions): ImportPla
         eventId: id,
         stage: a.stage,
         cents: a.cents,
+        quantity: a.quantity ?? null,
+        itemDesc: a.itemDesc ?? null,
         note: a.note,
         rewardMethod: a.rewardMethod,
         occurredAt: toDate(a.occurredAt),

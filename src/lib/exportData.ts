@@ -44,6 +44,9 @@ export type BackupEventAmount = {
   id: string;
   stage: string;
   cents: number;
+  // 非金额奖励。可选字段 —— 老备份没有这两项，导入端按缺省处理
+  quantity: number | null;
+  itemDesc: string | null;
   note: string | null;
   rewardMethod: string | null;
   occurredAt: string;
@@ -243,6 +246,8 @@ export async function collectUserData(userId: string): Promise<UserBackup> {
         id: a.id,
         stage: a.stage,
         cents: a.cents,
+        quantity: a.quantity,
+        itemDesc: a.itemDesc,
         note: a.note,
         rewardMethod: a.rewardMethod,
         occurredAt: a.occurredAt.toISOString(),

@@ -17,6 +17,7 @@
 import { prisma } from '@/lib/db';
 import { decodeCursor } from '@/lib/pagination';
 import type { SearchFilters, SearchHit } from '@/lib/search';
+import { rewardValueKind } from '@/lib/rewardMethod';
 
 /** 时间区间的 where 片段 */
 function timeRange(from: Date | null, to: Date | null) {
@@ -210,15 +211,18 @@ export async function runSearch(
           : {}),
         ...(cur ?? {}),
       },
-      include: { amounts: { select: { stage: true, cents: true } } },
+      include: { amounts: { select: { stage: true, cents: true, quantity: true, itemDesc: true, rewardMethod: true } } },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take,
     });
     groups.push(
       rows.map((ev) => {
-        // 展示金额取最靠后的阶段：到账 > 公示 > 预测，与列表页口径一致
+        // 展示金额取最靠后的阶段：到账 > 公示 > 预测，与列表页口径一致。
+        // 只累加金额类 —— 非金额奖励没有金额可显示，卡片上不展示数字
         const byStage = (s: string) =>
-          ev.amounts.filter((a) => a.stage === s).reduce((sum, a) => sum + a.cents, 0);
+          ev.amounts
+            .filter((a) => a.stage === s && rewardValueKind(a.rewardMethod) === 'money')
+            .reduce((sum, a) => sum + a.cents, 0);
         const paid = byStage('paid');
         const announced = byStage('announced');
         const predicted = byStage('predicted');

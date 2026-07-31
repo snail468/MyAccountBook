@@ -9,7 +9,9 @@ import type { Stage } from '@/lib/amounts';
 import Money from '@/components/ui/Money';
 import Lightbox from '@/components/ui/Lightbox';
 import type { ClientEvent } from './types';
-import { aggregateCount, aggregateSum } from './types';
+import { aggregateCount, aggregateNonMoney, aggregateSum, hasMoney } from './types';
+import RewardValue from '@/components/ui/RewardValue';
+import type { NonMoneySummary } from '@/lib/amounts';
 import StageDetail from './StageDetail';
 import EditEventModal from './EditEventModal';
 import { useConfirm } from '@/components/ui/Dialog';
@@ -63,6 +65,18 @@ export default function EventCard({
     predicted: aggregateCount(event, 'predicted'),
     announced: aggregateCount(event, 'announced'),
     paid: aggregateCount(event, 'paid'),
+  };
+  // 非金额奖励（Q币个数、周边名目）与该阶段有没有金额分开算 ——
+  // 只发了 Q币的阶段金额是 0，但不能显示成 0.00，那会让人以为没发东西
+  const nonMoney: Record<Stage, NonMoneySummary[]> = {
+    predicted: aggregateNonMoney(event, 'predicted'),
+    announced: aggregateNonMoney(event, 'announced'),
+    paid: aggregateNonMoney(event, 'paid'),
+  };
+  const moneyFlags: Record<Stage, boolean> = {
+    predicted: hasMoney(event, 'predicted'),
+    announced: hasMoney(event, 'announced'),
+    paid: hasMoney(event, 'paid'),
   };
 
   async function del() {
@@ -205,6 +219,8 @@ export default function EventCard({
             label={STAGE_LABEL[s]}
             sum={sums[s]}
             count={counts[s]}
+            hasMoney={moneyFlags[s]}
+            nonMoney={nonMoney[s]}
             highlight={s === 'paid' && sums.paid > 0}
             disabled={selecting}
             onClick={() => setOpenStage(s)}
@@ -277,6 +293,8 @@ function StageButton({
   label,
   sum,
   count,
+  hasMoney,
+  nonMoney,
   highlight,
   disabled,
   onClick,
@@ -285,6 +303,8 @@ function StageButton({
   label: string;
   sum: number;
   count: number;
+  hasMoney: boolean;
+  nonMoney: NonMoneySummary[];
   highlight: boolean;
   disabled: boolean;
   onClick: () => void;
@@ -305,7 +325,11 @@ function StageButton({
         {hasValue && count > 1 && <span> · {count}</span>}
       </div>
       <div className="num text-sm font-bold mt-0.5">
-        {hasValue ? <Money cents={sum} /> : '+ 填写'}
+        {hasValue ? (
+          <RewardValue cents={sum} hasMoney={hasMoney} nonMoney={nonMoney} />
+        ) : (
+          '+ 填写'
+        )}
       </div>
     </button>
   );

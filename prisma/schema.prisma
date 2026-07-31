@@ -89,7 +89,13 @@ model EventAmount {
   eventId      String
   event        Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
   stage        String
+  // 金额（分）。**非金额奖励一律存 0** —— 这样所有既有的金额聚合天然不受影响。
+  // 计量方式由 rewardMethod 决定，见 src/lib/rewardMethod.ts 的 rewardValueKind
   cents        Int
+  // 个数类奖励：Q币、萝卜币多少个
+  quantity     Int?
+  // 文字类奖励：什么周边 / 什么自定义
+  itemDesc     String?
   note         String?
   rewardMethod String?
   occurredAt   DateTime @default(now())

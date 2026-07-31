@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { requireUserWithRole } from '@/lib/session';
 import { prisma } from '@/lib/db';
+import { parseRewardMethods, rewardValueKind } from '@/lib/rewardMethod';
 import Money from '@/components/ui/Money';
 import {
   bucketByMonth,
@@ -45,7 +46,12 @@ async function loadRows(userId: string, since: Date): Promise<StatRow[]> {
     // 混进统计会让"收入"虚高
     prisma.eventAmount.findMany({
       where: { event: { userId }, stage: 'paid', occurredAt: { gte: since } },
-      select: { occurredAt: true, cents: true, event: { select: { topicTag: true } } },
+      select: {
+        occurredAt: true,
+        cents: true,
+        rewardMethod: true,
+        event: { select: { topicTag: true, rewardMethod: true, rewardMethods: true } },
+      },
     }),
   ]);
 
@@ -71,13 +77,23 @@ async function loadRows(userId: string, since: Date): Promise<StatRow[]> {
       category: t.category,
       sourceLabel: '旅游账本',
     })),
-    ...paidAmounts.map((a) => ({
-      occurredAt: a.occurredAt,
-      amountCents: a.cents,
-      direction: 'income' as const,
-      category: a.event.topicTag?.trim() || '桃源奖励',
-      sourceLabel: '桃源账本',
-    })),
+    // 只把**金额类**奖励计入收入 —— Q币个数、周边件数不是钱，
+    // 混进来会让总收入凭空多出一堆不存在的钱
+    ...paidAmounts
+      .filter((a) => {
+        const method =
+          a.rewardMethod ??
+          parseRewardMethods(a.event.rewardMethods, a.event.rewardMethod)[0] ??
+          null;
+        return rewardValueKind(method) === 'money';
+      })
+      .map((a) => ({
+        occurredAt: a.occurredAt,
+        amountCents: a.cents,
+        direction: 'income' as const,
+        category: a.event.topicTag?.trim() || '桃源奖励',
+        sourceLabel: '桃源账本',
+      })),
   ];
 }
 

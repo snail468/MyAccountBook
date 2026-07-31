@@ -1,4 +1,4 @@
-import type { AmountEntry, Stage } from '@/lib/amounts';
+import { summarizeNonMoney, type AmountEntry, type NonMoneySummary, type Stage } from '@/lib/amounts';
 
 export type ClientEvent = {
   id: string;
@@ -27,14 +27,29 @@ export const STATUS_LABEL: Record<string, string> = {
 
 export const STATUS_ORDER = ['published', 'predicted', 'announced', 'paid'] as const;
 
-// 父卡片聚合金额：父 + 所有子在每个 stage 的总和
+/** 父 + 所有子的条目合并成一个列表，聚合口径都基于它 */
+function allEntries(ev: ClientEvent): AmountEntry[] {
+  return [...ev.amounts, ...ev.children.flatMap((c) => c.amounts)];
+}
+
+/**
+ * 父卡片聚合**金额**：父 + 所有子在该 stage 的金额总和。
+ * 只累加金额类 —— Q币的个数不是钱，见 lib/amounts.ts 的 sumByStage。
+ */
 export function aggregateSum(ev: ClientEvent, stage: Stage): number {
-  const own = ev.amounts.filter((a) => a.stage === stage).reduce((a, b) => a + b.cents, 0);
-  const childSum = ev.children.reduce(
-    (acc, c) => acc + c.amounts.filter((a) => a.stage === stage).reduce((a, b) => a + b.cents, 0),
-    0,
-  );
-  return own + childSum;
+  return allEntries(ev)
+    .filter((a) => a.stage === stage && a.kind === 'money')
+    .reduce((acc, b) => acc + b.cents, 0);
+}
+
+/** 父卡片聚合**非金额奖励**：Q币多少个、发了哪些周边 */
+export function aggregateNonMoney(ev: ClientEvent, stage: Stage): NonMoneySummary[] {
+  return summarizeNonMoney(allEntries(ev), stage);
+}
+
+/** 该 stage 有没有金额类条目 —— 用来区分"0 元"和"只有非金额奖励" */
+export function hasMoney(ev: ClientEvent, stage: Stage): boolean {
+  return allEntries(ev).some((a) => a.stage === stage && a.kind === 'money');
 }
 
 export function aggregateCount(ev: ClientEvent, stage: Stage): number {

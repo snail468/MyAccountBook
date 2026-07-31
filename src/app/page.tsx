@@ -5,7 +5,7 @@ import { prisma } from '@/lib/db';
 import { ensureLegacyMigrated } from '@/lib/legacyMigrate';
 import { ensureUserSetupOnce, maintenanceTick, runStartupTasks } from '@/lib/bootstrap';
 import { materializeDueRules } from '@/lib/recurringRun';
-import { parseRewardMethods } from '@/lib/rewardMethod';
+import { parseRewardMethods, rewardValueKind } from '@/lib/rewardMethod';
 import LogoutButton from '@/components/LogoutButton';
 import ExportButton from '@/components/ExportButton';
 import ImportButton from '@/components/ImportButton';
@@ -59,6 +59,8 @@ async function loadDashboard(userId: string) {
         where: { stage: 'paid', event: { userId } },
         select: {
           cents: true,
+          quantity: true,
+          itemDesc: true,
           rewardMethod: true,
           event: { select: { rewardMethod: true, rewardMethods: true } },
         },
@@ -66,12 +68,30 @@ async function loadDashboard(userId: string) {
     : [];
   let C = 0;
   let D = 0;
+  // 金额类的其它方式（将来新增的现金等价物）仍按金额汇总
   const otherReward = new Map<string, number>();
+  // 非金额奖励单独汇总：个数类累加个数，文字类收集名目。
+  // **绝不并入 A/C/D** —— 200 个 Q币不是 200 分钱，加进总收入就把账算错了
+  const countReward = new Map<string, number>();
+  const textReward = new Map<string, string[]>();
   for (const a of paidAmounts) {
     let method = a.rewardMethod;
     if (!method) {
       const methods = parseRewardMethods(a.event.rewardMethods, a.event.rewardMethod);
       method = methods[0] ?? null;
+    }
+    const kind = rewardValueKind(method);
+    if (kind === 'count') {
+      if (method) countReward.set(method, (countReward.get(method) ?? 0) + (a.quantity ?? 0));
+      continue;
+    }
+    if (kind === 'text') {
+      if (method && a.itemDesc) {
+        const list = textReward.get(method) ?? [];
+        if (!list.includes(a.itemDesc)) list.push(a.itemDesc);
+        textReward.set(method, list);
+      }
+      continue;
     }
     if (method === 'cash') C += a.cents;
     else if (method === 'jdcard') D += a.cents;
@@ -176,6 +196,8 @@ async function loadDashboard(userId: string) {
     expenseTotal,
     pendingCount,
     otherReward: [...otherReward.entries()],
+    countReward: [...countReward.entries()],
+    textReward: [...textReward.entries()],
     ledgerCards,
   };
 }
@@ -217,15 +239,29 @@ export default async function HomePage() {
               className="text-ink-400 dark:text-ink-500"
             />
           </div>
-          {s.otherReward.length > 0 && (
+          {(s.otherReward.length > 0 ||
+            s.countReward.length > 0 ||
+            s.textReward.length > 0) && (
             <div className="mt-4 pt-3 border-t border-ink-100 dark:border-ink-700">
               <div className="text-[11px] text-ink-500 mb-1">
-                以下奖励类型不计入 A，仅存档展示
+                以下奖励不计入 A，仅存档展示
               </div>
               <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-ink-500 num">
                 {s.otherReward.map(([k, v]) => (
                   <span key={k}>
                     {rewardLabel(k)} <Money cents={v} />
+                  </span>
+                ))}
+                {/* 个数类：显示个数而不是金额，且**不受「隐藏金额」开关影响** ——
+                    Q币的个数不是钱，藏起来没有意义 */}
+                {s.countReward.map(([k, n]) => (
+                  <span key={k}>
+                    {rewardLabel(k)} {n} 个
+                  </span>
+                ))}
+                {s.textReward.map(([k, items]) => (
+                  <span key={k}>
+                    {rewardLabel(k)}：{items.join(' / ')}
                   </span>
                 ))}
               </div>

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireSessionUser } from '@/lib/ownership';
 import { formatYuan } from '@/lib/money';
-import { parseRewardMethods, rewardMethodLabel } from '@/lib/rewardMethod';
+import { parseRewardMethods, rewardMethodLabel, rewardValueKind } from '@/lib/rewardMethod';
 import { afterTaxCents } from '@/lib/tax';
 import { combineAmounts, sumByStage } from '@/lib/amounts';
 import { ensureLegacyMigrated } from '@/lib/legacyMigrate';
@@ -82,6 +82,8 @@ function sectionTaoyuan(b: UserBackup, lines: string[]) {
         id: a.id,
         stage: a.stage,
         cents: a.cents,
+        quantity: a.quantity,
+        itemDesc: a.itemDesc,
         note: a.note,
         rewardMethod: a.rewardMethod,
         occurredAt: new Date(a.occurredAt),
@@ -124,14 +126,18 @@ function sectionTaoyuan(b: UserBackup, lines: string[]) {
 
   lines.push('');
   lines.push('# 桃源账本 · 金额明细');
-  lines.push(row(['活动', '阶段', '金额(元)', '发放方式', '备注', '发生时间']));
+  lines.push(row(['活动', '阶段', '金额(元)', '个数', '奖励内容', '发放方式', '备注', '发生时间']));
   for (const ev of b.events) {
     for (const a of ev.amounts) {
       lines.push(
         row([
           ev.title,
           a.stage,
-          formatYuan(a.cents),
+          // 非金额奖励的金额列留空，而不是写 0.00 —— 写 0 会让人以为发了 0 元。
+          // 备份行没有 kind 字段（那是运行时推导的），这里按 rewardMethod 现算
+          rewardValueKind(a.rewardMethod) === 'money' ? formatYuan(a.cents) : '',
+          a.quantity ?? '',
+          a.itemDesc ?? '',
           rewardMethodLabel(a.rewardMethod),
           a.note,
           a.occurredAt,
