@@ -28,6 +28,7 @@ model User {
   events        Event[]
   ledgers       Ledger[]
   memberships   TripMember[]
+  bankCards     BankCard[]
 }
 
 // ============ 工作账本 (built-in kind="work") ============
@@ -212,4 +213,37 @@ model CurrencyRate {
   fetchedAt  DateTime @default(now())
 
   @@unique([base, quote])
+}
+
+// ============ 银行卡备份（加密存储） ============
+//
+// 威胁模型与加密方案见 src/lib/cardCrypto.ts。
+//
+// 字段分两类：
+//   * 明文：银行名、别名、卡类型、持卡人、**尾号** —— 列表页要显示，
+//     单独存尾号是为了列出卡片时不必把所有卡号都解密一遍
+//   * 密文：完整卡号、备注 —— AES-256-GCM，格式 v1$<iv>$<密文>
+//
+// **刻意没有 CVV 和取款密码字段**。它们不是"加密后就能存"的东西，
+// 支付行业规范明确禁止存储 CVV，本应用也没有任何场景需要。
+// 从 schema 层面不给这两个字段，就杜绝了以后有人"顺手加一个"。
+model BankCard {
+  id       String @id @default(cuid())
+  userId   String
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  bankName String  // 银行名，如"招商银行"
+  alias    String? // 用户自己起的别名，如"工资卡"
+  cardType String  // "debit" | "credit"
+  holder   String? // 持卡人姓名
+  last4    String  // 卡号后四位，明文
+
+  numberEnc String  // 完整卡号密文
+  noteEnc   String? // 备注密文
+
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, order])
 }
