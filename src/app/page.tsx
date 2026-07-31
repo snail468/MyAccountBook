@@ -7,6 +7,7 @@ import { ensureUserSetupOnce, maintenanceTick, runStartupTasks } from '@/lib/boo
 import { parseRewardMethods } from '@/lib/rewardMethod';
 import LogoutButton from '@/components/LogoutButton';
 import ExportButton from '@/components/ExportButton';
+import ImportButton from '@/components/ImportButton';
 import ChangePasswordButton from '@/components/ChangePasswordButton';
 import Money from '@/components/ui/Money';
 import Prefetcher from '@/components/ui/Prefetcher';
@@ -336,6 +337,8 @@ export default async function HomePage() {
         </Link>
 
         <ExportButton />
+
+        <ImportButton />
 
         <ChangePasswordButton />
 

@@ -6,8 +6,9 @@
 
 import { prisma } from '@/lib/db';
 
-// 备份格式版本。导入端据此判断兼容性；结构不兼容时 +1。
-export const BACKUP_VERSION = 1;
+// 版本号与表清单在 backupFormat.ts —— 那个模块不依赖 prisma，导入端的单测要用
+export { BACKUP_TABLES, BACKUP_VERSION } from '@/lib/backupFormat';
+import { BACKUP_VERSION } from '@/lib/backupFormat';
 
 export type BackupLedger = {
   id: string;
@@ -132,16 +133,6 @@ export type UserBackup = {
   tripMembers: BackupTripMember[];
   tripExpenses: BackupTripExpense[];
 };
-
-// 备份包含的表清单 —— 加新表时同步登记，导入端也读这份清单做完整性校验
-export const BACKUP_TABLES = [
-  'ledgers',
-  'entries',
-  'events',
-  'generalEntries',
-  'tripMembers',
-  'tripExpenses',
-] as const;
 
 const iso = (d: Date | null | undefined): string | null => d?.toISOString() ?? null;
 
