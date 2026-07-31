@@ -4,6 +4,10 @@
 // 生产环境下等于所有人的会话 cookie 都能被伪造，而日志里只有一行 warn。
 // 现在生产环境直接抛错拒绝启动 —— 配错了要立刻炸，不能带病上线。
 
+import { createLogger } from '@/lib/logger';
+
+const log = createLogger('env');
+
 const MIN_SECRET_LENGTH = 32;
 
 const DEV_FALLBACK_SECRET = 'dev-only-insecure-secret-please-change-me-now';
@@ -47,7 +51,7 @@ export function requireSessionSecret(): string {
         `[env] ${reason}。生产环境拒绝启动 —— 用 openssl rand -base64 32 生成一个填进环境变量。`,
       );
     }
-    console.warn(`[env] ${reason}。开发环境暂用不安全的默认值，上线前务必替换。`);
+    log.warn(`${reason}。开发环境暂用不安全的默认值，上线前务必替换。`);
     return DEV_FALLBACK_SECRET;
   }
 

@@ -33,7 +33,19 @@ export function setErrorReporter(fn: ErrorReporter | null): void {
   errorReporter = fn;
 }
 
-/** 把 Error 摊平成可序列化的字段，避免 JSON.stringify(Error) 得到 {} */
+/**
+ * 把 Error 摊平成可序列化的字段，避免 JSON.stringify(Error) 得到 {}。
+ *
+ * 导出是给 warn 用的：`log.error` 会自动带上错误字段，但项目里有不少
+ * "尽力而为、失败不影响主流程"的清理逻辑，那些该记 warn 而不是 error
+ * （不值得触发告警），又确实想留下错误详情。
+ *
+ * @example log.warn('清理旧图片失败', errorFields(err))
+ */
+export function errorFields(err: unknown): LogFields {
+  return serializeError(err);
+}
+
 function serializeError(err: unknown): LogFields {
   if (err instanceof Error) {
     return {

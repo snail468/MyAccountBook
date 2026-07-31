@@ -1,5 +1,8 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import { createLogger } from '@/lib/logger';
+
+const log = createLogger('health');
 
 // GET /api/health —— 给 docker healthcheck / 反代探活用。
 //
@@ -18,7 +21,7 @@ export async function GET() {
       { headers: { 'Cache-Control': 'no-store' } },
     );
   } catch (err) {
-    console.error('[health] 数据库探测失败:', err);
+    log.error('数据库探测失败', err);
     return NextResponse.json(
       { status: 'degraded', db: 'error', latencyMs: Date.now() - started },
       { status: 503, headers: { 'Cache-Control': 'no-store' } },

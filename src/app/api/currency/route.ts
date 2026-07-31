@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getRateDetailed } from '@/lib/currency';
-import { requireUser } from '@/lib/session';
+import { requireSessionUser } from '@/lib/ownership';
+import { badRequest, serviceUnavailable } from '@/lib/apiError';
 
 // GET /api/currency?base=CNY&quote=USD
 //   → 200 { rate, stale: false }
@@ -10,15 +11,15 @@ import { requireUser } from '@/lib/session';
 //
 // 原来一律返回 503「汇率暂不可用」，前端没法区分"该重试"和"该手填"。
 export async function GET(req: Request) {
-  const user = await requireUser();
-  if (!user) return NextResponse.json({ error: '未登录' }, { status: 401 });
+  const user = await requireSessionUser();
+  if (user instanceof Response) return user;
 
   const url = new URL(req.url);
   const base = url.searchParams.get('base') || 'CNY';
   const quote = url.searchParams.get('quote') || 'USD';
 
   if (!/^[A-Za-z]{3}$/.test(base) || !/^[A-Za-z]{3}$/.test(quote)) {
-    return NextResponse.json({ error: '币种代码格式不正确' }, { status: 400 });
+    return badRequest('币种代码格式不正确');
   }
 
   const result = await getRateDetailed(base, quote);
@@ -33,15 +34,13 @@ export async function GET(req: Request) {
     });
   }
 
+  // kind 是这个接口自己的判别式（前端据此决定"提示重试"还是"引导手填"），
+  // 与统一的 code 并存：code 说的是 HTTP 层面的错误类别，kind 说的是业务原因
   if (result.kind === 'UNSUPPORTED_CURRENCY') {
-    return NextResponse.json(
-      { error: '不支持这个币种，请手动填写汇率', kind: result.kind },
-      { status: 400 },
-    );
+    return badRequest('不支持这个币种，请手动填写汇率', { kind: result.kind });
   }
 
-  return NextResponse.json(
-    { error: '汇率服务暂时不可用，请稍后重试或手动填写', kind: result.kind },
-    { status: 503 },
-  );
+  return serviceUnavailable('汇率服务暂时不可用，请稍后重试或手动填写', {
+    kind: result.kind,
+  });
 }

@@ -1,22 +1,19 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { requireUser } from '@/lib/session';
+import { requireOwnedLedger } from '@/lib/ownership';
+import { conflict } from '@/lib/apiError';
 
 export async function POST(
   _req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const user = await requireUser();
-  if (!user) return NextResponse.json({ error: '未登录' }, { status: 401 });
   const { id } = await params;
+  const ctx = await requireOwnedLedger(id);
+  if (ctx instanceof Response) return ctx;
+  const { user, ledger: l } = ctx;
 
-  const l = await prisma.ledger.findUnique({
-    where: { id },
-    select: { userId: true, kind: true, deletedAt: true },
-  });
-  if (!l || l.userId !== user.id)
-    return NextResponse.json({ error: '不存在' }, { status: 404 });
-  if (!l.deletedAt) return NextResponse.json({ error: '该账本未删除' }, { status: 400 });
+  // 恢复一个没被删的账本 —— 请求本身合法，是与当前状态冲突，用 409
+  if (!l.deletedAt) return conflict('该账本未删除');
 
   // 内置账本恢复时：如果用户已经又创建了一个同类型的活跃账本，禁止恢复
   if (l.kind === 'work' || l.kind === 'taoyuan') {
@@ -29,11 +26,8 @@ export async function POST(
       },
     });
     if (exists) {
-      return NextResponse.json(
-        {
-          error: `你已经有一个${l.kind === 'work' ? '工作账本' : '桃源账本'}了。请先删除它才能恢复此账本`,
-        },
-        { status: 409 },
+      return conflict(
+        `你已经有一个${l.kind === 'work' ? '工作账本' : '桃源账本'}了。请先删除它才能恢复此账本`,
       );
     }
   }

@@ -1,4 +1,7 @@
 import { PrismaClient } from '@prisma/client';
+import { createLogger, errorFields } from '@/lib/logger';
+
+const log = createLogger('db');
 
 declare global {
   // dev 模式下 HMR 会反复求值模块，用 global 缓存实例避免连接数爆掉
@@ -41,7 +44,7 @@ async function configureSqlite(client: PrismaClient) {
     await client.$queryRawUnsafe('PRAGMA synchronous=NORMAL');
     global.__xydWalConfigured = true;
   } catch (err) {
-    console.warn('[db] configure sqlite failed:', err);
+    log.warn('SQLite 初始化 PRAGMA 失败', errorFields(err));
   }
 }
 

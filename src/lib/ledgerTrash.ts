@@ -1,5 +1,8 @@
 import { prisma } from '@/lib/db';
 import { cleanupCollectedImages, collectLedgerImageUrls } from '@/lib/imageCleanup';
+import { createLogger, errorFields } from '@/lib/logger';
+
+const log = createLogger('ledgerTrash');
 
 // 幂等：把 archived=true 的 Ledger 一次性搬进回收站（deletedAt = updatedAt）
 // 再顺手清理 deletedAt 早于 60 天的 —— 真正硬删（对 general/travel 会级联清数据）
@@ -26,7 +29,7 @@ export async function migrateArchivedIfNeeded() {
       ),
     );
   } catch (err) {
-    console.warn('[ledgerTrash] migrate archived failed:', err);
+    log.warn('归档账本迁入回收站失败', errorFields(err));
     migratedArchived = false;
   }
 }
@@ -55,6 +58,6 @@ export async function purgeExpiredTrash() {
 
     await cleanupCollectedImages([...new Set(urls)]);
   } catch (err) {
-    console.warn('[ledgerTrash] purge failed:', err);
+    log.warn('回收站过期清理失败', errorFields(err));
   }
 }

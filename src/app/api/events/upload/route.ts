@@ -1,23 +1,24 @@
 import { NextResponse } from 'next/server';
-import { requireUser } from '@/lib/session';
+import { requireSessionUser } from '@/lib/ownership';
+import { badRequest, payloadTooLarge, unsupportedMediaType } from '@/lib/apiError';
 import { hashOf, monthKey, putObject } from '@/lib/storage';
 import { sniffImage } from '@/lib/imageSniff';
 
 const MAX_BYTES = 8 * 1024 * 1024;
 
 export async function POST(req: Request) {
-  const user = await requireUser();
-  if (!user) return NextResponse.json({ error: '未登录' }, { status: 401 });
+  const user = await requireSessionUser();
+  if (user instanceof Response) return user;
 
   const form = await req.formData().catch(() => null);
-  if (!form) return NextResponse.json({ error: '请求格式错误' }, { status: 400 });
+  if (!form) return badRequest('请求格式错误');
 
   const file = form.get('file');
   if (!(file instanceof Blob)) {
-    return NextResponse.json({ error: '缺少文件' }, { status: 400 });
+    return badRequest('缺少文件');
   }
   if (file.size > MAX_BYTES) {
-    return NextResponse.json({ error: '单张最大 8MB' }, { status: 413 });
+    return payloadTooLarge('单张最大 8MB');
   }
 
   const bytes = new Uint8Array(await file.arrayBuffer());
@@ -25,7 +26,7 @@ export async function POST(req: Request) {
   // 只认文件内容的魔数，不信任客户端声明的 MIME
   const sniffed = sniffImage(bytes);
   if (!sniffed) {
-    return NextResponse.json({ error: '只支持 jpg/png/webp/gif 图片' }, { status: 415 });
+    return unsupportedMediaType('只支持 jpg/png/webp/gif 图片');
   }
 
   // 内容寻址：key = <userId>/<yyyy-mm>/<sha256 前 24 位>.<ext>

@@ -5,6 +5,10 @@ import { hashPassword, needsRehash, verifyPassword } from '@/lib/auth';
 import { issueSession } from '@/lib/session';
 import { checkLock, lockMessage, recordFailure, recordSuccess } from '@/lib/loginThrottle';
 import { ensureUserSetup, runStartupTasks } from '@/lib/bootstrap';
+import { badRequest, tooManyRequests, unauthorized } from '@/lib/apiError';
+import { createLogger, errorFields } from '@/lib/logger';
+
+const log = createLogger('auth');
 
 const schema = z.object({
   username: z.string().trim().min(1),
@@ -15,7 +19,7 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json({ error: '请输入用户名和密码' }, { status: 400 });
+    return badRequest('请输入用户名和密码');
   }
   const { username, password } = parsed.data;
 
@@ -38,27 +42,21 @@ export async function POST(req: Request) {
   // "用户不存在" 和 "密码错误"（用户名枚举）
   if (!user) {
     await verifyPassword(password, '$2a$10$invalidinvalidinvalidinvalidinvalidinvalidinvalidinvalidin');
-    return NextResponse.json({ error: '用户名或密码错误' }, { status: 401 });
+    return unauthorized('用户名或密码错误');
   }
 
   const lock = checkLock(user);
   if (lock.locked) {
-    return NextResponse.json(
-      { error: lockMessage(lock.retryAfterSeconds) },
-      { status: 429, headers: { 'Retry-After': String(lock.retryAfterSeconds) } },
-    );
+    return tooManyRequests(lockMessage(lock.retryAfterSeconds), lock.retryAfterSeconds);
   }
 
   const ok = await verifyPassword(password, user.passwordHash);
   if (!ok) {
     const state = await recordFailure(user.id, user.failedLoginCount);
     if (state.locked) {
-      return NextResponse.json(
-        { error: lockMessage(state.retryAfterSeconds) },
-        { status: 429, headers: { 'Retry-After': String(state.retryAfterSeconds) } },
-      );
+      return tooManyRequests(lockMessage(state.retryAfterSeconds), state.retryAfterSeconds);
     }
-    return NextResponse.json({ error: '用户名或密码错误' }, { status: 401 });
+    return unauthorized('用户名或密码错误');
   }
 
   await recordSuccess(user.id, user.failedLoginCount > 0 || user.lockedUntil !== null);
@@ -73,7 +71,7 @@ export async function POST(req: Request) {
         data: { passwordHash: await hashPassword(password) },
       });
     } catch (err) {
-      console.warn('[auth] 密码哈希升级失败，不影响登录:', err);
+      log.warn('密码哈希升级失败，不影响登录', errorFields(err));
     }
   }
 

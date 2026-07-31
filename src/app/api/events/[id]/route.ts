@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
-import { requireUser } from '@/lib/session';
+import { requireOwnedEvent } from '@/lib/ownership';
+import { badRequest } from '@/lib/apiError';
 import { stringifyRewardMethods } from '@/lib/rewardMethod';
 
 const patchSchema = z.object({
@@ -19,17 +20,13 @@ const patchSchema = z.object({
 });
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const user = await requireUser();
-  if (!user) return NextResponse.json({ error: '未登录' }, { status: 401 });
   const { id } = await params;
-
-  const event = await prisma.event.findUnique({ where: { id }, select: { userId: true } });
-  if (!event || event.userId !== user.id)
-    return NextResponse.json({ error: '不存在' }, { status: 404 });
+  const ctx = await requireOwnedEvent(id);
+  if (ctx instanceof Response) return ctx;
 
   const body = await req.json().catch(() => null);
   const parsed = patchSchema.safeParse(body);
-  if (!parsed.success) return NextResponse.json({ error: '参数错误' }, { status: 400 });
+  if (!parsed.success) return badRequest();
   const p = parsed.data;
 
   const data: Record<string, unknown> = {};
@@ -50,15 +47,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 }
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const user = await requireUser();
-  if (!user) return NextResponse.json({ error: '未登录' }, { status: 401 });
   const { id } = await params;
-  const event = await prisma.event.findUnique({
-    where: { id },
-    select: { userId: true },
-  });
-  if (!event || event.userId !== user.id)
-    return NextResponse.json({ error: '不存在' }, { status: 404 });
+  const ctx = await requireOwnedEvent(id);
+  if (ctx instanceof Response) return ctx;
+
   await prisma.event.delete({ where: { id } });
   return NextResponse.json({ ok: true });
 }

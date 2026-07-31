@@ -10,6 +10,9 @@
 
 import { prisma } from '@/lib/db';
 import { deleteUploadUrls, keyFromUploadUrl } from '@/lib/storage';
+import { createLogger, errorFields } from '@/lib/logger';
+
+const log = createLogger('imageCleanup');
 
 /** 解析数据库里存的 imageUrls / contentImages（JSON 数组字符串） */
 export function parseImageUrls(v: string | null | undefined): string[] {
@@ -78,7 +81,7 @@ export async function cleanupImagesAfterDelete(
     const unreferenced = await filterUnreferenced(urls, {});
     if (unreferenced.length > 0) await deleteUploadUrls(unreferenced);
   } catch (err) {
-    console.warn('[imageCleanup] cleanup after delete failed:', err);
+    log.warn('删除后清理图片失败', errorFields(err));
   }
 }
 
@@ -100,7 +103,7 @@ export async function cleanupRemovedImages(
     const unreferenced = await filterUnreferenced(removed, {});
     if (unreferenced.length > 0) await deleteUploadUrls(unreferenced);
   } catch (err) {
-    console.warn('[imageCleanup] cleanup removed images failed:', err);
+    log.warn('清理被移除的图片失败', errorFields(err));
   }
 }
 
@@ -126,7 +129,7 @@ export async function collectLedgerImageUrls(ledgerId: string): Promise<string[]
     }
     return [...urls];
   } catch (err) {
-    console.warn('[imageCleanup] collect ledger images failed:', err);
+    log.warn('收集账本图片失败', errorFields(err));
     return [];
   }
 }
@@ -138,6 +141,6 @@ export async function cleanupCollectedImages(urls: string[]): Promise<void> {
     const unreferenced = await filterUnreferenced(urls, {});
     if (unreferenced.length > 0) await deleteUploadUrls(unreferenced);
   } catch (err) {
-    console.warn('[imageCleanup] cleanup collected images failed:', err);
+    log.warn('清理已收集的图片失败', errorFields(err));
   }
 }

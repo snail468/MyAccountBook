@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { requireUser } from '@/lib/session';
+import { requireSessionUser } from '@/lib/ownership';
 import { buildEventTree } from '@/lib/taoyuanSerialize';
 import {
   CREATED_DESC_ORDER,
@@ -16,8 +16,8 @@ import {
 // published/predicted/announced 是用户正在跟踪的活跃项，数量天然有界，
 // 由页面一次性加载，保证 MergeBar 合并操作能看到全部候选。
 export async function GET(req: Request) {
-  const user = await requireUser();
-  if (!user) return NextResponse.json({ error: '未登录' }, { status: 401 });
+  const user = await requireSessionUser();
+  if (user instanceof Response) return user;
 
   const url = new URL(req.url);
   const limit = parsePageSize(url.searchParams.get('limit'));

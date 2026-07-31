@@ -9,6 +9,9 @@
 // 上传后返回 URL 形如 `/api/uploads/<userId>/<yyyy-mm>/<hash>.<ext>` —— 前端不变
 
 import { createHash, createHmac } from 'node:crypto';
+import { createLogger, errorFields } from '@/lib/logger';
+
+const log = createLogger('storage');
 
 export type StoredFile = {
   key: string; // 相对路径 userId/yyyy-mm/xxx.ext
@@ -107,7 +110,7 @@ export async function deleteObject(key: string): Promise<boolean> {
   } catch (err) {
     // ENOENT 属于正常情况（图片可能早就被删了 / 从没写成功过）
     if ((err as NodeJS.ErrnoException)?.code !== 'ENOENT') {
-      console.warn('[storage] deleteObject failed:', key, err);
+      log.warn('删除对象失败', { key, ...errorFields(err) });
     }
     return false;
   }

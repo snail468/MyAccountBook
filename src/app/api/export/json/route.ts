@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { requireUser } from '@/lib/session';
+import { requireSessionUser } from '@/lib/ownership';
 import { ensureLegacyMigrated } from '@/lib/legacyMigrate';
 import { collectUserData, summarizeBackup } from '@/lib/exportData';
 
@@ -8,8 +8,8 @@ import { collectUserData, summarizeBackup } from '@/lib/exportData';
 // 与 CSV 的区别：CSV 是给人看的（Excel 打开），JSON 是给机器看的（迁移/还原）。
 // 两者共用 collectUserData，覆盖的表完全一致。
 export async function GET() {
-  const user = await requireUser();
-  if (!user) return NextResponse.json({ error: '未登录' }, { status: 401 });
+  const user = await requireSessionUser();
+  if (user instanceof Response) return user;
 
   await ensureLegacyMigrated();
   const backup = await collectUserData(user.id);

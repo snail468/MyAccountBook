@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
-import { requireUser } from '@/lib/session';
+import { requireOwnedLedger } from '@/lib/ownership';
+import { badRequest } from '@/lib/apiError';
 import { cleanupCollectedImages, collectLedgerImageUrls } from '@/lib/imageCleanup';
 
 const patchSchema = z.object({
@@ -31,28 +32,17 @@ const patchSchema = z.object({
     .optional(),
 });
 
-async function ensureOwn(id: string, userId: string) {
-  const l = await prisma.ledger.findUnique({
-    where: { id },
-    select: { userId: true, kind: true },
-  });
-  if (!l || l.userId !== userId) return null;
-  return l;
-}
-
 export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const user = await requireUser();
-  if (!user) return NextResponse.json({ error: '未登录' }, { status: 401 });
   const { id } = await params;
-  const own = await ensureOwn(id, user.id);
-  if (!own) return NextResponse.json({ error: '不存在' }, { status: 404 });
+  const ctx = await requireOwnedLedger(id);
+  if (ctx instanceof Response) return ctx;
 
   const body = await req.json().catch(() => null);
   const parsed = patchSchema.safeParse(body);
-  if (!parsed.success) return NextResponse.json({ error: '参数错误' }, { status: 400 });
+  if (!parsed.success) return badRequest();
   const p = parsed.data;
 
   const data: Record<string, unknown> = {};
@@ -79,11 +69,9 @@ export async function DELETE(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const user = await requireUser();
-  if (!user) return NextResponse.json({ error: '未登录' }, { status: 401 });
   const { id } = await params;
-  const own = await ensureOwn(id, user.id);
-  if (!own) return NextResponse.json({ error: '不存在' }, { status: 404 });
+  const ctx = await requireOwnedLedger(id);
+  if (ctx instanceof Response) return ctx;
 
   const url = new URL(req.url);
   const permanent = url.searchParams.get('permanent') === '1';

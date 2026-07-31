@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import { forbidden } from '@/lib/apiError';
 
 // 两件事在这里统一做，避免在几十个路由里各写一遍：
 //
@@ -82,10 +83,10 @@ function isSameOrigin(req: NextRequest): boolean {
 
 export function middleware(req: NextRequest) {
   if (!SAFE_METHODS.has(req.method) && !isSameOrigin(req)) {
-    return NextResponse.json(
-      { error: '跨站请求被拒绝' },
-      { status: 403, headers: { 'Cache-Control': 'no-store' } },
-    );
+    // 与所有 API 错误同一个格式（见 lib/apiError.ts），前端不必为它特判
+    const res = forbidden('跨站请求被拒绝');
+    res.headers.set('Cache-Control', 'no-store');
+    return res;
   }
 
   const nonce = crypto.randomUUID().replace(/-/g, '');

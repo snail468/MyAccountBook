@@ -21,6 +21,7 @@
   - [2.8 Cloudflare 部署（已放弃并移除）](#28-cloudflare-部署已放弃并移除)
   - [2.9 过程中发现并修掉的既有 Bug](#29-过程中发现并修掉的既有-bug)
   - [2.10 分支预览部署时暴露的问题](#210-分支预览部署时暴露的问题本轮改动自身引入)
+  - [2.11 代码整洁](#211-代码整洁)
 - [四、待做](#四待做)
 - [五、验证与部署命令速查](#五验证与部署命令速查)
 
@@ -32,7 +33,7 @@
 |---|---|
 | 部署方式 | **只有 Docker**。Cloudflare 相关代码与文档已全部移除 |
 | Docker 部署链路 | ✅ 可用，本地 standalone 实测真实查询通过 |
-| 单元测试 | ✅ 110 个，全部通过 |
+| 单元测试 | ✅ 123 个，全部通过（route 层不在单测范围，靠 build + 真实请求冒烟覆盖） |
 | CI（typecheck / lint / test / build） | ✅ 已配置，每次 push 与 PR 都跑 |
 | 是否已合并 main | ❌ 未合并 |
 
@@ -404,6 +405,56 @@ prisma:error [unenv] fs.readdir is not implemented yet!
 **教训**：不要用「旁路的痕迹」代替「对目标本身的检查」。标记文件、时间戳、缓存标志
 这类东西一旦与真实对象解耦，就会在最不该出错的时候给出一个自信的错误答案。
 
+### 2.11 代码整洁
+
+原 [4.6](#46-代码整洁第七部分剩余) 的四项，全部完成。
+
+**统一 API 错误响应** —— 新增 `lib/apiError.ts`
+
+改造前 30 个 route 各自手写 `NextResponse.json({ error }, { status })`，同一件事有三种
+说法（`不存在` / `账本不存在` / `not found`），参数不合法也有三种（`参数错误` /
+`请求格式错误` / `bad path`，还混着英文）。现在收敛成一组具名构造器，并且**把状态码的
+判定规则写进了模块头注释**——判据落在代码里才不会再次走样：
+
+- 401 未认证 · 403 已认证但不允许 · 400 请求不合法 · 409 状态冲突 · 413/415/429/503
+- **404 同时覆盖三种情况**：不存在、不属于你、类型不对。后两种归到 404 是有意的：
+  返回 403 等于告诉对方「这个 id 是存在的」，给了枚举他人资源的探针
+- 响应体保留 `error` 文案字段（前端都在读它做提示），新增稳定的 `code` 机器码
+
+有意的例外记在注释里：`/api/auth/password` 的「当前密码不正确」用 403 而非 401 ——
+会话是有效的，只是二次验证没过，返回 401 容易让客户端误判成会话失效把人踢去登录页。
+
+**抽取归属校验** —— 新增 `lib/ownership.ts`
+
+`ownLedger`/`ensureOwn` 原本在 7 个 route 文件里各写一遍（4 份逐字相同），活动相关的
+路由甚至没抽函数、直接内联。现在统一成 `requireOwnedLedger` / `requireOwnedEntry` /
+`requireOwnedGeneralEntry` / `requireOwnedTripExpense` / `requireOwnedEvent` /
+`requireOwnedEventAmount` / `requireSessionUser` / `requireAdmin`，返回值要么是上下文、
+要么是**已构造好的错误响应**（`NextResponse` 继承 `Response`，一句 `instanceof` 同时
+兜住 401 和 404）：
+
+```ts
+const ctx = await requireOwnedLedger(id, { kind: 'travel', kindMessage: '仅旅游账本可用' });
+if (ctx instanceof Response) return ctx;
+const { user, ledger } = ctx;
+```
+
+顺带把中间件的 CSRF 403 也换成同一个格式 —— 它之前也是手写的，前端得为它特判。
+
+这一步同时是 [B7 账本共享协作](#44-功能--b-层)的前置：那一轮要改的正是这条链路，
+从 7 处改成 1 处之后风险小得多。
+
+**logger 全面接入** —— 10 个文件 18 处 `console.*` 清零
+
+`logger.ts` 原来只有 `currency.ts` 在用。为 warn 场景导出了 `errorFields(err)`：项目里
+有不少「尽力而为、失败不影响主流程」的清理逻辑，该记 warn 而不是 error（不值得触发
+告警），但仍想留下错误详情。
+
+**验证**：`npm run verify`（typecheck + lint + 123 单测）全过；生产构建通过；
+另起一个干净库跑了 30 项真实 HTTP 冒烟测试 —— 未登录 401、CSRF 403、归属 404、
+类型不符 404、参数 400、重名 409、改密码二次验证 403、登录失败 401，全部符合预期。
+（route 层不在单测范围内，见 `vitest.config.ts` 的说明。）
+
 ---
 
 
@@ -459,12 +510,14 @@ prisma:error [unenv] fs.readdir is not implemented yet!
 
 ### 4.6 代码整洁（第七部分剩余）
 
+✅ **本节四项已全部完成，见 [2.11 代码整洁](#211-代码整洁)。**
+
 | 项 | 说明 |
 |---|---|
-| 抽取统一的账本归属校验 | `ownLedger` / `ensureOwn` 这个「查账本 + 校验归属」的函数在至少 5 个 route 文件里各写了一遍 |
-| 统一 API 错误响应格式与状态码语义 | 现在有出入，比如账本不存在返回 404 但类型不匹配返回 400 |
-| `logger.ts` 全面接入 | 目前只有 `currency.ts` 用了，其它地方仍是散落的 `console.warn` |
-| 说明 `prisma/build-placeholder.db` 的用途 | 这个构建期占位文件的存在原因没有注释 |
+| ~~抽取统一的账本归属校验~~ | ✅ 见 2.11 |
+| ~~统一 API 错误响应格式与状态码语义~~ | ✅ 见 2.11 |
+| ~~`logger.ts` 全面接入~~ | ✅ 见 2.11 |
+| ~~说明 `prisma/build-placeholder.db` 的用途~~ | ✅ 见 2.11 |
 | ~~拆分 `GeneralView.tsx` / `TripExpenseModal.tsx`~~ | 归入 [4.1 性能](#41-性能第四部分剩余) |
 | ~~`db.ts` 的 `opaqueRequire` 注释~~ | ✅ 已随 Bug #3 修复移除 |
 
@@ -475,7 +528,7 @@ prisma:error [unenv] fs.readdir is not implemented yet!
 ### 本地验证
 
 ```bash
-npm run verify        # typecheck + lint + 110 个单测，提交前跑
+npm run verify        # typecheck + lint + 123 个单测，提交前跑
 npm test              # 只跑单测
 npm run build         # 生产构建（输出 standalone，Docker 用这个）
 npm run format        # Prettier 格式化
@@ -485,6 +538,11 @@ npm run format        # Prettier 格式化
 > `Error code 14: Unable to open the database file`。注意 Prisma 对 SQLite
 > 相对路径是相对 `prisma/` 目录解析的，`file:./data/app.db` 实际落在
 > `prisma/data/app.db`。
+>
+> 同样的原因，Docker 构建时 `Dockerfile` 给了
+> `DATABASE_URL="file:./build-placeholder.db"`，于是 `prisma/` 下会多出一个
+> **`build-placeholder.db`** —— 它是构建产物而非开发用库，空的、已被 `.gitignore`
+> 忽略、也不会进运行镜像（runner 是独立的 `FROM` 阶段），可以随时删。
 
 ### 数据库
 

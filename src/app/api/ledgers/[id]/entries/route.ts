@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
-import { requireUser } from '@/lib/session';
+import { requireOwnedLedger } from '@/lib/ownership';
+import { badRequest } from '@/lib/apiError';
 import { parseImageUrls } from '@/lib/imageCleanup';
 import {
   cursorWhere,
@@ -21,26 +22,12 @@ const bodySchema = z.object({
   occurredAt: z.string().datetime().optional().nullable(),
 });
 
-async function ownLedger(id: string, userId: string) {
-  const l = await prisma.ledger.findUnique({
-    where: { id },
-    select: { userId: true, kind: true },
-  });
-  if (!l || l.userId !== userId) return null;
-  return l;
-}
-
 // GET /api/ledgers/<id>/entries?cursor=<游标>&limit=50
 // 供客户端"加载更多"翻页。首屏那一页由 server component 直接查，不走这里。
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const user = await requireUser();
-  if (!user) return NextResponse.json({ error: '未登录' }, { status: 401 });
   const { id } = await params;
-  const own = await ownLedger(id, user.id);
-  if (!own) return NextResponse.json({ error: '账本不存在' }, { status: 404 });
-  if (own.kind !== 'general') {
-    return NextResponse.json({ error: '仅普通账本可用' }, { status: 400 });
-  }
+  const ctx = await requireOwnedLedger(id, { kind: 'general', kindMessage: '仅普通账本可用' });
+  if (ctx instanceof Response) return ctx;
 
   const url = new URL(req.url);
   const limit = parsePageSize(url.searchParams.get('limit'));
@@ -70,18 +57,13 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 }
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const user = await requireUser();
-  if (!user) return NextResponse.json({ error: '未登录' }, { status: 401 });
   const { id } = await params;
-  const own = await ownLedger(id, user.id);
-  if (!own) return NextResponse.json({ error: '账本不存在' }, { status: 404 });
-  if (own.kind !== 'general') {
-    return NextResponse.json({ error: '仅普通账本可用' }, { status: 400 });
-  }
+  const ctx = await requireOwnedLedger(id, { kind: 'general', kindMessage: '仅普通账本可用' });
+  if (ctx instanceof Response) return ctx;
 
   const body = await req.json().catch(() => null);
   const parsed = bodySchema.safeParse(body);
-  if (!parsed.success) return NextResponse.json({ error: '参数错误' }, { status: 400 });
+  if (!parsed.success) return badRequest();
   const p = parsed.data;
 
   const created = await prisma.generalEntry.create({

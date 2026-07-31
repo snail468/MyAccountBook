@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db';
 import { hashPassword, verifyPassword } from '@/lib/auth';
 import { issueSession, requireVerifiedUser } from '@/lib/session';
 import { assessPassword } from '@/lib/passwordPolicy';
+import { badRequest, forbidden, notFound, unauthorized } from '@/lib/apiError';
 
 // PATCH /api/auth/password —— 用户自助改密码
 //
@@ -19,12 +20,12 @@ const schema = z.object({
 
 export async function PATCH(req: Request) {
   const current = await requireVerifiedUser();
-  if (!current) return NextResponse.json({ error: '未登录' }, { status: 401 });
+  if (!current) return unauthorized();
 
   const body = await req.json().catch(() => null);
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json({ error: '新密码至少 8 个字符' }, { status: 400 });
+    return badRequest('新密码至少 8 个字符');
   }
   const { currentPassword, newPassword } = parsed.data;
 
@@ -32,19 +33,21 @@ export async function PATCH(req: Request) {
     where: { id: current.id },
     select: { id: true, username: true, passwordHash: true },
   });
-  if (!user) return NextResponse.json({ error: '用户不存在' }, { status: 404 });
+  if (!user) return notFound('用户不存在');
 
+  // 这里刻意用 403 而不是 401：会话本身是有效的，只是二次验证没过。
+  // 返回 401 容易让客户端误判成会话失效而把人踢去登录页。
   if (!(await verifyPassword(currentPassword, user.passwordHash))) {
-    return NextResponse.json({ error: '当前密码不正确' }, { status: 403 });
+    return forbidden('当前密码不正确');
   }
 
   if (currentPassword === newPassword) {
-    return NextResponse.json({ error: '新密码不能与当前密码相同' }, { status: 400 });
+    return badRequest('新密码不能与当前密码相同');
   }
 
   const assessment = assessPassword(newPassword, user.username);
   if (!assessment.acceptable) {
-    return NextResponse.json({ error: assessment.reason }, { status: 400 });
+    return badRequest(assessment.reason);
   }
 
   const updated = await prisma.user.update({

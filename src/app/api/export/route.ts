@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { requireUser } from '@/lib/session';
+import { requireSessionUser } from '@/lib/ownership';
 import { formatYuan } from '@/lib/money';
 import { parseRewardMethods, rewardMethodLabel } from '@/lib/rewardMethod';
 import { afterTaxCents } from '@/lib/tax';
@@ -316,8 +316,8 @@ function sectionTravel(b: UserBackup, lines: string[]) {
 // ==================== 路由 ====================
 
 export async function GET() {
-  const user = await requireUser();
-  if (!user) return NextResponse.json({ error: '未登录' }, { status: 401 });
+  const user = await requireSessionUser();
+  if (user instanceof Response) return user;
 
   await ensureLegacyMigrated();
   const backup = await collectUserData(user.id);

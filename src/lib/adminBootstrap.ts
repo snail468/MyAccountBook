@@ -1,4 +1,7 @@
 import { prisma } from '@/lib/db';
+import { createLogger } from '@/lib/logger';
+
+const log = createLogger('admin');
 
 // 幂等：如果数据库里没有 admin，把最早注册的用户升为 admin
 let done = false;
@@ -20,12 +23,12 @@ export function ensureAdminBootstrap(): Promise<void> {
             where: { id: oldest.id },
             data: { role: 'admin' },
           });
-          console.log(`[admin] 自动将最早的用户 ${oldest.username} 升为 admin`);
+          log.info('自动把最早注册的用户升为 admin', { username: oldest.username });
         }
       }
       done = true;
     } catch (err) {
-      console.error('[admin bootstrap] failed:', err);
+      log.error('admin bootstrap 失败', err);
       running = null;
       throw err;
     }

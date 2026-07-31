@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
-import { requireUser } from '@/lib/session';
+import { requireOwnedTripExpense } from '@/lib/ownership';
+import { badRequest } from '@/lib/apiError';
 import { cleanupImagesAfterDelete, cleanupRemovedImages } from '@/lib/imageCleanup';
 import { resolveShares } from '@/lib/resolveShares';
 
@@ -31,29 +32,18 @@ const patchSchema = z.object({
   occurredAt: z.string().datetime().nullable().optional(),
 });
 
-async function ensureOwn(ledgerId: string, expenseId: string, userId: string) {
-  const exp = await prisma.tripExpense.findUnique({
-    where: { id: expenseId },
-    // imageUrls 一并取出：删除/改图时要拿它清理不再被引用的文件
-    select: { ledgerId: true, imageUrls: true, ledger: { select: { userId: true } } },
-  });
-  if (!exp || exp.ledgerId !== ledgerId || exp.ledger.userId !== userId) return null;
-  return exp;
-}
-
 export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string; expenseId: string }> },
 ) {
-  const user = await requireUser();
-  if (!user) return NextResponse.json({ error: '未登录' }, { status: 401 });
   const { id, expenseId } = await params;
-  const own = await ensureOwn(id, expenseId, user.id);
-  if (!own) return NextResponse.json({ error: '不存在' }, { status: 404 });
+  const ctx = await requireOwnedTripExpense(id, expenseId);
+  if (ctx instanceof Response) return ctx;
+  const { expense } = ctx;
 
   const body = await req.json().catch(() => null);
   const parsed = patchSchema.safeParse(body);
-  if (!parsed.success) return NextResponse.json({ error: '参数错误' }, { status: 400 });
+  if (!parsed.success) return badRequest();
   const p = parsed.data;
 
   // 若涉及成员/分摊，先确认所有 id 属于同一账本
@@ -65,12 +55,12 @@ export async function PATCH(
     });
     const memberIds = new Set(members.map((m) => m.id));
     if (p.payerId && !memberIds.has(p.payerId)) {
-      return NextResponse.json({ error: '付款人不在成员列表' }, { status: 400 });
+      return badRequest('付款人不在成员列表');
     }
     if (participants) {
       for (const s of participants) {
         if (!memberIds.has(s.memberId)) {
-          return NextResponse.json({ error: '分摊成员不在成员列表' }, { status: 400 });
+          return badRequest('分摊成员不在成员列表');
         }
       }
     }
@@ -119,7 +109,7 @@ export async function PATCH(
 
   if (participants) {
     const resolved = resolveShares(baseAfter, p.allocation, p.splits);
-    if (!resolved.ok) return NextResponse.json({ error: resolved.reason }, { status: 400 });
+    if (!resolved.ok) return badRequest(resolved.reason);
     newSplits = resolved.shares;
   } else if (data.amountBaseCents !== undefined) {
     // 只改了金额：按原有分摊比例重新分配，保持守恒
@@ -134,7 +124,7 @@ export async function PATCH(
         weight: s.shareCents > 0 ? s.shareCents : 1e-9,
       }));
       const resolved = resolveShares(baseAfter, weights, undefined);
-      if (!resolved.ok) return NextResponse.json({ error: resolved.reason }, { status: 400 });
+      if (!resolved.ok) return badRequest(resolved.reason);
       newSplits = resolved.shares;
     }
   }
@@ -155,7 +145,7 @@ export async function PATCH(
 
   // 用户在编辑里移掉的小票照片，清理掉不再被任何记录引用的那些
   if (p.imageUrls !== undefined) {
-    await cleanupRemovedImages(own.imageUrls, p.imageUrls);
+    await cleanupRemovedImages(expense.imageUrls, p.imageUrls);
   }
 
   return NextResponse.json({ ok: true });
@@ -165,13 +155,12 @@ export async function DELETE(
   _req: Request,
   { params }: { params: Promise<{ id: string; expenseId: string }> },
 ) {
-  const user = await requireUser();
-  if (!user) return NextResponse.json({ error: '未登录' }, { status: 401 });
   const { id, expenseId } = await params;
-  const own = await ensureOwn(id, expenseId, user.id);
-  if (!own) return NextResponse.json({ error: '不存在' }, { status: 404 });
+  const ctx = await requireOwnedTripExpense(id, expenseId);
+  if (ctx instanceof Response) return ctx;
+
   await prisma.tripExpense.delete({ where: { id: expenseId } });
   // 删完再清图：此时引用计数查询不会把自己算进去
-  await cleanupImagesAfterDelete(own.imageUrls);
+  await cleanupImagesAfterDelete(ctx.expense.imageUrls);
   return NextResponse.json({ ok: true });
 }

@@ -17,6 +17,9 @@ import { prisma } from '@/lib/db';
 import { ensureAdminBootstrap } from '@/lib/adminBootstrap';
 import { ensureLedgersForUser } from '@/lib/ledgerBootstrap';
 import { migrateArchivedIfNeeded, purgeExpiredTrash } from '@/lib/ledgerTrash';
+import { createLogger } from '@/lib/logger';
+
+const log = createLogger('bootstrap');
 
 let startupDone = false;
 
@@ -27,17 +30,17 @@ export async function runStartupTasks(): Promise<void> {
   try {
     await ensureAdminBootstrap();
   } catch (err) {
-    console.error('[bootstrap] adminBootstrap 失败:', err);
+    log.error('adminBootstrap 失败', err);
   }
   try {
     await migrateArchivedIfNeeded();
   } catch (err) {
-    console.error('[bootstrap] 归档迁移失败:', err);
+    log.error('归档迁移失败', err);
   }
   try {
     await purgeExpiredTrash();
   } catch (err) {
-    console.error('[bootstrap] 回收站清理失败:', err);
+    log.error('回收站清理失败', err);
   }
 }
 
@@ -49,7 +52,7 @@ export async function ensureUserSetup(userId: string): Promise<void> {
   try {
     await ensureLedgersForUser(userId);
   } catch (err) {
-    console.error('[bootstrap] ensureLedgersForUser 失败:', err);
+    log.error('ensureLedgersForUser 失败', err, { userId });
   }
 }
 

@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
-import { requireUser } from '@/lib/session';
+import { requireOwnedLedger } from '@/lib/ownership';
+import { badRequest } from '@/lib/apiError';
 import { parseImageUrls } from '@/lib/imageCleanup';
 import { resolveShares } from '@/lib/resolveShares';
 import {
@@ -43,15 +44,6 @@ const bodySchema = z
     message: '需要提供 allocation 或 splits',
   });
 
-async function ownLedger(id: string, userId: string) {
-  const l = await prisma.ledger.findUnique({
-    where: { id },
-    select: { userId: true, kind: true },
-  });
-  if (!l || l.userId !== userId) return null;
-  return l;
-}
-
 // GET /api/ledgers/<id>/expenses?phase=during&cursor=<游标>&limit=50
 //     /api/ledgers/<id>/expenses?all=1   → 不分页返回全部（趣味报告用）
 //
@@ -59,14 +51,9 @@ async function ownLedger(id: string, userId: string) {
 // 表达按天聚合，所以给它一个显式的全量出口 —— 只在用户点开报告时才调，
 // 不影响列表页的首屏。
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const user = await requireUser();
-  if (!user) return NextResponse.json({ error: '未登录' }, { status: 401 });
   const { id } = await params;
-  const own = await ownLedger(id, user.id);
-  if (!own) return NextResponse.json({ error: '账本不存在' }, { status: 404 });
-  if (own.kind !== 'travel') {
-    return NextResponse.json({ error: '仅旅游账本可用' }, { status: 400 });
-  }
+  const ctx = await requireOwnedLedger(id, { kind: 'travel', kindMessage: '仅旅游账本可用' });
+  if (ctx instanceof Response) return ctx;
 
   const url = new URL(req.url);
   const all = url.searchParams.get('all') === '1';
@@ -134,18 +121,13 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 }
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const user = await requireUser();
-  if (!user) return NextResponse.json({ error: '未登录' }, { status: 401 });
   const { id } = await params;
-  const own = await ownLedger(id, user.id);
-  if (!own) return NextResponse.json({ error: '账本不存在' }, { status: 404 });
-  if (own.kind !== 'travel') {
-    return NextResponse.json({ error: '仅旅游账本可用' }, { status: 400 });
-  }
+  const ctx = await requireOwnedLedger(id, { kind: 'travel', kindMessage: '仅旅游账本可用' });
+  if (ctx instanceof Response) return ctx;
 
   const body = await req.json().catch(() => null);
   const parsed = bodySchema.safeParse(body);
-  if (!parsed.success) return NextResponse.json({ error: '参数错误' }, { status: 400 });
+  if (!parsed.success) return badRequest();
   const p = parsed.data;
 
   // 验证 payerId + 所有 splits.memberId 都属于本账本
@@ -155,12 +137,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   });
   const memberIds = new Set(members.map((m) => m.id));
   if (!memberIds.has(p.payerId)) {
-    return NextResponse.json({ error: '付款人不在成员列表' }, { status: 400 });
+    return badRequest('付款人不在成员列表');
   }
   const participants = p.allocation ?? p.splits ?? [];
   for (const s of participants) {
     if (!memberIds.has(s.memberId)) {
-      return NextResponse.json({ error: '分摊成员不在成员列表' }, { status: 400 });
+      return badRequest('分摊成员不在成员列表');
     }
   }
 
@@ -168,7 +150,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   const resolved = resolveShares(amountBaseCents, p.allocation, p.splits);
   if (!resolved.ok) {
-    return NextResponse.json({ error: resolved.reason }, { status: 400 });
+    return badRequest(resolved.reason);
   }
   const splits = resolved.shares;
 
