@@ -1,16 +1,22 @@
 'use client';
 
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import Money from '@/components/ui/Money';
 import Lightbox from '@/components/ui/Lightbox';
 import { formatShort } from '@/lib/datetime';
 import type { NetBalance, Transfer } from '@/lib/settlement';
-import TripExpenseModal from './TripExpenseModal';
-import TripMembersModal from './TripMembersModal';
-import TripFunReport from './TripFunReport';
 import { useConfirm } from '@/components/ui/Dialog';
+
+// 三个弹窗按需加载。它们加起来 860 行，全是 `{open && <Modal/>}` 条件渲染 ——
+// 静态 import 会让「只是看一眼账单」的用户也把整套表单、成员管理和趣味报告下下来。
+// TripExpenseModal 是单个内聚组件（不像 GeneralView 有天然的组件边界可拆），
+// 强行按行数切开只会切出互相依赖的碎片；按需加载才是对症的做法。
+const TripExpenseModal = dynamic(() => import('./TripExpenseModal'), { ssr: false });
+const TripMembersModal = dynamic(() => import('./TripMembersModal'), { ssr: false });
+const TripFunReport = dynamic(() => import('./TripFunReport'), { ssr: false });
 
 export type Member = { id: string; userId: string | null; displayName: string };
 
