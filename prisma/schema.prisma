@@ -29,6 +29,7 @@ model User {
   ledgers       Ledger[]
   memberships   TripMember[]
   bankCards     BankCard[]
+  recurringRules RecurringRule[]
 }
 
 // ============ 工作账本 (built-in kind="work") ============
@@ -128,6 +129,7 @@ model Ledger {
   entries      GeneralEntry[]
   tripMembers  TripMember[]
   tripExpenses TripExpense[]
+  recurringRules RecurringRule[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -246,4 +248,44 @@ model BankCard {
   updatedAt DateTime @updatedAt
 
   @@index([userId, order])
+}
+
+// ============ 周期记账规则 ============
+//
+// 房租、订阅、工资这类固定项：配置一次，到期自动生成或提醒确认。
+// 排期计算（含月末钳制、补跑漏掉的期）在 src/lib/recurring.ts。
+//
+// target 决定生成到哪里：
+//   "work"    → Entry（工作账本，直接挂 userId）
+//   "general" → GeneralEntry（需要 ledgerId）
+// 旅游账本不支持 —— 它的支出必须带付款人与分摊，没法凭规则自动编一笔出来。
+model RecurringRule {
+  id       String  @id @default(cuid())
+  userId   String
+  user     User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  target   String  // "work" | "general"
+  ledgerId String? // target=general 时必填
+  ledger   Ledger? @relation(fields: [ledgerId], references: [id], onDelete: Cascade)
+
+  direction   String
+  category    String
+  amountCents Int
+  note        String?
+
+  frequency  String    // "monthly" | "weekly"
+  dayOfMonth Int?      // monthly：1-31，超出当月天数落到月末
+  dayOfWeek  Int?      // weekly：0=周日 … 6=周六
+  startDate  DateTime
+  endDate    DateTime?
+
+  // false = 只提醒不自动生成，用户自己确认后再记
+  autoCreate Boolean @default(true)
+  active     Boolean @default(true)
+  // 已经生成到哪一期。null 表示一期都还没生成
+  lastGeneratedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, active])
 }

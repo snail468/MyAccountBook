@@ -4,6 +4,7 @@ import { requireUserWithRole } from '@/lib/session';
 import { prisma } from '@/lib/db';
 import { ensureLegacyMigrated } from '@/lib/legacyMigrate';
 import { ensureUserSetupOnce, maintenanceTick, runStartupTasks } from '@/lib/bootstrap';
+import { materializeDueRules } from '@/lib/recurringRun';
 import { parseRewardMethods } from '@/lib/rewardMethod';
 import LogoutButton from '@/components/LogoutButton';
 import ExportButton from '@/components/ExportButton';
@@ -23,6 +24,13 @@ async function loadDashboard(userId: string) {
   await ensureUserSetupOnce(userId);
   // 回收站到期清理的触发点，内部有 1 小时节流
   await maintenanceTick();
+  // 周期记账的生成触发点。没有常驻调度器，用户打开首页时补齐即可 ——
+  // 理由与补跑机制见 lib/recurringRun.ts。失败绝不能让首页打不开
+  try {
+    await materializeDueRules(userId);
+  } catch {
+    /* 内部已记日志 */
+  }
 
   const ledgers = await prisma.ledger.findMany({
     where: { userId, archived: false, deletedAt: null },
@@ -321,6 +329,20 @@ export default async function HomePage() {
             <span className="text-ink-400">›</span>
           </Link>
         ))}
+
+        <Link
+          href="/recurring"
+          className="flex items-center justify-between p-5 rounded-2xl bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 active:scale-[0.98] transition"
+        >
+          <div className="flex items-center gap-3">
+            <span className="text-xl">🔁</span>
+            <div>
+              <div className="text-lg font-medium">周期记账</div>
+              <div className="text-xs text-ink-500 mt-0.5">房租 · 订阅 · 工资，配一次自动记</div>
+            </div>
+          </div>
+          <span className="text-ink-400">›</span>
+        </Link>
 
         <Link
           href="/cards"
