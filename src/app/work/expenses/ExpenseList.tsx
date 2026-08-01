@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import Money from '@/components/ui/Money';
 import { formatShort } from '@/lib/datetime';
+import { daysSincePending, refundStatus } from '@/lib/refundStatus';
 
 export type WorkExpense = {
   id: string;
@@ -93,14 +94,27 @@ export default function ExpenseList({
             </Link>
             <div className="space-y-2">
               {list.map((e) => {
-                const refunded = !!e.refundedAt;
+                const status = refundStatus({
+                  occurredAt: new Date(e.occurredAt),
+                  refundedAt: e.refundedAt ? new Date(e.refundedAt) : null,
+                });
+                const refunded = status === 'refunded';
+                const overdue = status === 'overdue';
+                const overdueDays = overdue
+                  ? daysSincePending({
+                      occurredAt: new Date(e.occurredAt),
+                      refundedAt: null,
+                    })
+                  : 0;
                 return (
                   <div
                     key={e.id}
                     className={`flex items-center gap-3 p-3 rounded-2xl border ${
                       refunded
                         ? 'bg-ink-50 dark:bg-ink-800/60 border-ink-200 dark:border-ink-700 text-ink-400'
-                        : 'bg-white dark:bg-ink-800 border-ink-200 dark:border-ink-700'
+                        : overdue
+                          ? 'bg-amber-50/60 dark:bg-amber-900/10 border-amber-300 dark:border-amber-800'
+                          : 'bg-white dark:bg-ink-800 border-ink-200 dark:border-ink-700'
                     }`}
                   >
                     <div className="flex-1 min-w-0">
@@ -108,6 +122,11 @@ export default function ExpenseList({
                         className={`text-sm font-medium truncate ${refunded ? 'line-through' : ''}`}
                       >
                         {e.category}
+                        {overdue && (
+                          <span className="ml-2 text-[10px] font-normal px-1.5 py-0.5 rounded-full bg-amber-200 dark:bg-amber-800/50 text-amber-900 dark:text-amber-200 align-middle">
+                            未回款 {overdueDays} 天
+                          </span>
+                        )}
                       </div>
                       <div className="text-[11px] text-ink-500 mt-0.5 leading-tight">
                         <div className="truncate">{formatShort(e.occurredAt)}</div>

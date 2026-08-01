@@ -1,16 +1,18 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { localInputToISO, toLocalInput } from '@/lib/datetime';
 import { yuanToCents } from '@/lib/money';
 import { effectiveCategories } from '@/lib/generalCategories';
+import { sortCategoriesByRecency } from '@/lib/categoryOrder';
 import ImageUploader from '@/app/taoyuan/ImageUploader';
-import type { Entry } from './types';
+import type { Entry, RecentUse } from './types';
 import { inputCls } from './styles';
 
 export default function EntryForm({
   ledgerName,
   customCategoriesJson,
+  recentUsage,
   initial,
   saving,
   error,
@@ -21,6 +23,8 @@ export default function EntryForm({
 }: {
   ledgerName: string;
   customCategoriesJson: string | null;
+  /** 类别按最近使用排序 —— 空数组即保持预设顺序 */
+  recentUsage: RecentUse[];
   initial?: Partial<Entry>;
   saving: boolean;
   error: string;
@@ -39,8 +43,20 @@ export default function EntryForm({
 }) {
   const initialDir = (initial?.direction as 'income' | 'expense') ?? 'expense';
   const [direction, setDirection] = useState<'expense' | 'income'>(initialDir);
-  const expenseCats = effectiveCategories(customCategoriesJson, 'expense');
-  const incomeCats = effectiveCategories(customCategoriesJson, 'income');
+  // 用 useMemo 是因为 customCategoriesJson + recentUsage 都很少变，
+  // 每次 setState 都重排一遍是浪费
+  const usageEntries = useMemo(
+    () => recentUsage.map((r) => ({ ...r, occurredAt: new Date(r.occurredAt) })),
+    [recentUsage],
+  );
+  const expenseCats = useMemo(
+    () => sortCategoriesByRecency(effectiveCategories(customCategoriesJson, 'expense'), usageEntries, 'expense'),
+    [customCategoriesJson, usageEntries],
+  );
+  const incomeCats = useMemo(
+    () => sortCategoriesByRecency(effectiveCategories(customCategoriesJson, 'income'), usageEntries, 'income'),
+    [customCategoriesJson, usageEntries],
+  );
   const options = direction === 'expense' ? expenseCats : incomeCats;
   const initialCategory =
     initial?.category ??

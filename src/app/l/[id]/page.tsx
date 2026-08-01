@@ -7,6 +7,7 @@ import { parseImageUrls } from '@/lib/imageCleanup';
 import { DEFAULT_PAGE_SIZE, slicePage, TIME_DESC_ORDER } from '@/lib/pagination';
 import { computeSettlementSafe } from '@/lib/settlement';
 import { NOT_DELETED } from '@/lib/softDelete';
+import { RECENCY_WINDOW } from '@/lib/categoryOrder';
 import GeneralView from './GeneralView';
 import TravelView from './TravelView';
 
@@ -27,7 +28,7 @@ async function loadGeneral(ledgerId: string) {
   const monthWhere = { ledgerId, ...NOT_DELETED, occurredAt: { gte: start, lt: end } };
 
   // 汇总下推到 SQL —— 不再把全部条目拉进内存 reduce
-  const [byDirection, topCatRows, firstPage] = await Promise.all([
+  const [byDirection, topCatRows, firstPage, recentUsage] = await Promise.all([
     prisma.generalEntry.groupBy({
       by: ['direction'],
       where: monthWhere,
@@ -44,6 +45,14 @@ async function loadGeneral(ledgerId: string) {
       where: { ledgerId, ...NOT_DELETED },
       orderBy: TIME_DESC_ORDER,
       take: DEFAULT_PAGE_SIZE + 1,
+    }),
+    // 类别智能排序：最近 N 条条目的 category+direction+occurredAt。
+    // 与首页那一页可能重合但字段少得多，独立查一次省得跨组件传递
+    prisma.generalEntry.findMany({
+      where: { ledgerId, ...NOT_DELETED },
+      select: { category: true, direction: true, occurredAt: true },
+      orderBy: TIME_DESC_ORDER,
+      take: RECENCY_WINDOW,
     }),
   ]);
 
@@ -70,6 +79,11 @@ async function loadGeneral(ledgerId: string) {
       note: e.note,
       imageUrls: parseImageUrls(e.imageUrls),
       occurredAt: e.occurredAt.toISOString(),
+    })),
+    recentUsage: recentUsage.map((r) => ({
+      category: r.category,
+      direction: r.direction,
+      occurredAt: r.occurredAt.toISOString(),
     })),
     nextCursor,
   };
@@ -217,6 +231,7 @@ export default async function LedgerPage({ params }: { params: Promise<{ id: str
           }}
           initialEntries={data.entries}
           initialCursor={data.nextCursor}
+          recentUsage={data.recentUsage}
         />
       </div>
     );

@@ -3,17 +3,19 @@
 import { useState } from 'react';
 import ModalShell from './ModalShell';
 import EntryForm from './EntryForm';
-import type { Entry } from './types';
+import type { Entry, RecentUse } from './types';
 
 export default function EditEntryModal({
   ledgerId,
   customCategoriesJson,
+  recentUsage,
   entry,
   onClose,
   onSaved,
 }: {
   ledgerId: string;
   customCategoriesJson: string | null;
+  recentUsage: RecentUse[];
   entry: Entry;
   onClose: () => void;
   onSaved: () => void;
@@ -45,6 +47,7 @@ export default function EditEntryModal({
       <EntryForm
         ledgerName="编辑记录"
         customCategoriesJson={customCategoriesJson}
+        recentUsage={recentUsage}
         initial={entry}
         saving={saving}
         error={error}

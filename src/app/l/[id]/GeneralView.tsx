@@ -15,7 +15,7 @@ import Lightbox from '@/components/ui/Lightbox';
 import { useConfirm } from '@/components/ui/Dialog';
 import { iconOf } from '@/lib/generalCategories';
 import EntryRow from './general/EntryRow';
-import type { Entry, LedgerMeta } from './general/types';
+import type { Entry, LedgerMeta, RecentUse } from './general/types';
 
 // 四个弹窗按需加载：它们全是 `{open && <Modal/>}` 条件渲染，用户不点开就用不到，
 // 静态 import 会把几百行表单代码塞进列表页的首屏 chunk。
@@ -36,12 +36,15 @@ export default function GeneralView({
   summary,
   initialEntries,
   initialCursor,
+  recentUsage,
 }: {
   ledger: LedgerMeta;
   /** 本月汇总由服务端用 SQL 聚合算好 —— 分页后客户端手里没有全量数据，算不出来 */
   summary: GeneralSummary;
   initialEntries: Entry[];
   initialCursor: string | null;
+  /** 类别智能排序用：最近 N 条条目的方向 + 时间，直接透传给录入/编辑弹窗 */
+  recentUsage: RecentUse[];
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -306,6 +309,7 @@ export default function GeneralView({
           ledgerId={ledger.id}
           ledgerName={ledger.name}
           customCategoriesJson={ledger.customCategories}
+          recentUsage={recentUsage}
           onManageCategories={() => {
             setShowRecord(false);
             setShowCategoryManager(true);
@@ -322,6 +326,7 @@ export default function GeneralView({
         <EditEntryModal
           ledgerId={ledger.id}
           customCategoriesJson={ledger.customCategories}
+          recentUsage={recentUsage}
           entry={editing}
           onClose={() => setEditing(null)}
           onSaved={() => {

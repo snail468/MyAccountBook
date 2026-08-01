@@ -7,6 +7,7 @@ import Prefetcher from '@/components/ui/Prefetcher';
 import { DEFAULT_PAGE_SIZE, slicePage, TIME_DESC_ORDER } from '@/lib/pagination';
 import ExpenseList from './ExpenseList';
 import { NOT_DELETED } from '@/lib/softDelete';
+import { REFUND_OVERDUE_DAYS, summarizeOverdue } from '@/lib/refundStatus';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,7 +22,11 @@ type CategoryStat = {
 async function loadExpenses(userId: string) {
   const baseWhere = { userId, ...NOT_DELETED, direction: 'expense' as const };
 
-  const [overall, refundedOverall, byCategory, refundedByCategory, firstPage] =
+  // 未回款超期阈值：occurredAt 早于此的未回款条目算超期。
+  // 见 lib/refundStatus.ts 的 REFUND_OVERDUE_DAYS。
+  const overdueCutoff = new Date(Date.now() - REFUND_OVERDUE_DAYS * 24 * 60 * 60 * 1000);
+
+  const [overall, refundedOverall, byCategory, refundedByCategory, overdueRows, firstPage] =
     await Promise.all([
       // 汇总下推到 SQL —— 不再把全部出项拉进内存 reduce
       prisma.entry.aggregate({
@@ -47,12 +52,18 @@ async function loadExpenses(userId: string) {
         where: { ...baseWhere, refundedAt: { not: null } },
         _sum: { amountCents: true },
       }),
+      // 超期条目：只查最必要的字段，扔进 summarizeOverdue 得到合计
+      prisma.entry.findMany({
+        where: { ...baseWhere, refundedAt: null, occurredAt: { lt: overdueCutoff } },
+        select: { amountCents: true, occurredAt: true, refundedAt: true },
+      }),
       prisma.entry.findMany({
         where: baseWhere,
         orderBy: TIME_DESC_ORDER,
         take: DEFAULT_PAGE_SIZE + 1,
       }),
     ]);
+  const overdue = summarizeOverdue(overdueRows);
 
   const refundedMap = new Map(
     refundedByCategory.map((r) => [r.category, r._sum.amountCents ?? 0]),
@@ -81,6 +92,7 @@ async function loadExpenses(userId: string) {
     pending: total - refundedTotal,
     count: overall._count,
     refundedCount: refundedOverall._count,
+    overdue,
     categoryStats,
     entries: items.map((e) => ({
       id: e.id,
@@ -108,6 +120,25 @@ export default async function ExpensesPage() {
         <Link href="/" className="text-ink-500 text-sm">‹ 返回</Link>
         <h1 className="text-2xl font-semibold flex-1">工作出项汇总</h1>
       </div>
+
+      {s.overdue.count > 0 && (
+        <div className="rounded-3xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 p-4 mb-3">
+          <div className="text-xs text-amber-800 dark:text-amber-300 font-medium">
+            ⚠️ {s.overdue.count} 笔未回款已超 {REFUND_OVERDUE_DAYS} 天
+          </div>
+          <div className="text-sm text-amber-900 dark:text-amber-200 num mt-1">
+            合计 <Money cents={s.overdue.totalCents} />
+            {s.overdue.oldestDays > REFUND_OVERDUE_DAYS && (
+              <span className="text-[11px] text-amber-700 dark:text-amber-400 ml-2">
+                · 最久 {s.overdue.oldestDays} 天
+              </span>
+            )}
+          </div>
+          <div className="text-[11px] text-amber-700 dark:text-amber-400 mt-1.5">
+            下方列表中已标红，回款后到月页面把它标为「已回款」即可。
+          </div>
+        </div>
+      )}
 
       <div className="rounded-3xl bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 p-5">
         <div className="text-xs text-ink-500">

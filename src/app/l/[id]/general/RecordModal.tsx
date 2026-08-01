@@ -3,11 +3,13 @@
 import { useState } from 'react';
 import ModalShell from './ModalShell';
 import EntryForm from './EntryForm';
+import type { RecentUse } from './types';
 
 export default function RecordModal({
   ledgerId,
   ledgerName,
   customCategoriesJson,
+  recentUsage,
   onClose,
   onSaved,
   onManageCategories,
@@ -15,6 +17,7 @@ export default function RecordModal({
   ledgerId: string;
   ledgerName: string;
   customCategoriesJson: string | null;
+  recentUsage: RecentUse[];
   onClose: () => void;
   onSaved: () => void;
   onManageCategories: () => void;
@@ -46,6 +49,7 @@ export default function RecordModal({
       <EntryForm
         ledgerName={ledgerName}
         customCategoriesJson={customCategoriesJson}
+        recentUsage={recentUsage}
         saving={saving}
         error={error}
         onSubmit={submit}

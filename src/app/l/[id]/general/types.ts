@@ -26,3 +26,10 @@ export type GeneralSummary = {
   expense: number;
   topCats: { category: string; cents: number }[];
 };
+
+// 类别智能排序用的最近使用记录。见 lib/categoryOrder.ts。
+export type RecentUse = {
+  category: string;
+  direction: string;
+  occurredAt: string; // ISO，客户端会转回 Date
+};
