@@ -11,6 +11,7 @@ import {
   slicePage,
   TIME_DESC_ORDER,
 } from '@/lib/pagination';
+import { NOT_DELETED } from '@/lib/softDelete';
 
 const bodySchema = z.object({
   direction: z.enum(['income', 'expense']),
@@ -34,7 +35,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const cursor = decodeCursor(url.searchParams.get('cursor'));
 
   const rows = await prisma.generalEntry.findMany({
-    where: { ledgerId: id, ...cursorWhere(cursor) },
+    where: { ledgerId: id, ...NOT_DELETED, ...cursorWhere(cursor) },
     orderBy: TIME_DESC_ORDER,
     take: limit + 1, // 多取一条用于判断是否还有下一页
   });

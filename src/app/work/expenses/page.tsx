@@ -6,6 +6,7 @@ import Money from '@/components/ui/Money';
 import Prefetcher from '@/components/ui/Prefetcher';
 import { DEFAULT_PAGE_SIZE, slicePage, TIME_DESC_ORDER } from '@/lib/pagination';
 import ExpenseList from './ExpenseList';
+import { NOT_DELETED } from '@/lib/softDelete';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,7 +19,7 @@ type CategoryStat = {
 };
 
 async function loadExpenses(userId: string) {
-  const baseWhere = { userId, direction: 'expense' as const };
+  const baseWhere = { userId, ...NOT_DELETED, direction: 'expense' as const };
 
   const [overall, refundedOverall, byCategory, refundedByCategory, firstPage] =
     await Promise.all([

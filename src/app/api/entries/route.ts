@@ -11,6 +11,7 @@ import {
   slicePage,
   TIME_DESC_ORDER,
 } from '@/lib/pagination';
+import { NOT_DELETED } from '@/lib/softDelete';
 
 // GET /api/entries?direction=expense&cursor=<游标>&limit=50
 // 供工作出项汇总页"加载更多"翻页。
@@ -28,6 +29,7 @@ export async function GET(req: Request) {
   const rows = await prisma.entry.findMany({
     where: {
       userId: user.id,
+      ...NOT_DELETED,
       ...(direction ? { direction } : {}),
       ...cursorWhere(cursor),
     },

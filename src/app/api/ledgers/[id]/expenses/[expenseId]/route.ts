@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { requireOwnedTripExpense } from '@/lib/ownership';
 import { badRequest } from '@/lib/apiError';
-import { cleanupImagesAfterDelete, cleanupRemovedImages } from '@/lib/imageCleanup';
+import { cleanupRemovedImages } from '@/lib/imageCleanup';
 import { resolveShares } from '@/lib/resolveShares';
 
 const splitSchema = z.object({
@@ -151,6 +151,9 @@ export async function PATCH(
   return NextResponse.json({ ok: true });
 }
 
+// 软删：进回收站。图片保留 —— 恢复要看得到。TripSplit 不动，跟随支出一起进/出回收站。
+// 净额与最优结算会立即少这一笔（page.tsx 的 groupBy 已加 deletedAt=null 过滤）。
+// 彻底删走 DELETE /api/trash/tripExpense/:id
 export async function DELETE(
   _req: Request,
   { params }: { params: Promise<{ id: string; expenseId: string }> },
@@ -159,8 +162,9 @@ export async function DELETE(
   const ctx = await requireOwnedTripExpense(id, expenseId);
   if (ctx instanceof Response) return ctx;
 
-  await prisma.tripExpense.delete({ where: { id: expenseId } });
-  // 删完再清图：此时引用计数查询不会把自己算进去
-  await cleanupImagesAfterDelete(ctx.expense.imageUrls);
+  await prisma.tripExpense.update({
+    where: { id: expenseId },
+    data: { deletedAt: new Date() },
+  });
   return NextResponse.json({ ok: true });
 }

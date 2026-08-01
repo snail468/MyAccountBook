@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { requireOwnedGeneralEntry } from '@/lib/ownership';
 import { badRequest } from '@/lib/apiError';
-import { cleanupImagesAfterDelete, cleanupRemovedImages } from '@/lib/imageCleanup';
+import { cleanupRemovedImages } from '@/lib/imageCleanup';
 
 const patchSchema = z.object({
   direction: z.enum(['income', 'expense']).optional(),
@@ -49,6 +49,8 @@ export async function PATCH(
   return NextResponse.json({ ok: true });
 }
 
+// 软删：进回收站。图片**不清理** —— 记录仍在保留期内可以恢复，
+// 图删了恢复出来就是空壳。彻底删走 DELETE /api/trash/generalEntry/:id
 export async function DELETE(
   _req: Request,
   { params }: { params: Promise<{ id: string; entryId: string }> },
@@ -57,8 +59,9 @@ export async function DELETE(
   const ctx = await requireOwnedGeneralEntry(id, entryId);
   if (ctx instanceof Response) return ctx;
 
-  await prisma.generalEntry.delete({ where: { id: entryId } });
-  // 删完再清图：此时引用计数查询不会把自己算进去
-  await cleanupImagesAfterDelete(ctx.entry.imageUrls);
+  await prisma.generalEntry.update({
+    where: { id: entryId },
+    data: { deletedAt: new Date() },
+  });
   return NextResponse.json({ ok: true });
 }

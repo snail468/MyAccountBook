@@ -38,6 +38,8 @@ export type BackupEntry = {
   occurredAt: string;
   refundedAt: string | null;
   createdAt: string;
+  // 软删。非空 = 备份时该条目在回收站；导入端会原样恢复到回收站状态
+  deletedAt: string | null;
 };
 
 export type BackupEventAmount = {
@@ -51,6 +53,7 @@ export type BackupEventAmount = {
   rewardMethod: string | null;
   occurredAt: string;
   createdAt: string;
+  deletedAt: string | null;
 };
 
 export type BackupEvent = {
@@ -77,6 +80,7 @@ export type BackupEvent = {
   parentId: string | null;
   createdAt: string;
   updatedAt: string;
+  deletedAt: string | null;
   amounts: BackupEventAmount[];
 };
 
@@ -91,6 +95,7 @@ export type BackupGeneralEntry = {
   imageUrls: string | null;
   occurredAt: string;
   createdAt: string;
+  deletedAt: string | null;
 };
 
 export type BackupTripMember = {
@@ -122,6 +127,7 @@ export type BackupTripExpense = {
   imageUrls: string | null;
   occurredAt: string;
   createdAt: string;
+  deletedAt: string | null;
   splits: BackupTripSplit[];
 };
 
@@ -217,6 +223,7 @@ export async function collectUserData(userId: string): Promise<UserBackup> {
       occurredAt: e.occurredAt.toISOString(),
       refundedAt: iso(e.refundedAt),
       createdAt: e.createdAt.toISOString(),
+      deletedAt: iso(e.deletedAt),
     })),
     events: events.map((ev) => ({
       id: ev.id,
@@ -242,6 +249,7 @@ export async function collectUserData(userId: string): Promise<UserBackup> {
       parentId: ev.parentId,
       createdAt: ev.createdAt.toISOString(),
       updatedAt: ev.updatedAt.toISOString(),
+      deletedAt: iso(ev.deletedAt),
       amounts: ev.amounts.map((a) => ({
         id: a.id,
         stage: a.stage,
@@ -252,6 +260,7 @@ export async function collectUserData(userId: string): Promise<UserBackup> {
         rewardMethod: a.rewardMethod,
         occurredAt: a.occurredAt.toISOString(),
         createdAt: a.createdAt.toISOString(),
+        deletedAt: iso(a.deletedAt),
       })),
     })),
     generalEntries: generalEntries.map((g) => ({
@@ -265,6 +274,7 @@ export async function collectUserData(userId: string): Promise<UserBackup> {
       imageUrls: g.imageUrls,
       occurredAt: g.occurredAt.toISOString(),
       createdAt: g.createdAt.toISOString(),
+      deletedAt: iso(g.deletedAt),
     })),
     tripMembers: tripMembers.map((m) => ({
       id: m.id,
@@ -288,6 +298,7 @@ export async function collectUserData(userId: string): Promise<UserBackup> {
       imageUrls: e.imageUrls,
       occurredAt: e.occurredAt.toISOString(),
       createdAt: e.createdAt.toISOString(),
+      deletedAt: iso(e.deletedAt),
       splits: e.splits.map((s) => ({
         id: s.id,
         memberId: s.memberId,

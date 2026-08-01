@@ -61,6 +61,8 @@ const entrySchema = z.object({
   occurredAt: isoString,
   refundedAt: nullableIso,
   createdAt: isoString,
+  // 老备份没有，用 optional 兜底。BACKUP_VERSION 不必 +1
+  deletedAt: nullableIso.optional(),
 });
 
 const eventAmountSchema = z.object({
@@ -75,6 +77,7 @@ const eventAmountSchema = z.object({
   rewardMethod: z.string().nullable(),
   occurredAt: isoString,
   createdAt: isoString,
+  deletedAt: nullableIso.optional(),
 });
 
 const eventSchema = z.object({
@@ -101,6 +104,7 @@ const eventSchema = z.object({
   parentId: z.string().nullable(),
   createdAt: isoString,
   updatedAt: isoString,
+  deletedAt: nullableIso.optional(),
   amounts: z.array(eventAmountSchema),
 });
 
@@ -115,6 +119,7 @@ const generalEntrySchema = z.object({
   imageUrls: z.string().nullable(),
   occurredAt: isoString,
   createdAt: isoString,
+  deletedAt: nullableIso.optional(),
 });
 
 const tripMemberSchema = z.object({
@@ -140,6 +145,7 @@ const tripExpenseSchema = z.object({
   imageUrls: z.string().nullable(),
   occurredAt: isoString,
   createdAt: isoString,
+  deletedAt: nullableIso.optional(),
   splits: z.array(
     z.object({
       id: z.string().min(1),
@@ -250,6 +256,7 @@ export type PlannedEntry = {
   occurredAt: Date;
   refundedAt: Date | null;
   createdAt: Date;
+  deletedAt: Date | null;
 };
 
 export type PlannedEvent = {
@@ -276,6 +283,7 @@ export type PlannedEvent = {
   note: string | null;
   parentId: string | null;
   createdAt: Date;
+  deletedAt: Date | null;
 };
 
 export type PlannedEventAmount = {
@@ -289,6 +297,7 @@ export type PlannedEventAmount = {
   rewardMethod: string | null;
   occurredAt: Date;
   createdAt: Date;
+  deletedAt: Date | null;
 };
 
 export type PlannedGeneralEntry = {
@@ -302,6 +311,7 @@ export type PlannedGeneralEntry = {
   imageUrls: string | null;
   occurredAt: Date;
   createdAt: Date;
+  deletedAt: Date | null;
 };
 
 export type PlannedTripMember = {
@@ -327,6 +337,7 @@ export type PlannedTripExpense = {
   imageUrls: string | null;
   occurredAt: Date;
   createdAt: Date;
+  deletedAt: Date | null;
 };
 
 export type PlannedTripSplit = {
@@ -440,6 +451,7 @@ export function planImport(backup: ParsedBackup, opts: ImportOptions): ImportPla
     occurredAt: toDate(e.occurredAt),
     refundedAt: toDateOrNull(e.refundedAt),
     createdAt: toDate(e.createdAt),
+    deletedAt: toDateOrNull(e.deletedAt ?? null),
   }));
 
   // ---- 桃源活动（parentId 自引用，先全部建映射再改写）----
@@ -485,6 +497,7 @@ export function planImport(backup: ParsedBackup, opts: ImportOptions): ImportPla
       note: ev.note,
       parentId,
       createdAt: toDate(ev.createdAt),
+      deletedAt: toDateOrNull(ev.deletedAt ?? null),
     });
 
     for (const a of ev.amounts) {
@@ -499,6 +512,7 @@ export function planImport(backup: ParsedBackup, opts: ImportOptions): ImportPla
         rewardMethod: a.rewardMethod,
         occurredAt: toDate(a.occurredAt),
         createdAt: toDate(a.createdAt),
+        deletedAt: toDateOrNull(a.deletedAt ?? null),
       });
     }
   }
@@ -528,6 +542,7 @@ export function planImport(backup: ParsedBackup, opts: ImportOptions): ImportPla
       imageUrls,
       occurredAt: toDate(g.occurredAt),
       createdAt: toDate(g.createdAt),
+      deletedAt: toDateOrNull(g.deletedAt ?? null),
     });
   }
   if (orphanGeneral > 0) {
@@ -592,6 +607,7 @@ export function planImport(backup: ParsedBackup, opts: ImportOptions): ImportPla
       imageUrls,
       occurredAt: toDate(e.occurredAt),
       createdAt: toDate(e.createdAt),
+      deletedAt: toDateOrNull(e.deletedAt ?? null),
     });
     for (const s of e.splits) {
       const memberId = memberIdMap.get(s.memberId);

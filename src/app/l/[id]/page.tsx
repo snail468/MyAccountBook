@@ -6,6 +6,7 @@ import Prefetcher from '@/components/ui/Prefetcher';
 import { parseImageUrls } from '@/lib/imageCleanup';
 import { DEFAULT_PAGE_SIZE, slicePage, TIME_DESC_ORDER } from '@/lib/pagination';
 import { computeSettlementSafe } from '@/lib/settlement';
+import { NOT_DELETED } from '@/lib/softDelete';
 import GeneralView from './GeneralView';
 import TravelView from './TravelView';
 
@@ -23,7 +24,7 @@ function monthRange(now = new Date()) {
 
 async function loadGeneral(ledgerId: string) {
   const { start, end } = monthRange();
-  const monthWhere = { ledgerId, occurredAt: { gte: start, lt: end } };
+  const monthWhere = { ledgerId, ...NOT_DELETED, occurredAt: { gte: start, lt: end } };
 
   // 汇总下推到 SQL —— 不再把全部条目拉进内存 reduce
   const [byDirection, topCatRows, firstPage] = await Promise.all([
@@ -40,7 +41,7 @@ async function loadGeneral(ledgerId: string) {
       take: 5,
     }),
     prisma.generalEntry.findMany({
-      where: { ledgerId },
+      where: { ledgerId, ...NOT_DELETED },
       orderBy: TIME_DESC_ORDER,
       take: DEFAULT_PAGE_SIZE + 1,
     }),
@@ -88,30 +89,29 @@ async function loadTravel(ledgerId: string) {
       }),
       prisma.tripExpense.groupBy({
         by: ['phase'],
-        where: { ledgerId },
+        where: { ledgerId, ...NOT_DELETED },
         _sum: { amountBaseCents: true },
       }),
-      // 每人垫付了多少
+      // 每人垫付了多少 —— **软删的支出必须排除**，否则净额和最优结算算错
       prisma.tripExpense.groupBy({
         by: ['payerId'],
-        where: { ledgerId },
+        where: { ledgerId, ...NOT_DELETED },
         _sum: { amountBaseCents: true },
       }),
-      // 每人该承担多少 —— 结算必须基于全量数据，但只要两个聚合就够，
-      // 不需要把明细拉进内存
+      // 每人该承担多少 —— 同样只算未删的支出对应的分摊
       prisma.tripSplit.groupBy({
         by: ['memberId'],
-        where: { expense: { ledgerId } },
+        where: { expense: { ledgerId, ...NOT_DELETED } },
         _sum: { shareCents: true },
       }),
       prisma.tripExpense.findMany({
-        where: { ledgerId, phase: 'pre' },
+        where: { ledgerId, ...NOT_DELETED, phase: 'pre' },
         include: expenseInclude,
         orderBy: TIME_DESC_ORDER,
         take: DEFAULT_PAGE_SIZE + 1,
       }),
       prisma.tripExpense.findMany({
-        where: { ledgerId, phase: 'during' },
+        where: { ledgerId, ...NOT_DELETED, phase: 'during' },
         include: expenseInclude,
         orderBy: TIME_DESC_ORDER,
         take: DEFAULT_PAGE_SIZE + 1,

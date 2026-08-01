@@ -34,7 +34,7 @@ function parseImageList(v: string | null): string {
 function sectionWork(b: UserBackup, lines: string[]) {
   lines.push('# 工作账本');
   lines.push(
-    row(['月份', '类别', '方向', '金额(元)', '发生时间', '回款时间', '备注', '创建时间']),
+    row(['月份', '类别', '方向', '金额(元)', '发生时间', '回款时间', '备注', '创建时间', '状态']),
   );
   for (const e of b.entries) {
     lines.push(
@@ -47,6 +47,7 @@ function sectionWork(b: UserBackup, lines: string[]) {
         e.refundedAt,
         e.note,
         e.createdAt,
+        e.deletedAt ? '回收站' : '',
       ]),
     );
   }
@@ -164,6 +165,7 @@ function sectionGeneral(b: UserBackup, lines: string[]) {
       '图片',
       '发生时间',
       '创建时间',
+      '状态',
     ]),
   );
   for (const g of b.generalEntries) {
@@ -178,6 +180,7 @@ function sectionGeneral(b: UserBackup, lines: string[]) {
         parseImageList(g.imageUrls),
         g.occurredAt,
         g.createdAt,
+        g.deletedAt ? '回收站' : '',
       ]),
     );
   }
@@ -261,6 +264,7 @@ function sectionTravel(b: UserBackup, lines: string[]) {
       '备注',
       '图片',
       '发生时间',
+      '状态',
     ]),
   );
   for (const e of b.tripExpenses) {
@@ -285,17 +289,19 @@ function sectionTravel(b: UserBackup, lines: string[]) {
         e.note,
         parseImageList(e.imageUrls),
         e.occurredAt,
+        e.deletedAt ? '回收站' : '',
       ]),
     );
   }
 
   // 每个旅游账本的净额，方便对账
   lines.push('');
-  lines.push('# 旅游账本 · 成员净额（正数=应收，负数=应付）');
+  lines.push('# 旅游账本 · 成员净额（正数=应收，负数=应付；只算未在回收站的支出）');
   lines.push(row(['账本', '成员', '垫付合计(元)', '应承担(元)', '净额(元)', '本币']));
   for (const l of travelLedgers) {
     const members = b.tripMembers.filter((m) => m.ledgerId === l.id);
-    const expenses = b.tripExpenses.filter((e) => e.ledgerId === l.id);
+    // 结算必须只算未软删的 —— 与 /l/[id] 页的口径一致
+    const expenses = b.tripExpenses.filter((e) => e.ledgerId === l.id && !e.deletedAt);
     for (const m of members) {
       const paid = expenses
         .filter((e) => e.payerId === m.id)

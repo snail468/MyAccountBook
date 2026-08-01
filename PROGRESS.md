@@ -30,6 +30,8 @@
   - [2.17 周期记账](#217-周期记账)
   - [2.18 拆分大文件与弹窗按需加载](#218-拆分大文件与弹窗按需加载)
   - [2.19 桃源账本的非金额奖励](#219-桃源账本的非金额奖励)
+  - [2.20 记账类删除进回收站](#220-记账类删除进回收站)
+  - [2.21 缓存分层复核](#221-缓存分层复核)
 - [四、待做](#四待做)
 - [五、验证与部署命令速查](#五验证与部署命令速查)
 
@@ -41,7 +43,7 @@
 |---|---|
 | 部署方式 | **只有 Docker**。Cloudflare 相关代码与文档已全部移除 |
 | Docker 部署链路 | ✅ 可用，本地 standalone 实测真实查询通过 |
-| 单元测试 | ✅ 276 个，全部通过（route 层不在单测范围，靠 build + 真实请求冒烟覆盖） |
+| 单元测试 | ✅ 287 个，全部通过（route 层不在单测范围，靠 build + 真实请求冒烟覆盖） |
 | CI（typecheck / lint / test / build） | ✅ 已配置，每次 push 与 PR 都跑 |
 | 是否已合并 main | ❌ 未合并 |
 
@@ -769,6 +771,79 @@ UI 在导入后会明确提示这一点。
 400、**Q币条目 cents=0 且个数没漏进金额字段**、首页单独列示、统计页收入构成只含
 金额类、再加 999 个 Q币后金额合计纹丝不动、CSV 新增两列、备份往返不丢非金额字段。
 
+### 2.20 记账类删除进回收站
+
+**需求**：账本级删除早就是软删 + 60 天保留，但账本**里**的记录（工作条目、
+普通条目、旅游支出、活动、活动金额）全是硬删，点一下就没了。补齐这层。
+
+**覆盖 5 个模型**：`Entry` / `GeneralEntry` / `TripExpense` / `Event` / `EventAmount`
+各加 `deletedAt DateTime?` + `@@index([<ownerFk>, deletedAt])`。迁移是纯
+`ALTER TABLE ADD COLUMN` + `CREATE INDEX`，对存量数据安全。`TripMember` /
+`BankCard` / `RecurringRule` 维持硬删 —— 前者是账本结构，后两者本就是用户
+明确管理的配置。
+
+**最大风险：漏掉查询过滤**。加了软删字段后，**任何忘记加 `deletedAt: null` 的
+查询都会把已删记录当有效数据**，对金额类记录来说这不是"多显示一条"，而是**直接
+把账算错**。为此在 `src/lib/softDelete.ts` 定义了一个 `NOT_DELETED` 常量：
+
+```ts
+export const NOT_DELETED = { deletedAt: null } as const;
+```
+
+**统一从这里导入，散写字面量** —— `grep NOT_DELETED` 就能一次列出所有过滤点，
+避免下次改的时候漏掉某个新调用点。
+
+**特意不过滤**的地方（每个都在代码里加了注释）：
+
+- `lib/imageCleanup.ts` 的引用计数：软删记录仍持有图片，漏算会把回收站里的图误删
+- `lib/exportData.ts` 的完整导出：备份的意义就是尽可能不丢，保留期内的数据也算
+  用户还想要的；备份多带 `deletedAt` 字段，导入时原样恢复到回收站状态
+- `lib/legacyMigrate.ts` 的一次性旧列搬运：旧列本就不区分软删
+- `lib/ledgerBootstrap.ts` 的 count：判定"用户用过某种账本"，软删的也算
+
+**旅游账本尤其危险**：软删的支出必须从 `paidByPayer` / `owedByMember` 两个
+`groupBy` 里排除，否则**成员净额和最优结算直接算错**。CSV 导出的成员净额段
+同步过滤，与页面口径一致。
+
+**接口**：五个既有 `DELETE` 路由改为 `update({ deletedAt: new Date() })`；
+新增 `GET /api/trash` 列表、`POST /api/trash/:type/:id` 恢复、
+`DELETE /api/trash/:type/:id` 立即彻底删。恢复金额或活动后调用
+`syncEventStatus` 重算状态（否则删掉唯一到账金额的活动 status 卡在 paid
+永远回不去）。
+
+**图片清理移到彻底删除时**：软删阶段清了图，恢复出来就是空壳。硬删走
+`recordTrash.ts` 的 `cleanupUrlsIfSafe`，用 LIKE 数一遍其它记录里还没引用
+它才删。
+
+**过期清理**：`purgeExpiredRecords` 挂进 `bootstrap.ts` 的 startup + tick，
+与账本级 `purgeExpiredTrash` 共用同一个 1 小时节流。硬删前把 imageUrls /
+contentImages 收集出来一次性清图。
+
+**验证**：11 个新单测（NOT_DELETED / RETENTION_DAYS / TRASH_TYPES /
+`isTrashType` 拒绝越权类型 / `daysLeft` 边界 / `cutoffFor`）；38 项真实
+HTTP 冒烟 —— 五类各删一条 → 列表接口立即排除 → 搜索排除 → 旅游最优结算块
+从页面消失 → 到账金额删完 status 从 paid 回退 → **导出仍带 deletedAt** →
+`/api/trash` 五种类型齐全 → 归属校验四路 PATCH 均 404 → 恢复后 status 回
+paid、旅游结算块回来 → 彻底删除后导出真的搜不到、重复删 404、越权用户 404、
+未知类型 400。
+
+### 2.21 缓存分层复核
+
+**结论：无需改动**，把理由写下来避免下次再问同一个问题。
+
+16 个 `force-dynamic` 标记全落在 per-user Prisma 查询页上（首页、工作、桃源、
+`/l/[id]`、统计、搜索、周期、卡片、回收站、账本管理、注册、管理后台，加两个
+API 路由）。它们要么读会话拿 userId，要么在渲染里生成 CSP nonce ——
+**`src/app/layout.tsx` 的 `await headers()` 已经强制整棵树动态渲染**（PROGRESS
+2.3），所以 `force-dynamic` 更多是把意图写死，删掉行为不变。
+
+`next.config.mjs` 的 `staleTimes = { dynamic: 30, static: 180 }` 保留：
+客户端 prefetch 缓存 30 秒足以让"回首页 → 点一下就开"的体验，同时不至于让用户
+看到 1 分钟前的账。
+
+`/stats` 是唯一潜在缓存受益者（聚合较重、变化不频繁），但它的数据也是**每用户
+私有**，SWR/RSC 层面加短 TTL 会引入"删了一笔账但统计还没更新"的错位，弊大于利。
+
 ---
 
 
@@ -780,7 +855,7 @@ UI 在导入后会明确提示这一点。
 |---|---|
 | ~~上传前图片压缩~~ | ✅ 已完成，见 [2.13 上传前图片压缩](#213-上传前图片压缩) |
 | ~~拆分大文件~~ | ✅ 已完成，见 [2.18 拆分大文件与弹窗按需加载](#218-拆分大文件与弹窗按需加载) |
-| 缓存分层复核 | 所有页面都 `force-dynamic`，配合已完成的聚合优化后可以重新评估 |
+| ~~缓存分层复核~~ | ✅ 结论"无需改动"已归档，见 [2.21 缓存分层复核](#221-缓存分层复核) |
 
 ### 4.2 功能 · A 层（原评估价值最高）
 
@@ -836,7 +911,7 @@ UI 在导入后会明确提示这一点。
 ### 本地验证
 
 ```bash
-npm run verify        # typecheck + lint + 276 个单测，提交前跑
+npm run verify        # typecheck + lint + 287 个单测，提交前跑
 npm test              # 只跑单测
 npm run build         # 生产构建（输出 standalone，Docker 用这个）
 npm run format        # Prettier 格式化

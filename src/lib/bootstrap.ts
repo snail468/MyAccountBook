@@ -17,6 +17,7 @@ import { prisma } from '@/lib/db';
 import { ensureAdminBootstrap } from '@/lib/adminBootstrap';
 import { ensureLedgersForUser } from '@/lib/ledgerBootstrap';
 import { migrateArchivedIfNeeded, purgeExpiredTrash } from '@/lib/ledgerTrash';
+import { purgeExpiredRecords } from '@/lib/recordTrash';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('bootstrap');
@@ -40,7 +41,12 @@ export async function runStartupTasks(): Promise<void> {
   try {
     await purgeExpiredTrash();
   } catch (err) {
-    log.error('回收站清理失败', err);
+    log.error('账本回收站清理失败', err);
+  }
+  try {
+    await purgeExpiredRecords();
+  } catch (err) {
+    log.error('记账类回收站清理失败', err);
   }
 }
 
@@ -73,6 +79,11 @@ export async function ensureUserSetupOnce(userId: string): Promise<void> {
 export async function maintenanceTick(): Promise<void> {
   try {
     await purgeExpiredTrash();
+  } catch {
+    /* 已在内部记日志 */
+  }
+  try {
+    await purgeExpiredRecords();
   } catch {
     /* 已在内部记日志 */
   }

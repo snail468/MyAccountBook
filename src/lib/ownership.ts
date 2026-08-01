@@ -2,6 +2,11 @@ import { prisma } from '@/lib/db';
 import { requireUser, requireUserWithRole } from '@/lib/session';
 import { forbidden, notFound, unauthorized } from '@/lib/apiError';
 
+// **软删记录一律按不存在处理**：编辑/删除/PATCH 路径都不能操作回收站里的东西，
+// 否则会出现"用户以为删掉的记录还能被 API 改回来"这种诡异体验。
+// 恢复路径必须绕过这套助手，直接查 { id, deletedAt: { not: null } }。
+// 见 src/lib/softDelete.ts。
+
 // 「取当前用户 → 查资源 → 校验归属」这套前导，改造前在每个 route handler 里
 // 手写一遍，7 个文件各有一份 ownLedger/ensureOwn（其中 4 份逐字相同），
 // 活动相关的路由甚至连函数都没抽，直接内联在 handler 里。
@@ -94,9 +99,19 @@ export async function requireOwnedGeneralEntry(
 
   const entry = await prisma.generalEntry.findUnique({
     where: { id: entryId },
-    select: { ledgerId: true, imageUrls: true, ledger: { select: { userId: true } } },
+    select: {
+      ledgerId: true,
+      imageUrls: true,
+      deletedAt: true,
+      ledger: { select: { userId: true } },
+    },
   });
-  if (!entry || entry.ledgerId !== ledgerId || entry.ledger.userId !== user.id) {
+  if (
+    !entry ||
+    entry.ledgerId !== ledgerId ||
+    entry.ledger.userId !== user.id ||
+    entry.deletedAt !== null
+  ) {
     return notFound();
   }
   return { user, entry: { ledgerId: entry.ledgerId, imageUrls: entry.imageUrls } };
@@ -114,9 +129,19 @@ export async function requireOwnedTripExpense(
 
   const expense = await prisma.tripExpense.findUnique({
     where: { id: expenseId },
-    select: { ledgerId: true, imageUrls: true, ledger: { select: { userId: true } } },
+    select: {
+      ledgerId: true,
+      imageUrls: true,
+      deletedAt: true,
+      ledger: { select: { userId: true } },
+    },
   });
-  if (!expense || expense.ledgerId !== ledgerId || expense.ledger.userId !== user.id) {
+  if (
+    !expense ||
+    expense.ledgerId !== ledgerId ||
+    expense.ledger.userId !== user.id ||
+    expense.deletedAt !== null
+  ) {
     return notFound();
   }
   return { user, expense: { ledgerId: expense.ledgerId, imageUrls: expense.imageUrls } };
@@ -131,9 +156,9 @@ export async function requireOwnedEntry(
 
   const entry = await prisma.entry.findUnique({
     where: { id: entryId },
-    select: { id: true, userId: true },
+    select: { id: true, userId: true, deletedAt: true },
   });
-  if (!entry || entry.userId !== user.id) return notFound();
+  if (!entry || entry.userId !== user.id || entry.deletedAt !== null) return notFound();
   return { user, entry: { id: entry.id } };
 }
 
@@ -148,10 +173,10 @@ export async function requireOwnedEvent(
 
   const event = await prisma.event.findUnique({
     where: { id: eventId },
-    select: { id: true, userId: true },
+    select: { id: true, userId: true, deletedAt: true },
   });
-  if (!event || event.userId !== user.id) return notFound();
-  return { user, event };
+  if (!event || event.userId !== user.id || event.deletedAt !== null) return notFound();
+  return { user, event: { id: event.id, userId: event.userId } };
 }
 
 /** 活动下的一条金额 */
@@ -164,9 +189,19 @@ export async function requireOwnedEventAmount(
 
   const amount = await prisma.eventAmount.findUnique({
     where: { id: amountId },
-    select: { eventId: true, event: { select: { userId: true } } },
+    select: {
+      eventId: true,
+      deletedAt: true,
+      event: { select: { userId: true, deletedAt: true } },
+    },
   });
-  if (!amount || amount.eventId !== eventId || amount.event.userId !== user.id) {
+  if (
+    !amount ||
+    amount.eventId !== eventId ||
+    amount.event.userId !== user.id ||
+    amount.deletedAt !== null ||
+    amount.event.deletedAt !== null
+  ) {
     return notFound();
   }
   return { user, amount: { eventId: amount.eventId } };

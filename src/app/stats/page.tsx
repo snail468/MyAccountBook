@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { requireUserWithRole } from '@/lib/session';
 import { prisma } from '@/lib/db';
 import { parseRewardMethods, rewardValueKind } from '@/lib/rewardMethod';
+import { NOT_DELETED } from '@/lib/softDelete';
 import Money from '@/components/ui/Money';
 import {
   bucketByMonth,
@@ -31,21 +32,34 @@ const WINDOW_MONTHS = 13;
 async function loadRows(userId: string, since: Date): Promise<StatRow[]> {
   const [entries, generals, trips, paidAmounts] = await Promise.all([
     prisma.entry.findMany({
-      where: { userId, occurredAt: { gte: since } },
+      where: { userId, ...NOT_DELETED, occurredAt: { gte: since } },
       select: { occurredAt: true, amountCents: true, direction: true, category: true },
     }),
     prisma.generalEntry.findMany({
-      where: { ledger: { userId, deletedAt: null }, occurredAt: { gte: since } },
+      where: {
+        ...NOT_DELETED,
+        ledger: { userId, deletedAt: null },
+        occurredAt: { gte: since },
+      },
       select: { occurredAt: true, amountCents: true, direction: true, category: true },
     }),
     prisma.tripExpense.findMany({
-      where: { ledger: { userId, deletedAt: null }, occurredAt: { gte: since } },
+      where: {
+        ...NOT_DELETED,
+        ledger: { userId, deletedAt: null },
+        occurredAt: { gte: since },
+      },
       select: { occurredAt: true, amountBaseCents: true, category: true },
     }),
     // 桃源账本只把**已到账**的钱算进收入 —— 预测和公示都还没落袋，
     // 混进统计会让"收入"虚高
     prisma.eventAmount.findMany({
-      where: { event: { userId }, stage: 'paid', occurredAt: { gte: since } },
+      where: {
+        ...NOT_DELETED,
+        event: { userId, ...NOT_DELETED },
+        stage: 'paid',
+        occurredAt: { gte: since },
+      },
       select: {
         occurredAt: true,
         cents: true,

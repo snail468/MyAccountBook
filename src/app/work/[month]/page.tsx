@@ -6,6 +6,7 @@ import Money from '@/components/ui/Money';
 import Prefetcher from '@/components/ui/Prefetcher';
 import NewEntryFlow from './NewEntryFlow';
 import EntryRow from './EntryRow';
+import { NOT_DELETED } from '@/lib/softDelete';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,7 +21,7 @@ export default async function MonthPage({
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) notFound();
 
   const entries = await prisma.entry.findMany({
-    where: { userId: user.id, yearMonth: month },
+    where: { userId: user.id, ...NOT_DELETED, yearMonth: month },
     orderBy: [{ occurredAt: 'desc' }, { createdAt: 'desc' }],
   });
 

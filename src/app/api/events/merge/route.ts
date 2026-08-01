@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { requireSessionUser } from '@/lib/ownership';
 import { badRequest, notFound } from '@/lib/apiError';
+import { NOT_DELETED } from '@/lib/softDelete';
 
 const bodySchema = z.object({
   // 主活动（合并后作为父）；其余会挂到它下面
@@ -29,16 +30,18 @@ export async function POST(req: Request) {
   const uniqueChildIds = [...new Set(childIds)];
 
   const parent = await prisma.event.findUnique({ where: { id: parentId } });
-  if (!parent || parent.userId !== user.id) return notFound('主活动不存在');
+  if (!parent || parent.userId !== user.id || parent.deletedAt !== null) {
+    return notFound('主活动不存在');
+  }
   if (parent.parentId) {
     return badRequest('主活动本身已被合并，请选顶层活动');
   }
 
   const children = await prisma.event.findMany({
-    where: { id: { in: uniqueChildIds }, userId: user.id },
+    where: { id: { in: uniqueChildIds }, userId: user.id, ...NOT_DELETED },
   });
   if (children.length !== uniqueChildIds.length) {
-    return badRequest('存在不属于当前用户的活动');
+    return badRequest('存在不属于当前用户或已在回收站的活动');
   }
 
   await prisma.$transaction(async (tx) => {

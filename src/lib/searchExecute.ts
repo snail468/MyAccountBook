@@ -18,6 +18,7 @@ import { prisma } from '@/lib/db';
 import { decodeCursor } from '@/lib/pagination';
 import type { SearchFilters, SearchHit } from '@/lib/search';
 import { rewardValueKind } from '@/lib/rewardMethod';
+import { NOT_DELETED } from '@/lib/softDelete';
 
 /** 时间区间的 where 片段 */
 function timeRange(from: Date | null, to: Date | null) {
@@ -66,6 +67,7 @@ export async function runSearch(
     const rows = await prisma.entry.findMany({
       where: {
         userId,
+        ...NOT_DELETED,
         ...(occurred ? { occurredAt: occurred } : {}),
         ...(cents ? { amountCents: cents } : {}),
         ...(f.direction ? { direction: f.direction } : {}),
@@ -100,6 +102,7 @@ export async function runSearch(
     const cur = cursorFilter('occurredAt', f.cursor);
     const rows = await prisma.generalEntry.findMany({
       where: {
+        ...NOT_DELETED,
         // 回收站里的账本不参与搜索 —— 搜到一条点进去发现账本已删除，体验很差
         ledger: { userId, deletedAt: null },
         ...(occurred ? { occurredAt: occurred } : {}),
@@ -147,6 +150,7 @@ export async function runSearch(
     const cur = cursorFilter('occurredAt', f.cursor);
     const rows = await prisma.tripExpense.findMany({
       where: {
+        ...NOT_DELETED,
         ledger: { userId, deletedAt: null },
         ...(occurred ? { occurredAt: occurred } : {}),
         // 金额用本币（amountBaseCents），与列表页显示的口径一致
@@ -193,9 +197,10 @@ export async function runSearch(
     const rows = await prisma.event.findMany({
       where: {
         userId,
+        ...NOT_DELETED,
         ...(occurred ? { createdAt: occurred } : {}),
-        // 金额语义：有任意一笔阶段金额落在区间内
-        ...(cents ? { amounts: { some: { cents } } } : {}),
+        // 金额语义：有任意一笔阶段金额落在区间内（同样只看未删除的金额行）
+        ...(cents ? { amounts: { some: { cents, deletedAt: null } } } : {}),
         // 活动没有 tags，但 topicTag 语义相近
         ...(f.tag ? { topicTag: { contains: f.tag } } : {}),
         ...(f.q
@@ -211,7 +216,13 @@ export async function runSearch(
           : {}),
         ...(cur ?? {}),
       },
-      include: { amounts: { select: { stage: true, cents: true, quantity: true, itemDesc: true, rewardMethod: true } } },
+      include: {
+        // 展示金额时只看未删除的金额行
+        amounts: {
+          where: { deletedAt: null },
+          select: { stage: true, cents: true, quantity: true, itemDesc: true, rewardMethod: true },
+        },
+      },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take,
     });

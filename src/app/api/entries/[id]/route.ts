@@ -52,11 +52,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   return NextResponse.json({ ok: true });
 }
 
+// 软删：进回收站。60 天后 lib/recordTrash.ts 的 purgeExpiredRecords 会硬删。
+// 彻底删走 DELETE /api/trash/entry/:id
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const ctx = await requireOwnedEntry(id);
   if (ctx instanceof Response) return ctx;
 
-  await prisma.entry.delete({ where: { id } });
+  await prisma.entry.update({ where: { id }, data: { deletedAt: new Date() } });
   return NextResponse.json({ ok: true });
 }

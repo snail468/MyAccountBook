@@ -4,6 +4,7 @@ import { requireUser } from '@/lib/session';
 import { prisma } from '@/lib/db';
 import Money from '@/components/ui/Money';
 import Prefetcher from '@/components/ui/Prefetcher';
+import { NOT_DELETED } from '@/lib/softDelete';
 
 export const dynamic = 'force-dynamic';
 
@@ -45,7 +46,7 @@ export default async function WorkPage() {
   if (!user) redirect('/login');
 
   const entries = await prisma.entry.findMany({
-    where: { userId: user.id },
+    where: { userId: user.id, ...NOT_DELETED },
     select: { yearMonth: true, direction: true, amountCents: true },
   });
 

@@ -4,6 +4,7 @@ import { requireUser } from '@/lib/session';
 import { prisma } from '@/lib/db';
 import { ensureLegacyMigrated } from '@/lib/legacyMigrate';
 import { buildEventTree } from '@/lib/taoyuanSerialize';
+import { NOT_DELETED } from '@/lib/softDelete';
 import { CREATED_DESC_ORDER, slicePageByCreated } from '@/lib/pagination';
 import Prefetcher from '@/components/ui/Prefetcher';
 import TaoyuanClient from './TaoyuanClient';
@@ -14,13 +15,21 @@ export const dynamic = 'force-dynamic';
 const PAID_PAGE_SIZE = 20;
 
 async function loadTaoyuan(userId: string) {
-  const include = { amounts: { orderBy: { occurredAt: 'asc' as const } } };
+  // 展开金额时只带未删的金额行 —— 卡片上的三段金额（预测/公示/到账）
+  // 就不会包含用户已经删掉的那些
+  const include = {
+    amounts: {
+      where: { deletedAt: null },
+      orderBy: { occurredAt: 'asc' as const },
+    },
+  };
 
   const [activeTop, paidTop] = await Promise.all([
     // 活跃项（未到账）全量加载：数量天然有界，且 MergeBar 合并需要看到全部候选
     prisma.event.findMany({
       where: {
         userId,
+        ...NOT_DELETED,
         parentId: null,
         status: { in: ['published', 'predicted', 'announced'] },
       },
@@ -29,7 +38,7 @@ async function loadTaoyuan(userId: string) {
     }),
     // 已到账归档：只取第一页，其余靠 /api/events/paid 翻页
     prisma.event.findMany({
-      where: { userId, parentId: null, status: 'paid' },
+      where: { userId, ...NOT_DELETED, parentId: null, status: 'paid' },
       include,
       orderBy: CREATED_DESC_ORDER,
       take: PAID_PAGE_SIZE + 1,
@@ -42,7 +51,7 @@ async function loadTaoyuan(userId: string) {
   const children =
     loadedTop.length > 0
       ? await prisma.event.findMany({
-          where: { userId, parentId: { in: loadedTop.map((e) => e.id) } },
+          where: { userId, ...NOT_DELETED, parentId: { in: loadedTop.map((e) => e.id) } },
           include,
         })
       : [];

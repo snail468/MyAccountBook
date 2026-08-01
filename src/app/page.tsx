@@ -6,6 +6,7 @@ import { ensureLegacyMigrated } from '@/lib/legacyMigrate';
 import { ensureUserSetupOnce, maintenanceTick, runStartupTasks } from '@/lib/bootstrap';
 import { materializeDueRules } from '@/lib/recurringRun';
 import { parseRewardMethods, rewardValueKind } from '@/lib/rewardMethod';
+import { NOT_DELETED } from '@/lib/softDelete';
 import LogoutButton from '@/components/LogoutButton';
 import ExportButton from '@/components/ExportButton';
 import ImportButton from '@/components/ImportButton';
@@ -44,7 +45,7 @@ async function loadDashboard(userId: string) {
   const workSums = hasWork
     ? await prisma.entry.groupBy({
         by: ['direction'],
-        where: { userId },
+        where: { userId, ...NOT_DELETED },
         _sum: { amountCents: true },
       })
     : [];
@@ -56,7 +57,9 @@ async function loadDashboard(userId: string) {
   // 桃源数据
   const paidAmounts = hasTaoyuan
     ? await prisma.eventAmount.findMany({
-        where: { stage: 'paid', event: { userId } },
+        // event 的软删也要一起过滤 —— 单独删活动时下面的金额行不会被级联软删，
+        // 但活动都在回收站了，它的金额自然不该出现在首页
+        where: { stage: 'paid', ...NOT_DELETED, event: { userId, ...NOT_DELETED } },
         select: {
           cents: true,
           quantity: true,
@@ -103,6 +106,7 @@ async function loadDashboard(userId: string) {
     ? await prisma.event.count({
         where: {
           userId,
+          ...NOT_DELETED,
           status: { in: ['published', 'predicted', 'announced'] },
         },
       })
@@ -125,6 +129,7 @@ async function loadDashboard(userId: string) {
           by: ['ledgerId', 'direction'],
           where: {
             ledgerId: { in: generalIds },
+            ...NOT_DELETED,
             occurredAt: { gte: monthStart, lt: monthEnd },
           },
           _sum: { amountCents: true },
@@ -133,7 +138,7 @@ async function loadDashboard(userId: string) {
     travelIds.length > 0
       ? prisma.tripExpense.groupBy({
           by: ['ledgerId'],
-          where: { ledgerId: { in: travelIds } },
+          where: { ledgerId: { in: travelIds }, ...NOT_DELETED },
           _sum: { amountBaseCents: true },
         })
       : Promise.resolve([]),
@@ -210,7 +215,7 @@ export default async function HomePage() {
   const showCombined = s.hasWork && s.hasTaoyuan;
 
   // 预取所有可能的目标路由
-  const prefetchRoutes: string[] = ['/ledgers'];
+  const prefetchRoutes: string[] = ['/ledgers', '/trash'];
   if (s.hasWork) prefetchRoutes.push('/work', '/work/expenses');
   if (s.hasTaoyuan) prefetchRoutes.push('/taoyuan');
   if (user.role === 'admin') prefetchRoutes.push('/admin');
@@ -438,6 +443,20 @@ export default async function HomePage() {
             </div>
           </div>
           <span>›</span>
+        </Link>
+
+        <Link
+          href="/trash"
+          className="flex items-center justify-between p-5 rounded-2xl bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 active:scale-[0.98] transition"
+        >
+          <div className="flex items-center gap-3">
+            <span className="text-xl">🗑️</span>
+            <div>
+              <div className="text-lg font-medium">回收站</div>
+              <div className="text-xs text-ink-500 mt-0.5">删除的记录 · 60 天内可恢复</div>
+            </div>
+          </div>
+          <span className="text-ink-400">›</span>
         </Link>
 
         <ExportButton />

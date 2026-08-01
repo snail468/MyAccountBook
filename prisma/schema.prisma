@@ -45,8 +45,13 @@ model Entry {
   occurredAt   DateTime  @default(now())
   refundedAt   DateTime?
   createdAt    DateTime  @default(now())
+  // 软删除：非空 = 在回收站，60 天后由 purgeExpiredRecords 硬删。
+  // **所有金额聚合都必须过滤 deletedAt=null** —— 漏一处就把已删条目当有效数据算，
+  // 总额会悄悄错。见 src/lib/softDelete.ts 的 NOT_DELETED。
+  deletedAt    DateTime?
 
   @@index([userId, yearMonth])
+  @@index([userId, deletedAt])
 }
 
 // ============ 桃源账本 (built-in kind="taoyuan") ============
@@ -79,9 +84,12 @@ model Event {
   amounts        EventAmount[]
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
+  // 软删除。见 src/lib/softDelete.ts。
+  deletedAt      DateTime?
 
   @@index([userId, status])
   @@index([parentId])
+  @@index([userId, deletedAt])
 }
 
 model EventAmount {
@@ -100,8 +108,11 @@ model EventAmount {
   rewardMethod String?
   occurredAt   DateTime @default(now())
   createdAt    DateTime @default(now())
+  // 软删除。见 src/lib/softDelete.ts。
+  deletedAt    DateTime?
 
   @@index([eventId, stage])
+  @@index([eventId, deletedAt])
 }
 
 // ============ 账本 (通用容器) ============
@@ -157,8 +168,11 @@ model GeneralEntry {
   imageUrls   String?  // JSON array
   occurredAt  DateTime @default(now())
   createdAt   DateTime @default(now())
+  // 软删除。见 src/lib/softDelete.ts。
+  deletedAt   DateTime?
 
   @@index([ledgerId, occurredAt])
+  @@index([ledgerId, deletedAt])
 }
 
 // ============ 旅游账本 ============
@@ -194,10 +208,14 @@ model TripExpense {
   imageUrls          String?  // JSON array
   occurredAt         DateTime @default(now())
   createdAt          DateTime @default(now())
+  // 软删除。见 src/lib/softDelete.ts。
+  // **旅游账本尤其危险**：软删的支出必须排除，否则成员净额和最优结算直接算错。
+  deletedAt          DateTime?
 
   splits TripSplit[]
 
   @@index([ledgerId, phase])
+  @@index([ledgerId, deletedAt])
 }
 
 model TripSplit {

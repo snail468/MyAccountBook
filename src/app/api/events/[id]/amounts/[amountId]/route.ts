@@ -62,6 +62,8 @@ export async function PATCH(
   return NextResponse.json({ ok: true });
 }
 
+// 软删：金额行进回收站。syncEventStatus 会立即回退活动状态。
+// 彻底删走 DELETE /api/trash/eventAmount/:id
 export async function DELETE(
   _req: Request,
   { params }: { params: Promise<{ id: string; amountId: string }> },
@@ -70,7 +72,10 @@ export async function DELETE(
   const ctx = await requireOwnedEventAmount(id, amountId);
   if (ctx instanceof Response) return ctx;
 
-  await prisma.eventAmount.delete({ where: { id: amountId } });
+  await prisma.eventAmount.update({
+    where: { id: amountId },
+    data: { deletedAt: new Date() },
+  });
   await syncEventStatus(ctx.amount.eventId);
   return NextResponse.json({ ok: true });
 }

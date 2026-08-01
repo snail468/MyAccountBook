@@ -12,6 +12,7 @@ import {
   slicePage,
   TIME_DESC_ORDER,
 } from '@/lib/pagination';
+import { NOT_DELETED } from '@/lib/softDelete';
 
 const splitSchema = z.object({
   memberId: z.string().min(1),
@@ -99,7 +100,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
   if (all) {
     const rows = await prisma.tripExpense.findMany({
-      where: { ledgerId: id },
+      where: { ledgerId: id, ...NOT_DELETED },
       include,
       orderBy: TIME_DESC_ORDER,
     });
@@ -110,7 +111,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const cursor = decodeCursor(url.searchParams.get('cursor'));
 
   const rows = await prisma.tripExpense.findMany({
-    where: { ledgerId: id, ...(phase ? { phase } : {}), ...cursorWhere(cursor) },
+    where: { ledgerId: id, ...NOT_DELETED, ...(phase ? { phase } : {}), ...cursorWhere(cursor) },
     include,
     orderBy: TIME_DESC_ORDER,
     take: limit + 1,

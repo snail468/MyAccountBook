@@ -9,6 +9,7 @@ import {
   parsePageSize,
   slicePageByCreated,
 } from '@/lib/pagination';
+import { NOT_DELETED } from '@/lib/softDelete';
 
 // GET /api/events/paid?cursor=<游标>&limit=20
 //
@@ -26,11 +27,14 @@ export async function GET(req: Request) {
   const rows = await prisma.event.findMany({
     where: {
       userId: user.id,
+      ...NOT_DELETED,
       status: 'paid',
       parentId: null,
       ...createdCursorWhere(cursor),
     },
-    include: { amounts: { orderBy: { occurredAt: 'asc' } } },
+    include: {
+      amounts: { where: { deletedAt: null }, orderBy: { occurredAt: 'asc' } },
+    },
     orderBy: CREATED_DESC_ORDER,
     take: limit + 1,
   });
@@ -41,8 +45,14 @@ export async function GET(req: Request) {
   const children =
     items.length > 0
       ? await prisma.event.findMany({
-          where: { userId: user.id, parentId: { in: items.map((e) => e.id) } },
-          include: { amounts: { orderBy: { occurredAt: 'asc' } } },
+          where: {
+            userId: user.id,
+            ...NOT_DELETED,
+            parentId: { in: items.map((e) => e.id) },
+          },
+          include: {
+            amounts: { where: { deletedAt: null }, orderBy: { occurredAt: 'asc' } },
+          },
         })
       : [];
 
