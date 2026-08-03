@@ -89,23 +89,53 @@ export const ICON_LIBRARY: { group: string; icons: string[] }[] = [
 export type CustomCategoriesJson = {
   added: GeneralCategory[];
   hidden: string[]; // 被隐藏的类别名（可含预设 or 自定义）
+  // 分类别月预算：{ [category name]: cents }。老账本没有这个字段，parseCustom 兜底成空。
+  // 与 Ledger.budgetCents（账本级总预算）并存 —— 总预算是"这个月最多花多少"，
+  // 分类预算是"某类最多花多少"，两者独立展示，不做联动校验（用户可能故意让分类
+  // 之和超过总预算，比如给"其它支出"留缓冲）
+  budgets?: Record<string, number>;
 };
 
 export function parseCustom(json: string | null | undefined): CustomCategoriesJson {
-  if (!json) return { added: [], hidden: [] };
+  if (!json) return { added: [], hidden: [], budgets: {} };
   try {
     const p = JSON.parse(json);
+    const budgets =
+      p.budgets && typeof p.budgets === 'object' && !Array.isArray(p.budgets)
+        ? Object.fromEntries(
+            Object.entries(p.budgets).filter(
+              ([, v]) => typeof v === 'number' && Number.isFinite(v) && v > 0,
+            ) as [string, number][],
+          )
+        : {};
     return {
       added: Array.isArray(p.added) ? p.added : [],
       hidden: Array.isArray(p.hidden) ? p.hidden : [],
+      budgets,
     };
   } catch {
-    return { added: [], hidden: [] };
+    return { added: [], hidden: [], budgets: {} };
   }
 }
 
 export function stringifyCustom(c: CustomCategoriesJson): string {
-  return JSON.stringify(c);
+  // 空 budgets 不落库 —— 让 diff 干净，也让"没有分类预算"和"预算全清 0"两种状态一致
+  const clean: CustomCategoriesJson = {
+    added: c.added,
+    hidden: c.hidden,
+  };
+  if (c.budgets && Object.keys(c.budgets).length > 0) clean.budgets = c.budgets;
+  return JSON.stringify(clean);
+}
+
+/** 取某类别的月预算（分）；无则 null */
+export function categoryBudgetOf(
+  customJson: string | null | undefined,
+  category: string,
+): number | null {
+  const budgets = parseCustom(customJson).budgets ?? {};
+  const v = budgets[category];
+  return typeof v === 'number' && v > 0 ? v : null;
 }
 
 // —— 合并后的有效类别（预设 - 隐藏 + 新增）——

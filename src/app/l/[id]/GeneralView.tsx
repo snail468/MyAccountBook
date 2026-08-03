@@ -211,35 +211,77 @@ export default function GeneralView({
         )}
       </div>
 
-      {topCats.length > 0 && (
-        <div className="mt-4 rounded-3xl bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 p-5">
-          <div className="text-xs text-ink-500 mb-3">本月类别 · 支出排行</div>
-          <div className="space-y-2">
-            {topCats.map(([cat, cents]) => {
-              const pct = expense > 0 ? Math.round((cents / expense) * 100) : 0;
-              return (
-                <div key={cat}>
-                  <div className="flex items-baseline justify-between text-sm">
-                    <span className="flex items-center gap-1.5">
-                      <span>{iconOf(cat, ledger.customCategories)}</span>
-                      <span>{cat}</span>
-                    </span>
-                    <span className="num text-ink-700 dark:text-ink-300">
-                      <Money cents={cents} /> <span className="text-[10px] text-ink-500">{pct}%</span>
-                    </span>
+      {(() => {
+        // 类别行：topCats 已有的（排行前 5） + 有预算但不在前 5 的（0 花销也显示）。
+        // 这样用户能看到自己设过预算的所有类别的状况，即使这个月还没花过
+        const rows = new Map<string, { cents: number; budget: number | null }>();
+        for (const [cat, cents] of topCats) {
+          rows.set(cat, { cents, budget: summary.categoryBudgets[cat] ?? null });
+        }
+        for (const [cat, budget] of Object.entries(summary.categoryBudgets)) {
+          if (!rows.has(cat)) rows.set(cat, { cents: 0, budget });
+        }
+        if (rows.size === 0) return null;
+        const ordered = [...rows.entries()].sort((a, b) => b[1].cents - a[1].cents);
+        return (
+          <div className="mt-4 rounded-3xl bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 p-5">
+            <div className="text-xs text-ink-500 mb-3">本月类别 · 支出与预算</div>
+            <div className="space-y-2">
+              {ordered.map(([cat, { cents, budget }]) => {
+                // 有预算：进度 = cents / budget（可超过 100%），颜色按 80% / 100% 分档
+                // 无预算：进度 = cents / 总支出（占比展示，颜色始终中性）
+                const hasBudget = budget !== null && budget > 0;
+                const pct = hasBudget
+                  ? Math.round((cents / budget!) * 100)
+                  : expense > 0
+                    ? Math.round((cents / expense) * 100)
+                    : 0;
+                const over = hasBudget && cents > budget!;
+                const nearFull = hasBudget && pct >= 80 && !over;
+                const barColor = over
+                  ? 'bg-red-500'
+                  : nearFull
+                    ? 'bg-yellow-500'
+                    : hasBudget
+                      ? 'bg-emerald-500'
+                      : 'bg-ink-500 dark:bg-ink-300';
+                return (
+                  <div key={cat}>
+                    <div className="flex items-baseline justify-between text-sm">
+                      <span className="flex items-center gap-1.5">
+                        <span>{iconOf(cat, ledger.customCategories)}</span>
+                        <span>{cat}</span>
+                      </span>
+                      <span className="num text-ink-700 dark:text-ink-300">
+                        <Money cents={cents} />
+                        {hasBudget ? (
+                          <span className="text-[10px] text-ink-500">
+                            {' '}
+                            / <Money cents={budget!} /> · {pct}%
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-ink-500"> {pct}%</span>
+                        )}
+                      </span>
+                    </div>
+                    <div className="h-1.5 rounded-full bg-ink-100 dark:bg-ink-700 mt-1 overflow-hidden">
+                      <div
+                        className={`h-full ${barColor} transition-[width]`}
+                        style={{ width: `${Math.min(100, pct)}%` }}
+                      />
+                    </div>
+                    {over && (
+                      <div className="text-[10px] text-red-500 mt-0.5">
+                        超支 <Money cents={cents - budget!} />
+                      </div>
+                    )}
                   </div>
-                  <div className="h-1.5 rounded-full bg-ink-100 dark:bg-ink-700 mt-1 overflow-hidden">
-                    <div
-                      className="h-full bg-ink-500 dark:bg-ink-300 transition-[width]"
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       <button
         onClick={() => setShowRecord(true)}

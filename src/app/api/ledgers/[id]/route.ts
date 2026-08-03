@@ -27,6 +27,9 @@ const patchSchema = z.object({
         )
         .max(50),
       hidden: z.array(z.string().max(20)).max(50),
+      // 分类别月预算：{ [category]: cents }。可选，兼容老客户端。
+      // 单值上限 100 万元，防止误输入 —— 谁家一个月餐饮花超 100 万
+      budgets: z.record(z.number().int().nonnegative().max(1_000_000_00)).optional(),
     })
     .nullable()
     .optional(),

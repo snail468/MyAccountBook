@@ -8,6 +8,7 @@ import { DEFAULT_PAGE_SIZE, slicePage, TIME_DESC_ORDER } from '@/lib/pagination'
 import { computeSettlementSafe } from '@/lib/settlement';
 import { NOT_DELETED } from '@/lib/softDelete';
 import { RECENCY_WINDOW } from '@/lib/categoryOrder';
+import { parseCustom } from '@/lib/generalCategories';
 import GeneralView from './GeneralView';
 import TravelView from './TravelView';
 
@@ -23,9 +24,11 @@ function monthRange(now = new Date()) {
   return { start, end };
 }
 
-async function loadGeneral(ledgerId: string) {
+async function loadGeneral(ledgerId: string, customCategoriesJson: string | null) {
   const { start, end } = monthRange();
   const monthWhere = { ledgerId, ...NOT_DELETED, occurredAt: { gte: start, lt: end } };
+  // 分类别预算：从 customCategories.budgets 抽出来，客户端不再解析 JSON
+  const categoryBudgets = parseCustom(customCategoriesJson).budgets ?? {};
 
   // 汇总下推到 SQL —— 不再把全部条目拉进内存 reduce
   const [byDirection, topCatRows, firstPage, recentUsage] = await Promise.all([
@@ -70,6 +73,7 @@ async function loadGeneral(ledgerId: string) {
       category: r.category,
       cents: r._sum.amountCents ?? 0,
     })),
+    categoryBudgets,
     entries: items.map((e) => ({
       id: e.id,
       direction: e.direction,
@@ -210,7 +214,7 @@ export default async function LedgerPage({ params }: { params: Promise<{ id: str
   if (!ledger || ledger.userId !== user.id) notFound();
 
   if (ledger.kind === 'general') {
-    const data = await loadGeneral(id);
+    const data = await loadGeneral(id, ledger.customCategories);
     return (
       <div className="px-6 pt-14 pb-24">
         <Prefetcher routes={['/']} />
@@ -228,6 +232,7 @@ export default async function LedgerPage({ params }: { params: Promise<{ id: str
             income: data.income,
             expense: data.expense,
             topCats: data.topCats,
+            categoryBudgets: data.categoryBudgets,
           }}
           initialEntries={data.entries}
           initialCursor={data.nextCursor}

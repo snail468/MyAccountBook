@@ -1,6 +1,6 @@
 // 兼容层：把新表 EventAmount 与旧列 (predictedCents / announcedCents / paidCents) 统一成一个"金额条目"列表
 
-import { rewardValueKind, type RewardValueKind } from '@/lib/rewardMethod';
+import { isTaxable, rewardValueKind, type RewardValueKind } from '@/lib/rewardMethod';
 
 export type Stage = 'predicted' | 'announced' | 'paid';
 
@@ -106,6 +106,29 @@ export function sumByStage(entries: AmountEntry[], stage: Stage): number {
   return entries
     .filter((e) => e.stage === stage && e.kind === 'money')
     .reduce((a, b) => a + b.cents, 0);
+}
+
+/**
+ * 某阶段的**应税**与**免税**金额拆分。
+ *
+ * 应税：现金及自定义（视同现金等价物）—— 参与个税计算
+ * 免税：京东卡等实物 —— 不参与个税，但仍算发放金额
+ *
+ * 用途：桃源账本的"公示税后"= afterTax(taxable) + nonTaxable，不能把京东卡
+ * 一起并进税基算，那样会多扣税。
+ */
+export function splitTaxable(
+  entries: AmountEntry[],
+  stage: Stage,
+): { taxable: number; nonTaxable: number } {
+  let taxable = 0;
+  let nonTaxable = 0;
+  for (const e of entries) {
+    if (e.stage !== stage || e.kind !== 'money') continue;
+    if (isTaxable(e.rewardMethod)) taxable += e.cents;
+    else nonTaxable += e.cents;
+  }
+  return { taxable, nonTaxable };
 }
 
 export type NonMoneySummary = {

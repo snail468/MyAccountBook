@@ -3,7 +3,7 @@ import { requireSessionUser } from '@/lib/ownership';
 import { formatYuan } from '@/lib/money';
 import { parseRewardMethods, rewardMethodLabel, rewardValueKind } from '@/lib/rewardMethod';
 import { afterTaxCents } from '@/lib/tax';
-import { combineAmounts, sumByStage } from '@/lib/amounts';
+import { combineAmounts, splitTaxable, sumByStage } from '@/lib/amounts';
 import { ensureLegacyMigrated } from '@/lib/legacyMigrate';
 import { collectUserData, type UserBackup } from '@/lib/exportData';
 
@@ -102,6 +102,12 @@ function sectionTaoyuan(b: UserBackup, lines: string[]) {
     const predictedSum = sumByStage(combined, 'predicted');
     const announcedSum = sumByStage(combined, 'announced');
     const paidSum = sumByStage(combined, 'paid');
+    // 京东卡不并入税基 —— 见 lib/rewardMethod.ts 的 isTaxable
+    const announcedSplit = splitTaxable(combined, 'announced');
+    const announcedAfterTax =
+      announcedSum > 0
+        ? afterTaxCents(announcedSplit.taxable) + announcedSplit.nonTaxable
+        : 0;
     const methods = parseRewardMethods(ev.rewardMethods, ev.rewardMethod);
 
     lines.push(
@@ -117,7 +123,7 @@ function sectionTaoyuan(b: UserBackup, lines: string[]) {
         ev.topicTag,
         predictedSum > 0 ? formatYuan(predictedSum) : '',
         announcedSum > 0 ? formatYuan(announcedSum) : '',
-        announcedSum > 0 ? formatYuan(afterTaxCents(announcedSum)) : '',
+        announcedSum > 0 ? formatYuan(announcedAfterTax) : '',
         paidSum > 0 ? formatYuan(paidSum) : '',
         ev.note,
         ev.createdAt,

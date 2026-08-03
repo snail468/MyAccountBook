@@ -3,10 +3,11 @@ import {
   combineAmounts,
   deriveStatus,
   hasAnyByStage,
+  splitTaxable,
   summarizeNonMoney,
   sumByStage,
 } from '@/lib/amounts';
-import { rewardValueKind } from '@/lib/rewardMethod';
+import { isTaxable, rewardValueKind } from '@/lib/rewardMethod';
 
 const D = new Date('2026-07-01T00:00:00.000Z');
 
@@ -192,5 +193,101 @@ describe('hasAnyByStage / deriveStatus', () => {
       noLegacy,
     );
     expect(deriveStatus(e)).toBe('paid');
+  });
+});
+
+describe('splitTaxable · 京东卡不并入税基', () => {
+  it('isTaxable：京东卡免税，其它一律应税兜底', () => {
+    expect(isTaxable('jdcard')).toBe(false);
+    expect(isTaxable('cash')).toBe(true);
+    expect(isTaxable(null)).toBe(true); // 兜底应税，防止漏
+    expect(isTaxable(undefined)).toBe(true);
+    // 非 money 类的 key 理论上被 splitTaxable 用 kind 过滤掉了，
+    // 即便直接问也不能算免税
+    expect(isTaxable('qcoin')).toBe(true);
+    expect(isTaxable('merch')).toBe(true);
+    expect(isTaxable('custom:季度奖')).toBe(true);
+  });
+
+  it('现金 + 京东卡 分开：现金应税、京东卡免税', () => {
+    const e = combineAmounts(
+      [
+        row('a', 'announced', { cents: 500000, rewardMethod: 'cash' }),
+        row('b', 'announced', { cents: 200000, rewardMethod: 'jdcard' }),
+      ],
+      noLegacy,
+    );
+    expect(splitTaxable(e, 'announced')).toEqual({
+      taxable: 500000,
+      nonTaxable: 200000,
+    });
+  });
+
+  it('只有京东卡 → taxable=0，无需交税', () => {
+    const e = combineAmounts(
+      [row('a', 'announced', { cents: 300000, rewardMethod: 'jdcard' })],
+      noLegacy,
+    );
+    expect(splitTaxable(e, 'announced')).toEqual({
+      taxable: 0,
+      nonTaxable: 300000,
+    });
+  });
+
+  it('只有现金 → 全部计税', () => {
+    const e = combineAmounts(
+      [row('a', 'announced', { cents: 100000, rewardMethod: 'cash' })],
+      noLegacy,
+    );
+    expect(splitTaxable(e, 'announced')).toEqual({
+      taxable: 100000,
+      nonTaxable: 0,
+    });
+  });
+
+  it('非金额条目不出现在拆分里 —— Q币 / 周边不参与税基', () => {
+    const e = combineAmounts(
+      [
+        row('a', 'announced', { cents: 100000, rewardMethod: 'cash' }),
+        row('b', 'announced', { quantity: 500, rewardMethod: 'qcoin' }),
+        row('c', 'announced', { itemDesc: '手办', rewardMethod: 'merch' }),
+      ],
+      noLegacy,
+    );
+    expect(splitTaxable(e, 'announced')).toEqual({
+      taxable: 100000,
+      nonTaxable: 0,
+    });
+  });
+
+  it('阶段隔离：announced 的拆分不受 paid 影响', () => {
+    const e = combineAmounts(
+      [
+        row('a', 'announced', { cents: 100000, rewardMethod: 'jdcard' }),
+        row('b', 'paid', { cents: 200000, rewardMethod: 'jdcard' }),
+      ],
+      noLegacy,
+    );
+    expect(splitTaxable(e, 'announced')).toEqual({
+      taxable: 0,
+      nonTaxable: 100000,
+    });
+    expect(splitTaxable(e, 'paid')).toEqual({
+      taxable: 0,
+      nonTaxable: 200000,
+    });
+  });
+
+  it('rewardMethod=null（老数据）走应税兜底 —— 与 rewardValueKind 的 money 兜底配对', () => {
+    // custom: 前缀的 kind='text'，压根不进 splitTaxable（kind !== 'money' 就跳过），
+    // 所以自定义方式的金额行为跟着 sumByStage 走 —— 本身就不参与金额合计
+    const e = combineAmounts(
+      [row('a', 'announced', { cents: 200000, rewardMethod: null })],
+      noLegacy,
+    );
+    expect(splitTaxable(e, 'announced')).toEqual({
+      taxable: 200000,
+      nonTaxable: 0,
+    });
   });
 });

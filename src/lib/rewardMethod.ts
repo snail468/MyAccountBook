@@ -39,6 +39,23 @@ export function rewardValueKind(method: string | null | undefined): RewardValueK
   return 'money';
 }
 
+/**
+ * 该方式的金额是否要计入劳务报酬个税基数。
+ *
+ *   cash / null / 未知 key → 应税（真正的现金收入；兜底防漏税）
+ *   jdcard → 免税（实物等价物，个人所得税法上不并入劳务报酬预扣）
+ *   custom: 前缀 / qcoin / merch / carrotcoin → **走不到这里**
+ *     它们的 rewardValueKind 不是 'money'，splitTaxable 在过滤 kind==='money'
+ *     时已经跳过。所以 isTaxable 只对 money 类里的两个 key（cash / jdcard）
+ *     以及历史遗留的 null 有实际影响。
+ *
+ * **兜底策略与 rewardValueKind 一致**：未知 key 一律走应税，防止悄悄漏税。
+ */
+export function isTaxable(method: string | null | undefined): boolean {
+  if (method === 'jdcard') return false;
+  return true;
+}
+
 // 自定义方式用 "custom:名字" 表示
 export function rewardMethodLabel(key: string | null | undefined): string {
   if (!key) return '';

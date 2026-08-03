@@ -1,10 +1,12 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
 import Money from '@/components/ui/Money';
 import { formatShort } from '@/lib/datetime';
 import { daysSincePending, refundStatus } from '@/lib/refundStatus';
+import { useAlert, useConfirm } from '@/components/ui/Dialog';
 
 export type WorkExpense = {
   id: string;
@@ -23,17 +25,30 @@ export default function ExpenseList({
   initialEntries: WorkExpense[];
   initialCursor: string | null;
 }) {
+  const router = useRouter();
+  const [, startTransition] = useTransition();
+  const confirm = useConfirm();
+  const alert = useAlert();
+
   const [extra, setExtra] = useState<WorkExpense[]>([]);
   const [cursor, setCursor] = useState<string | null>(initialCursor);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  // 服务端重新给了第一页 → 丢掉已加载的后续页，避免重复/缺失
+  // 批量回款：选择模式 + 已选 id 集合
+  const [selecting, setSelecting] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [submitting, setSubmitting] = useState(false);
+
+  // 服务端重新给了第一页 → 丢掉已加载的后续页，避免重复/缺失。
+  // 同时清空选择状态 —— 页面刷新后已选的可能已经被别的操作改了
   const firstPageSig = initialEntries.map((e) => e.id).join(',');
   useEffect(() => {
     setExtra([]);
     setCursor(initialCursor);
     setError('');
+    setSelecting(false);
+    setSelectedIds(new Set());
   }, [firstPageSig, initialCursor]);
 
   const entries = useMemo(() => [...initialEntries, ...extra], [initialEntries, extra]);
@@ -49,6 +64,52 @@ export default function ExpenseList({
     return m;
   }, [entries]);
   const months = useMemo(() => [...byMonth.keys()].sort().reverse(), [byMonth]);
+
+  // 选中项合计（分）
+  const selectedTotal = useMemo(() => {
+    let sum = 0;
+    for (const e of entries) if (selectedIds.has(e.id)) sum += e.amountCents;
+    return sum;
+  }, [entries, selectedIds]);
+
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function batchRefund() {
+    if (selectedIds.size === 0) return;
+    const ok = await confirm({
+      title: `批量标为已回款？`,
+      body: `已选 ${selectedIds.size} 笔 · 合计 ${(selectedTotal / 100).toFixed(2)} 元。回款时间会写成"现在"。`,
+      confirmText: '标记回款',
+    });
+    if (!ok) return;
+    setSubmitting(true);
+    try {
+      const res = await fetch('/api/entries/batch-refund', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: [...selectedIds] }),
+      });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error || `HTTP ${res.status}`);
+      setSelecting(false);
+      setSelectedIds(new Set());
+      startTransition(() => router.refresh());
+    } catch (e) {
+      await alert({
+        title: '批量回款失败',
+        body: e instanceof Error ? e.message : '未知错误',
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   async function loadMore() {
     if (!cursor || loading) return;
@@ -74,8 +135,39 @@ export default function ExpenseList({
     return <div className="text-center text-sm text-ink-400 py-8">还没有出项</div>;
   }
 
+  // 有未回款条目才显示批量按钮 —— 全部已回款时批量框会挡视线
+  const anyPending = entries.some((e) => !e.refundedAt);
+
   return (
     <div className="space-y-6">
+      {anyPending && (
+        <div className="flex items-center justify-between">
+          {!selecting ? (
+            <button
+              onClick={() => setSelecting(true)}
+              className="text-xs text-ink-500 underline"
+            >
+              批量回款
+            </button>
+          ) : (
+            <>
+              <span className="text-xs text-ink-500">
+                已选 {selectedIds.size} 笔
+              </span>
+              <button
+                onClick={() => {
+                  setSelecting(false);
+                  setSelectedIds(new Set());
+                }}
+                className="text-xs text-ink-500 underline"
+              >
+                取消
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
       {months.map((m) => {
         const list = byMonth.get(m) ?? [];
         const sum = list.reduce((a, e) => a + e.amountCents, 0);
@@ -106,17 +198,37 @@ export default function ExpenseList({
                       refundedAt: null,
                     })
                   : 0;
+                // 选中态：只有未回款才允许勾选
+                const selectable = selecting && !refunded;
+                const selected = selectedIds.has(e.id);
                 return (
                   <div
                     key={e.id}
-                    className={`flex items-center gap-3 p-3 rounded-2xl border ${
-                      refunded
-                        ? 'bg-ink-50 dark:bg-ink-800/60 border-ink-200 dark:border-ink-700 text-ink-400'
-                        : overdue
-                          ? 'bg-amber-50/60 dark:bg-amber-900/10 border-amber-300 dark:border-amber-800'
-                          : 'bg-white dark:bg-ink-800 border-ink-200 dark:border-ink-700'
-                    }`}
+                    onClick={() => selectable && toggleSelect(e.id)}
+                    className={`flex items-center gap-3 p-3 rounded-2xl border transition ${
+                      selected
+                        ? 'bg-ink-100 dark:bg-ink-700 border-ink-400'
+                        : refunded
+                          ? 'bg-ink-50 dark:bg-ink-800/60 border-ink-200 dark:border-ink-700 text-ink-400'
+                          : overdue
+                            ? 'bg-amber-50/60 dark:bg-amber-900/10 border-amber-300 dark:border-amber-800'
+                            : 'bg-white dark:bg-ink-800 border-ink-200 dark:border-ink-700'
+                    } ${selectable ? 'cursor-pointer' : ''}`}
                   >
+                    {selecting && (
+                      <div
+                        className={`shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                          !selectable
+                            ? 'opacity-30 border-ink-300 dark:border-ink-600'
+                            : selected
+                              ? 'bg-ink-900 dark:bg-ink-100 border-ink-900 dark:border-ink-100 text-white dark:text-ink-900'
+                              : 'border-ink-300 dark:border-ink-600'
+                        }`}
+                        aria-label={selected ? '已选' : '未选'}
+                      >
+                        {selected && <span className="text-[10px]">✓</span>}
+                      </div>
+                    )}
                     <div className="flex-1 min-w-0">
                       <div
                         className={`text-sm font-medium truncate ${refunded ? 'line-through' : ''}`}
@@ -172,6 +284,29 @@ export default function ExpenseList({
       )}
       {!cursor && <div className="text-center text-[11px] text-ink-400 py-2">已经到底了</div>}
       {error && <p className="text-red-500 text-xs text-center">{error}</p>}
+
+      {/* 批量回款底部条 —— 有选中就浮出 */}
+      {selecting && selectedIds.size > 0 && (
+        <div className="fixed left-0 right-0 bottom-0 p-4 bg-white dark:bg-ink-900 border-t border-ink-200 dark:border-ink-700 shadow-lg z-40">
+          <div className="max-w-md mx-auto flex items-center gap-3">
+            <div className="flex-1 min-w-0">
+              <div className="text-xs text-ink-500">
+                已选 {selectedIds.size} 笔 · 合计
+              </div>
+              <div className="num text-lg font-semibold">
+                <Money cents={selectedTotal} />
+              </div>
+            </div>
+            <button
+              onClick={batchRefund}
+              disabled={submitting}
+              className="px-5 py-3 rounded-2xl bg-emerald-600 dark:bg-emerald-500 text-white text-sm font-medium disabled:opacity-60"
+            >
+              {submitting ? '标记中…' : '标为已回款'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

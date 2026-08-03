@@ -25,6 +25,9 @@ export type GeneralSummary = {
   income: number;
   expense: number;
   topCats: { category: string; cents: number }[];
+  // 分类别月预算：{ [category name]: cents }。服务端从 customCategories.budgets 抽出来，
+  // 客户端不再解析 JSON 一次。空对象表示没设任何分类预算
+  categoryBudgets: Record<string, number>;
 };
 
 // 类别智能排序用的最近使用记录。见 lib/categoryOrder.ts。

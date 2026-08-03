@@ -31,8 +31,16 @@ const WINDOW_MONTHS = 13;
  */
 async function loadRows(userId: string, since: Date): Promise<StatRow[]> {
   const [entries, generals, trips, paidAmounts] = await Promise.all([
+    // 工作账本**只算进项**：出项本质是"垫款"，公司迟早回款，
+    // 记进"支出"会让个人现金流看起来虚亏。回款条目也不需要单独算成收入 ——
+    // 它们只是让原来的垫款归零，本身不是新收入
     prisma.entry.findMany({
-      where: { userId, ...NOT_DELETED, occurredAt: { gte: since } },
+      where: {
+        userId,
+        ...NOT_DELETED,
+        direction: 'income',
+        occurredAt: { gte: since },
+      },
       select: { occurredAt: true, amountCents: true, direction: true, category: true },
     }),
     prisma.generalEntry.findMany({

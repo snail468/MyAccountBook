@@ -1,4 +1,4 @@
-import { summarizeNonMoney, type AmountEntry, type NonMoneySummary, type Stage } from '@/lib/amounts';
+import { splitTaxable, summarizeNonMoney, type AmountEntry, type NonMoneySummary, type Stage } from '@/lib/amounts';
 
 export type ClientEvent = {
   id: string;
@@ -59,4 +59,15 @@ export function aggregateCount(ev: ClientEvent, stage: Stage): number {
     0,
   );
   return own + childCount;
+}
+
+/**
+ * 父卡片聚合应税与免税金额（父 + 所有子）。
+ * 京东卡不并入税基 —— 见 lib/rewardMethod.ts 的 isTaxable。
+ */
+export function aggregateTaxSplit(
+  ev: ClientEvent,
+  stage: Stage,
+): { taxable: number; nonTaxable: number } {
+  return splitTaxable(allEntries(ev), stage);
 }
