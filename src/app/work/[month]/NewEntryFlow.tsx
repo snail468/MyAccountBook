@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { PRESET_CATEGORIES, type Direction } from '@/lib/categories';
 import { yuanToCents } from '@/lib/money';
 import { localInputToISO, toLocalInput } from '@/lib/datetime';
+import { friendlyFetchError } from '@/lib/netError';
 
 type Step = 'closed' | 'category' | 'amount';
 
@@ -76,7 +77,8 @@ export default function NewEntryFlow({ yearMonth }: { yearMonth: string }) {
       reset();
       startTransition(() => router.refresh());
     } catch (err) {
-      setError(err instanceof Error ? err.message : '保存失败');
+      // 网络错换成友好文案，避免"Failed to fetch"直出
+      setError(friendlyFetchError(err) ?? (err instanceof Error ? err.message : '保存失败'));
     } finally {
       setSaving(false);
     }

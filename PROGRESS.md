@@ -35,6 +35,7 @@
   - [2.22 未回款超期提醒 · 类别智能排序](#222-未回款超期提醒--类别智能排序)
   - [2.23 四项迭代：垫款 · 京东卡 · 批量回款 · 分类预算](#223-四项迭代垫款--京东卡--批量回款--分类预算)
   - [2.24 字号 · 周预算 · 超支高亮 · 离线记账](#224-字号--周预算--超支高亮--离线记账)
+  - [2.25 PWA 离线体验修复（SW 壳 + 弹窗预取 + 网络错文案）](#225-pwa-离线体验修复sw-壳--弹窗预取--网络错文案)
 - [四、待做](#四待做)
 - [五、验证与部署命令速查](#五验证与部署命令速查)
 
@@ -1021,6 +1022,44 @@ SQLite 的 UNIQUE 允许多个 NULL，历史条目（clientId=null）不冲突�
 
 **未做的：工作 / 桃源 / 旅游账本**。日常"随手记"最容易在断网时错过，就是
 普通账本；其它场景用户是坐在电脑前有意识地维护的，先聚焦一个避免过度扩面。
+
+### 2.25 PWA 离线体验修复（SW 壳 + 弹窗预取 + 网络错文案）
+
+真机（Android Chrome 安装的 PWA）暴露的三个 bug，其中两个在上一轮就已埋下：
+
+**Bug 1 · 断网后 ~1 分钟应用消失显示浏览器恐龙**。根因：`public/sw.js` 之前只
+精缓存了 icon/manifest，navigate 请求不拦截，任何跳转/prefetch/reload
+在离线时都会走浏览器的 offline 兜底页。修复：SW 版本升到 v6，加
+`req.mode === 'navigate'` 分支走 network-first → 无网时先回同 URL 的历史缓存、
+再回自定义的 `/offline.html`。RSC 请求（`?_rsc=xxx` 或 `RSC:1` 头）单独兜底
+成 503 空响应 —— Next.js 收到 503 会保留当前页面而不是崩溃。
+
+**Bug 2 · 普通/旅游账本离线点击"记一笔"抛 Application error**。根因：这两个
+账本的弹窗都是 `dynamic({ ssr:false })`，用户不点开就不下载 chunk；离线首次
+点击时 dynamic import 失败 → uncaught rejection → React 错误页。修复：
+`GeneralView` 与 `TravelView` mount 后用 `requestIdleCallback` 主动
+`import()` 一次预热，让 chunk 进 SW 静态缓存。**不改成静态 import** —— 那样
+会把弹窗代码塞回首屏 chunk 抵消掉 [2.18](#218-拆分大文件与弹窗按需加载) 的
+成果。
+
+**Bug 3 · 工作/桃源账本记账失败时显示"Failed to fetch"**。根因：`err.message`
+被直接塞进 setError。修复：新 `src/lib/netError.ts` 里的 `friendlyFetchError` ——
+`err instanceof TypeError` 或 `navigator.onLine === false` 时统一返
+"网络不可用，请检查连接后重试"。接入 `NewEntryFlow`（工作）、`NewEventButton`
+`StageDetail` `AmountEditor` `EditEventModal`（桃源）、`TripExpenseModal`
+`TripMembersModal`（旅游）7 处。**普通账本不用**：它在 B8 里已经把网络失败
+路径改成入队 + toast 了。
+
+**为什么普通账本要独享离线队列，其它账本给个提示就行**：普通账本是日常
+"随手记"场景 —— 用户在地铁里随手掏出手机记账，就想马上写完关掉。工作/桃源/
+旅游用户是坐在电脑前有意识地维护的，遇到断网告知一句"网络不可用"再让用户
+自己重试更符合他们的心智模型。
+
+**验证**：332 单测通过；10 个 HTTP 冒烟 188/188 全绿（新 smoke-pwa-fix 15
+项，含 SW 版本升级到 v6、精缓存 offline.html、navigate 分支存在、RSC 分支
+存在、**SW 不判断 /api 路径**、`/offline.html` 内容合理、PWA 关联静态资源
+可访问）。真实断网 + 弹窗渲染路径需要真机 DevTools Offline 验证 —— 不在
+CI 覆盖范围。
 
 ---
 

@@ -5,6 +5,7 @@ import Money from '@/components/ui/Money';
 import { formatShort, localInputToISO, toLocalInput } from '@/lib/datetime';
 import { yuanToCents } from '@/lib/money';
 import { rewardMethodLabel, rewardValueKind } from '@/lib/rewardMethod';
+import { friendlyFetchError } from '@/lib/netError';
 import type { Stage } from '@/lib/amounts';
 import type { ClientEvent } from './types';
 import { useConfirm } from '@/components/ui/Dialog';
@@ -332,7 +333,7 @@ function AmountEditor({
       }
       onDone();
     } catch (e) {
-      setError(e instanceof Error ? e.message : '保存失败');
+      setError(friendlyFetchError(e) ?? (e instanceof Error ? e.message : '保存失败'));
       setBusy(false);
     }
   }

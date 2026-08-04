@@ -21,12 +21,36 @@ import type { Entry, LedgerMeta, RecentUse } from './general/types';
 // 四个弹窗按需加载：它们全是 `{open && <Modal/>}` 条件渲染，用户不点开就用不到，
 // 静态 import 会把几百行表单代码塞进列表页的首屏 chunk。
 // ssr:false 是安全的 —— 它们本来就不出现在服务端渲染的 HTML 里。
+//
+// 但**离线场景下**首次点击"记一笔"会去下载 chunk —— 断网就抛
+// "Application error: a client-side exception has occurred"。所以下面
+// 用 useEffect 在页面挂载后 idle 时段主动 import 一次预热，
+// 让 chunk 进入浏览器缓存（并被 SW 命中），后续离线点开就没事
 const RecordModal = dynamic(() => import('./general/RecordModal'), { ssr: false });
 const EditEntryModal = dynamic(() => import('./general/EditEntryModal'), { ssr: false });
 const CategoryManagerModal = dynamic(() => import('./general/CategoryManagerModal'), {
   ssr: false,
 });
 const SettingsModal = dynamic(() => import('./general/SettingsModal'), { ssr: false });
+
+/** 预热所有弹窗的 chunk —— 见上方 dynamic() 注释 */
+function warmModalChunks() {
+  // 用 requestIdleCallback 避免和首屏渲染抢带宽
+  const run = () => {
+    void import('./general/RecordModal');
+    void import('./general/EditEntryModal');
+    void import('./general/CategoryManagerModal');
+    void import('./general/SettingsModal');
+  };
+  if (typeof window === 'undefined') return;
+  if ('requestIdleCallback' in window) {
+    (window as unknown as { requestIdleCallback: (cb: () => void) => void }).requestIdleCallback(
+      run,
+    );
+  } else {
+    setTimeout(run, 800);
+  }
+}
 
 // 服务端 page.tsx 从这里导入，保持原有的 import 路径不变
 export type { GeneralSummary } from './general/types';
@@ -81,6 +105,11 @@ export default function GeneralView({
     const timer = setTimeout(() => router.refresh(), ms + 1000);
     return () => clearTimeout(timer);
   }, [router]);
+
+  // 预热弹窗 chunk，让离线首次点"记一笔"不再抛 Application error
+  useEffect(() => {
+    warmModalChunks();
+  }, []);
 
   // 离线队列同步成功后：让服务端重发数据（新条目应该出现在列表里）
   const pendingForThisLedger = pending.filter((p) => p.ledgerId === ledger.id);

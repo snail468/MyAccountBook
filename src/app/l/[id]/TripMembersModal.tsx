@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import type { Member } from './TravelView';
 import { useAlert, useConfirm } from '@/components/ui/Dialog';
+import { friendlyFetchError } from '@/lib/netError';
 
 export default function TripMembersModal({
   ledgerId,
@@ -40,7 +41,7 @@ export default function TripMembersModal({
       setValue('');
       onChanged();
     } catch (e) {
-      setError(e instanceof Error ? e.message : '添加失败');
+      setError(friendlyFetchError(e) ?? (e instanceof Error ? e.message : '添加失败'));
     } finally {
       setBusy(false);
     }

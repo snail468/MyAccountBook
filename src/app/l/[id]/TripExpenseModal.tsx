@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { COMMON_CURRENCIES } from '@/lib/currencyList';
 import { yuanToCents } from '@/lib/money';
 import { localInputToISO, toLocalInput } from '@/lib/datetime';
+import { friendlyFetchError } from '@/lib/netError';
 import ImageUploader from '@/app/taoyuan/ImageUploader';
 import {
   allocateByWeight,
@@ -215,7 +216,7 @@ export default function TripExpenseModal({
       if (!res.ok) throw new Error(data.error || '保存失败');
       onSaved();
     } catch (e) {
-      setError(e instanceof Error ? e.message : '保存失败');
+      setError(friendlyFetchError(e) ?? (e instanceof Error ? e.message : '保存失败'));
     } finally {
       setSaving(false);
     }

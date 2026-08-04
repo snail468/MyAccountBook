@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { REWARD_METHODS, rewardMethodLabel } from '@/lib/rewardMethod';
 import { localInputToISO } from '@/lib/datetime';
+import { friendlyFetchError } from '@/lib/netError';
 import ImageUploader from './ImageUploader';
 
 export default function NewEventButton() {
@@ -84,7 +85,7 @@ export default function NewEventButton() {
       reset();
       startTransition(() => router.refresh());
     } catch (err) {
-      setError(err instanceof Error ? err.message : '保存失败');
+      setError(friendlyFetchError(err) ?? (err instanceof Error ? err.message : '保存失败'));
     } finally {
       setSaving(false);
     }

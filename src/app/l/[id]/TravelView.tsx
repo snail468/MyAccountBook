@@ -14,9 +14,29 @@ import { useConfirm } from '@/components/ui/Dialog';
 // 静态 import 会让「只是看一眼账单」的用户也把整套表单、成员管理和趣味报告下下来。
 // TripExpenseModal 是单个内聚组件（不像 GeneralView 有天然的组件边界可拆），
 // 强行按行数切开只会切出互相依赖的碎片；按需加载才是对症的做法。
+//
+// **离线兼容**：mount 后 idle 时段主动 import 一次，让 chunk 落进浏览器缓存
+// （SW 会用 cache-first 命中）。否则离线首次点"记一笔"会因 dynamic import
+// 失败抛出 "Application error: a client-side exception has occurred"。
 const TripExpenseModal = dynamic(() => import('./TripExpenseModal'), { ssr: false });
 const TripMembersModal = dynamic(() => import('./TripMembersModal'), { ssr: false });
 const TripFunReport = dynamic(() => import('./TripFunReport'), { ssr: false });
+
+function warmTripModalChunks() {
+  const run = () => {
+    void import('./TripExpenseModal');
+    void import('./TripMembersModal');
+    void import('./TripFunReport');
+  };
+  if (typeof window === 'undefined') return;
+  if ('requestIdleCallback' in window) {
+    (window as unknown as { requestIdleCallback: (cb: () => void) => void }).requestIdleCallback(
+      run,
+    );
+  } else {
+    setTimeout(run, 800);
+  }
+}
 
 export type Member = { id: string; userId: string | null; displayName: string };
 
@@ -104,6 +124,11 @@ export default function TravelView({
     setCursors({ pre: preCursor, during: duringCursor });
     setLoadError('');
   }, [firstPageSig, preCursor, duringCursor]);
+
+  // 预热弹窗 chunk（离线首次点"记一笔"不再抛 Application error）
+  useEffect(() => {
+    warmTripModalChunks();
+  }, []);
 
   const phaseList = useMemo(
     () =>

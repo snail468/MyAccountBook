@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { yuanToCents } from '@/lib/money';
 import { localInputToISO, toLocalInput } from '@/lib/datetime';
+import { friendlyFetchError } from '@/lib/netError';
 
 export default function AmountEditor({
   title,
@@ -38,7 +39,7 @@ export default function AmountEditor({
     try {
       await onSubmit(cents, localInputToISO(at));
     } catch (err) {
-      setError(err instanceof Error ? err.message : '失败');
+      setError(friendlyFetchError(err) ?? (err instanceof Error ? err.message : '失败'));
       setBusy(false);
     }
   }
