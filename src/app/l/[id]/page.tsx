@@ -24,14 +24,31 @@ function monthRange(now = new Date()) {
   return { start, end };
 }
 
+/**
+ * 本周区间：**周一 00:00 到下周一 00:00**（ISO 周制）。
+ * 用周一作为起点是国内习惯 —— 用户配置周起始日属于未来 C15，暂不做。
+ */
+function weekRange(now = new Date()) {
+  const dow = now.getDay(); // 0=周日, 1=周一, …, 6=周六
+  const daysSinceMonday = (dow + 6) % 7;
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - daysSinceMonday);
+  const end = new Date(start.getTime() + 7 * 24 * 60 * 60 * 1000);
+  return { start, end };
+}
+
 async function loadGeneral(ledgerId: string, customCategoriesJson: string | null) {
   const { start, end } = monthRange();
   const monthWhere = { ledgerId, ...NOT_DELETED, occurredAt: { gte: start, lt: end } };
-  // 分类别预算：从 customCategories.budgets 抽出来，客户端不再解析 JSON
-  const categoryBudgets = parseCustom(customCategoriesJson).budgets ?? {};
+  // 分类别预算：从 customCategories 抽出来，客户端不再解析 JSON
+  const custom = parseCustom(customCategoriesJson);
+  const categoryBudgets = custom.budgets ?? {};
+  const categoryBudgetsWeekly = custom.budgetsWeekly ?? {};
+  // 有周预算的类别才查本周花销 —— 不然对每类都跑一次 groupBy 太贵
+  const weeklyCategories = Object.keys(categoryBudgetsWeekly);
+  const { start: weekStart, end: weekEnd } = weekRange();
 
   // 汇总下推到 SQL —— 不再把全部条目拉进内存 reduce
-  const [byDirection, topCatRows, firstPage, recentUsage] = await Promise.all([
+  const [byDirection, topCatRows, firstPage, recentUsage, weeklySpendRows] = await Promise.all([
     prisma.generalEntry.groupBy({
       by: ['direction'],
       where: monthWhere,
@@ -57,7 +74,24 @@ async function loadGeneral(ledgerId: string, customCategoriesJson: string | null
       orderBy: TIME_DESC_ORDER,
       take: RECENCY_WINDOW,
     }),
+    // 周预算类别的本周花销 —— 没设周预算的类别跳过整个查询
+    weeklyCategories.length > 0
+      ? prisma.generalEntry.groupBy({
+          by: ['category'],
+          where: {
+            ledgerId,
+            ...NOT_DELETED,
+            direction: 'expense',
+            category: { in: weeklyCategories },
+            occurredAt: { gte: weekStart, lt: weekEnd },
+          },
+          _sum: { amountCents: true },
+        })
+      : Promise.resolve([]),
   ]);
+
+  const weeklySpend: Record<string, number> = {};
+  for (const r of weeklySpendRows) weeklySpend[r.category] = r._sum.amountCents ?? 0;
 
   const sumOf = (dir: string) =>
     byDirection.find((r) => r.direction === dir)?._sum.amountCents ?? 0;
@@ -74,6 +108,9 @@ async function loadGeneral(ledgerId: string, customCategoriesJson: string | null
       cents: r._sum.amountCents ?? 0,
     })),
     categoryBudgets,
+    categoryBudgetsWeekly,
+    weeklySpend,
+    weekStartISO: weekStart.toISOString(),
     entries: items.map((e) => ({
       id: e.id,
       direction: e.direction,
@@ -233,6 +270,9 @@ export default async function LedgerPage({ params }: { params: Promise<{ id: str
             expense: data.expense,
             topCats: data.topCats,
             categoryBudgets: data.categoryBudgets,
+            categoryBudgetsWeekly: data.categoryBudgetsWeekly,
+            weeklySpend: data.weeklySpend,
+            weekStartISO: data.weekStartISO,
           }}
           initialEntries={data.entries}
           initialCursor={data.nextCursor}

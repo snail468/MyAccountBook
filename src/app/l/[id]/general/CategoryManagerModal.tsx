@@ -41,18 +41,21 @@ export default function CategoryManagerModal({
     [state, tab],
   );
 
-  function setBudget(name: string, yuan: string) {
+  // 预算编辑：月与周独立。key 决定改哪个 map
+  function setBudget(name: string, yuan: string, period: 'month' | 'week') {
     setState((prev) => {
-      const budgets = { ...(prev.budgets ?? {}) };
+      const key: 'budgets' | 'budgetsWeekly' =
+        period === 'month' ? 'budgets' : 'budgetsWeekly';
+      const map = { ...(prev[key] ?? {}) };
       const trimmed = yuan.trim();
       if (!trimmed) {
-        delete budgets[name];
+        delete map[name];
       } else {
         const cents = Math.round(Number(trimmed) * 100);
-        if (Number.isFinite(cents) && cents > 0) budgets[name] = cents;
-        else delete budgets[name];
+        if (Number.isFinite(cents) && cents > 0) map[name] = cents;
+        else delete map[name];
       }
-      return { ...prev, budgets };
+      return { ...prev, [key]: map };
     });
   }
 
@@ -246,26 +249,43 @@ export default function CategoryManagerModal({
       {mode === 'budgets' && (
         <>
           <p className="text-[11px] text-ink-500 mb-3 leading-relaxed">
-            按类别设月预算（元），留空或填 0 表示不设。分类预算与账本总预算独立展示，
-            不会互相校验 —— 用户可以让分类之和大于或小于总预算。
+            月预算按自然月算，周预算按周一起算。同一类别可以同时设两种，
+            账本页会分开展示进度。留空或填 0 表示不设。
           </p>
+          <div className="grid grid-cols-[1fr_5rem_5rem_1rem] gap-x-2 text-[11px] text-ink-500 px-2.5 mb-1">
+            <span>类别</span>
+            <span className="text-right">月预算</span>
+            <span className="text-right">周预算</span>
+            <span></span>
+          </div>
           <div className="space-y-2 mb-3">
             {expenseCats.map((c) => {
-              const cur = state.budgets?.[c.name];
-              const yuan = cur ? (cur / 100).toString() : '';
+              const monthCur = state.budgets?.[c.name];
+              const weekCur = state.budgetsWeekly?.[c.name];
+              const monthYuan = monthCur ? (monthCur / 100).toString() : '';
+              const weekYuan = weekCur ? (weekCur / 100).toString() : '';
               return (
                 <div
                   key={c.name}
-                  className="flex items-center gap-3 p-2.5 rounded-2xl bg-ink-50 dark:bg-ink-800"
+                  className="grid grid-cols-[1fr_5rem_5rem_1rem] gap-x-2 items-center p-2 rounded-2xl bg-ink-50 dark:bg-ink-800"
                 >
-                  <span className="text-xl leading-none">{c.icon}</span>
-                  <span className="flex-1 text-sm truncate">{c.name}</span>
+                  <span className="flex items-center gap-2 min-w-0">
+                    <span className="text-xl leading-none">{c.icon}</span>
+                    <span className="text-sm truncate">{c.name}</span>
+                  </span>
                   <input
                     inputMode="decimal"
-                    value={yuan}
-                    onChange={(e) => setBudget(c.name, e.target.value)}
+                    value={monthYuan}
+                    onChange={(e) => setBudget(c.name, e.target.value, 'month')}
                     placeholder="—"
-                    className="w-24 px-2 py-1.5 rounded-lg text-right num text-sm bg-white dark:bg-ink-900 border border-ink-200 dark:border-ink-700 focus:outline-none focus:ring-1 focus:ring-ink-400"
+                    className="w-full px-2 py-1.5 rounded-lg text-right num text-sm bg-white dark:bg-ink-900 border border-ink-200 dark:border-ink-700 focus:outline-none focus:ring-1 focus:ring-ink-400"
+                  />
+                  <input
+                    inputMode="decimal"
+                    value={weekYuan}
+                    onChange={(e) => setBudget(c.name, e.target.value, 'week')}
+                    placeholder="—"
+                    className="w-full px-2 py-1.5 rounded-lg text-right num text-sm bg-white dark:bg-ink-900 border border-ink-200 dark:border-ink-700 focus:outline-none focus:ring-1 focus:ring-ink-400"
                   />
                   <span className="text-[11px] text-ink-500 shrink-0">元</span>
                 </div>

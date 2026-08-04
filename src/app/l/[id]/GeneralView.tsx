@@ -8,12 +8,13 @@
 
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
-import { useEffect, useMemo, useState, useTransition } from 'react';
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import Money from '@/components/ui/Money';
 import Lightbox from '@/components/ui/Lightbox';
 import { useConfirm } from '@/components/ui/Dialog';
 import { iconOf } from '@/lib/generalCategories';
+import { useOfflineQueue } from '@/lib/useOfflineQueue';
 import EntryRow from './general/EntryRow';
 import type { Entry, LedgerMeta, RecentUse } from './general/types';
 
@@ -53,6 +54,8 @@ export default function GeneralView({
   const [zoomImg, setZoomImg] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showCategoryManager, setShowCategoryManager] = useState(false);
+  // 离线队列：本页会展示"待同步 N 条"，同步成功后触发刷新让新条目出现在列表
+  const { pending, syncing, sync } = useOfflineQueue();
   const confirm = useConfirm();
 
   // —— 分页 ——
@@ -78,6 +81,17 @@ export default function GeneralView({
     const timer = setTimeout(() => router.refresh(), ms + 1000);
     return () => clearTimeout(timer);
   }, [router]);
+
+  // 离线队列同步成功后：让服务端重发数据（新条目应该出现在列表里）
+  const pendingForThisLedger = pending.filter((p) => p.ledgerId === ledger.id);
+  const prevPendingCount = useRef(pendingForThisLedger.length);
+  useEffect(() => {
+    if (pendingForThisLedger.length < prevPendingCount.current) {
+      // 有条目从队列消失了 → 说明同步成功，让服务端重发首屏数据
+      startTransition(() => router.refresh());
+    }
+    prevPendingCount.current = pendingForThisLedger.length;
+  }, [pendingForThisLedger.length, router, startTransition]);
 
   const entries = useMemo(
     () => [...initialEntries, ...extraEntries],
@@ -163,6 +177,24 @@ export default function GeneralView({
           ⚙
         </button>
       </div>
+
+      {pendingForThisLedger.length > 0 && (
+        <div className="mb-3 flex items-center justify-between p-3 rounded-2xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-xs">
+          <span className="text-amber-800 dark:text-amber-300">
+            📶 有 {pendingForThisLedger.length} 笔待同步
+            {pendingForThisLedger.some((p) => p.lastError) && (
+              <span className="ml-1">（部分失败）</span>
+            )}
+          </span>
+          <button
+            onClick={() => void sync()}
+            disabled={syncing}
+            className="px-3 py-1 rounded-lg bg-amber-500 dark:bg-amber-600 text-white disabled:opacity-60"
+          >
+            {syncing ? '同步中…' : '立即同步'}
+          </button>
+        </div>
+      )}
 
       <div className="rounded-3xl bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 p-5">
         <div className="text-xs text-ink-500 mb-1">
@@ -282,6 +314,49 @@ export default function GeneralView({
           </div>
         );
       })()}
+
+      {Object.keys(summary.categoryBudgetsWeekly).length > 0 && (
+        <div className="mt-4 rounded-3xl bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 p-5">
+          <div className="text-xs text-ink-500 mb-3">本周类别预算（周一起算）</div>
+          <div className="space-y-2">
+            {Object.entries(summary.categoryBudgetsWeekly).map(([cat, budget]) => {
+              const spent = summary.weeklySpend[cat] ?? 0;
+              const pct = budget > 0 ? Math.round((spent / budget) * 100) : 0;
+              const over = spent > budget;
+              const nearFull = pct >= 80 && !over;
+              const barColor = over ? 'bg-red-500' : nearFull ? 'bg-yellow-500' : 'bg-emerald-500';
+              return (
+                <div key={cat}>
+                  <div className="flex items-baseline justify-between text-sm">
+                    <span className="flex items-center gap-1.5">
+                      <span>{iconOf(cat, ledger.customCategories)}</span>
+                      <span>{cat}</span>
+                    </span>
+                    <span className="num text-ink-700 dark:text-ink-300">
+                      <Money cents={spent} />
+                      <span className="text-[10px] text-ink-500">
+                        {' '}
+                        / <Money cents={budget} /> · {pct}%
+                      </span>
+                    </span>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-ink-100 dark:bg-ink-700 mt-1 overflow-hidden">
+                    <div
+                      className={`h-full ${barColor} transition-[width]`}
+                      style={{ width: `${Math.min(100, pct)}%` }}
+                    />
+                  </div>
+                  {over && (
+                    <div className="text-[10px] text-red-500 mt-0.5">
+                      本周超支 <Money cents={spent - budget} />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <button
         onClick={() => setShowRecord(true)}

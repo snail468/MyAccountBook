@@ -170,9 +170,20 @@ model GeneralEntry {
   createdAt   DateTime @default(now())
   // 软删除。见 src/lib/softDelete.ts。
   deletedAt   DateTime?
+  // 离线记账幂等键：客户端在入队时生成一个 UUID，后端见到相同 clientId +
+  // ledgerId 时直接返回已有的 id，重放安全。
+  //
+  // 为什么放在 GeneralEntry 而不是所有表：普通账本是最常用于日常"随手记"的
+  // 场景 —— 也就最容易在断网时错过一笔。工作/桃源/旅游用户是坐在电脑前
+  // 有意识地维护的，先不上离线队列。见 src/lib/offlineQueue.ts。
+  //
+  // SQLite 允许 UNIQUE 里出现多个 NULL，所以历史条目（clientId=null）
+  // 不会互相冲突，只有客户端明确传了 UUID 的条目才走去重路径。
+  clientId    String?
 
   @@index([ledgerId, occurredAt])
   @@index([ledgerId, deletedAt])
+  @@unique([ledgerId, clientId])
 }
 
 // ============ 旅游账本 ============

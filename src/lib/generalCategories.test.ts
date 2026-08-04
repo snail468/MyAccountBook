@@ -7,17 +7,43 @@ import {
 } from '@/lib/generalCategories';
 
 describe('parseCustom · budgets', () => {
-  it('null/undefined → 空 added/hidden/budgets', () => {
-    expect(parseCustom(null)).toEqual({ added: [], hidden: [], budgets: {} });
-    expect(parseCustom(undefined)).toEqual({ added: [], hidden: [], budgets: {} });
+  it('null/undefined → 空 added/hidden/budgets/budgetsWeekly', () => {
+    expect(parseCustom(null)).toEqual({
+      added: [],
+      hidden: [],
+      budgets: {},
+      budgetsWeekly: {},
+    });
+    expect(parseCustom(undefined)).toEqual({
+      added: [],
+      hidden: [],
+      budgets: {},
+      budgetsWeekly: {},
+    });
   });
 
-  it('无 budgets 字段的老 JSON → budgets 是空对象', () => {
+  it('无 budgets 字段的老 JSON → 两个 map 都是空对象', () => {
     expect(parseCustom('{"added":[],"hidden":[]}')).toEqual({
       added: [],
       hidden: [],
       budgets: {},
+      budgetsWeekly: {},
     });
+  });
+
+  it('周预算与月预算独立解析', () => {
+    const c = parseCustom(
+      '{"added":[],"hidden":[],"budgets":{"餐饮":50000},"budgetsWeekly":{"餐饮":10000,"交通":5000}}',
+    );
+    expect(c.budgets).toEqual({ 餐饮: 50000 });
+    expect(c.budgetsWeekly).toEqual({ 餐饮: 10000, 交通: 5000 });
+  });
+
+  it('周预算的过滤规则与月预算一致（0/负数/NaN 剔除）', () => {
+    const c = parseCustom(
+      '{"added":[],"hidden":[],"budgetsWeekly":{"a":100,"b":0,"c":-1,"d":"x"}}',
+    );
+    expect(c.budgetsWeekly).toEqual({ a: 100 });
   });
 
   it('合法 budgets 保留', () => {
@@ -58,14 +84,25 @@ describe('stringifyCustom · budgets', () => {
     expect(JSON.parse(s)).toEqual({ added: [], hidden: [], budgets: { 餐饮: 50000 } });
   });
 
-  it('往返一致', () => {
+  it('往返一致（月 + 周 都有）', () => {
     const orig: CustomCategoriesJson = {
       added: [{ name: '孩子', icon: '🧸', direction: 'expense' }],
       hidden: ['娱乐'],
       budgets: { 餐饮: 50000, 交通: 20000 },
+      budgetsWeekly: { 餐饮: 10000 },
     };
     const roundTrip = parseCustom(stringifyCustom(orig));
-    expect(roundTrip).toEqual(orig);
+    expect(roundTrip).toEqual({ ...orig, budgetsWeekly: { 餐饮: 10000 } });
+  });
+
+  it('空 budgetsWeekly 不落库', () => {
+    const s = stringifyCustom({
+      added: [],
+      hidden: [],
+      budgets: { 餐饮: 50000 },
+      budgetsWeekly: {},
+    });
+    expect(JSON.parse(s)).toEqual({ added: [], hidden: [], budgets: { 餐饮: 50000 } });
   });
 });
 

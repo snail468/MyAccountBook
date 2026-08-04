@@ -7,6 +7,7 @@ import { ensureUserSetupOnce, maintenanceTick, runStartupTasks } from '@/lib/boo
 import { materializeDueRules } from '@/lib/recurringRun';
 import { parseRewardMethods, rewardValueKind } from '@/lib/rewardMethod';
 import { NOT_DELETED } from '@/lib/softDelete';
+import { parseCustom } from '@/lib/generalCategories';
 import LogoutButton from '@/components/LogoutButton';
 import ExportButton from '@/components/ExportButton';
 import ImportButton from '@/components/ImportButton';
@@ -122,8 +123,28 @@ async function loadDashboard(userId: string) {
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  // 本周（周一起）——与 /l/[id] 的口径一致
+  const dow = now.getDay();
+  const daysSinceMonday = (dow + 6) % 7;
+  const weekStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - daysSinceMonday);
+  const weekEnd = new Date(weekStart.getTime() + 7 * 24 * 60 * 60 * 1000);
 
-  const [generalSums, travelSums, travelMemberCounts] = await Promise.all([
+  // 收集有预算的账本 —— 没设任何分类预算就不查每类花销，省一次 groupBy
+  const budgetedGeneral = ledgers
+    .filter((l) => l.kind === 'general')
+    .map((l) => {
+      const c = parseCustom(l.customCategories);
+      return {
+        id: l.id,
+        name: l.name,
+        monthBudgets: c.budgets ?? {},
+        weekBudgets: c.budgetsWeekly ?? {},
+      };
+    })
+    .filter((l) => Object.keys(l.monthBudgets).length + Object.keys(l.weekBudgets).length > 0);
+
+  const [generalSums, travelSums, travelMemberCounts, budgetSpendMonth, budgetSpendWeek] =
+    await Promise.all([
     generalIds.length > 0
       ? prisma.generalEntry.groupBy({
           by: ['ledgerId', 'direction'],
@@ -149,7 +170,60 @@ async function loadDashboard(userId: string) {
           _count: { _all: true },
         })
       : Promise.resolve([]),
+    // 有分类月预算的账本才查当月类别花销 —— groupBy 只跑一次覆盖多账本
+    budgetedGeneral.some((l) => Object.keys(l.monthBudgets).length > 0)
+      ? prisma.generalEntry.groupBy({
+          by: ['ledgerId', 'category'],
+          where: {
+            ledgerId: { in: budgetedGeneral.map((l) => l.id) },
+            ...NOT_DELETED,
+            direction: 'expense',
+            occurredAt: { gte: monthStart, lt: monthEnd },
+          },
+          _sum: { amountCents: true },
+        })
+      : Promise.resolve([]),
+    // 有分类周预算的账本查本周花销
+    budgetedGeneral.some((l) => Object.keys(l.weekBudgets).length > 0)
+      ? prisma.generalEntry.groupBy({
+          by: ['ledgerId', 'category'],
+          where: {
+            ledgerId: { in: budgetedGeneral.map((l) => l.id) },
+            ...NOT_DELETED,
+            direction: 'expense',
+            occurredAt: { gte: weekStart, lt: weekEnd },
+          },
+          _sum: { amountCents: true },
+        })
+      : Promise.resolve([]),
   ]);
+
+  // 汇总各账本的超支类别数（月 + 周合并计数，同一类别双超算 2 项 —— 用户想看到具体多严重）
+  type OverInfo = { ledgerId: string; ledgerName: string; overCount: number };
+  const overByLedger = new Map<string, OverInfo>();
+  const bumpOver = (l: (typeof budgetedGeneral)[number]) => {
+    let info = overByLedger.get(l.id);
+    if (!info) {
+      info = { ledgerId: l.id, ledgerName: l.name, overCount: 0 };
+      overByLedger.set(l.id, info);
+    }
+    info.overCount += 1;
+  };
+  for (const l of budgetedGeneral) {
+    for (const [cat, budget] of Object.entries(l.monthBudgets)) {
+      const spent =
+        budgetSpendMonth.find((r) => r.ledgerId === l.id && r.category === cat)?._sum
+          .amountCents ?? 0;
+      if (spent > budget) bumpOver(l);
+    }
+    for (const [cat, budget] of Object.entries(l.weekBudgets)) {
+      const spent =
+        budgetSpendWeek.find((r) => r.ledgerId === l.id && r.category === cat)?._sum
+          .amountCents ?? 0;
+      if (spent > budget) bumpOver(l);
+    }
+  }
+  const overLedgers = [...overByLedger.values()].filter((o) => o.overCount > 0);
 
   const generalSumOf = (ledgerId: string, dir: string) =>
     generalSums.find((r) => r.ledgerId === ledgerId && r.direction === dir)?._sum
@@ -204,6 +278,7 @@ async function loadDashboard(userId: string) {
     countReward: [...countReward.entries()],
     textReward: [...textReward.entries()],
     ledgerCards,
+    overLedgers,
   };
 }
 
@@ -228,6 +303,28 @@ export default async function HomePage() {
         <div className="text-sm text-ink-500">{user.username} · 心愿便利贴</div>
         <LogoutButton />
       </div>
+
+      {s.overLedgers.length > 0 && (
+        <div className="mt-3 rounded-3xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-4">
+          <div className="text-xs text-red-800 dark:text-red-300 font-medium">
+            ⚠️ 分类预算超支
+          </div>
+          <div className="mt-1.5 space-y-1">
+            {s.overLedgers.map((o) => (
+              <Link
+                key={o.ledgerId}
+                href={`/l/${o.ledgerId}`}
+                className="flex items-center justify-between text-sm text-red-900 dark:text-red-200"
+              >
+                <span className="truncate">{o.ledgerName}</span>
+                <span className="shrink-0 text-[11px]">
+                  {o.overCount} 项超支 ›
+                </span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
 
       {showCombined && (
         <div className="rounded-3xl bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 p-6 mt-4 shadow-sm">
@@ -354,22 +451,32 @@ export default async function HomePage() {
           </Link>
         )}
 
-        {s.ledgerCards.map((c) => (
-          <Link
-            key={c.id}
-            href={`/l/${c.id}`}
-            className="flex items-center justify-between p-5 rounded-2xl bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 active:scale-[0.98] transition"
-          >
-            <div className="flex items-center gap-3 min-w-0">
-              <span className="text-xl">{c.icon ?? (c.kind === 'travel' ? '✈️' : '📒')}</span>
-              <div className="min-w-0">
-                <div className="text-lg font-medium truncate">{c.name}</div>
-                <div className="text-xs text-ink-500 mt-0.5 truncate">{c.summary}</div>
+        {s.ledgerCards.map((c) => {
+          const over = s.overLedgers.find((o) => o.ledgerId === c.id);
+          return (
+            <Link
+              key={c.id}
+              href={`/l/${c.id}`}
+              className="flex items-center justify-between p-5 rounded-2xl bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 active:scale-[0.98] transition"
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <span className="text-xl">{c.icon ?? (c.kind === 'travel' ? '✈️' : '📒')}</span>
+                <div className="min-w-0">
+                  <div className="text-lg font-medium truncate flex items-center gap-2">
+                    <span className="truncate">{c.name}</span>
+                    {over && (
+                      <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-red-500 text-white">
+                        超支 {over.overCount}
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-xs text-ink-500 mt-0.5 truncate">{c.summary}</div>
+                </div>
               </div>
-            </div>
-            <span className="text-ink-400">›</span>
-          </Link>
-        ))}
+              <span className="text-ink-400">›</span>
+            </Link>
+          );
+        })}
 
         <Link
           href="/recurring"

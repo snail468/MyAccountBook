@@ -28,6 +28,11 @@ export type GeneralSummary = {
   // 分类别月预算：{ [category name]: cents }。服务端从 customCategories.budgets 抽出来，
   // 客户端不再解析 JSON 一次。空对象表示没设任何分类预算
   categoryBudgets: Record<string, number>;
+  // 分类别周预算（可与月预算并存）
+  categoryBudgetsWeekly: Record<string, number>;
+  // 有周预算的类别本周花销（只查了这些类别，其它类别不在 map 里）
+  weeklySpend: Record<string, number>;
+  weekStartISO: string;
 };
 
 // 类别智能排序用的最近使用记录。见 lib/categoryOrder.ts。

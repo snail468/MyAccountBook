@@ -94,37 +94,46 @@ export type CustomCategoriesJson = {
   // 分类预算是"某类最多花多少"，两者独立展示，不做联动校验（用户可能故意让分类
   // 之和超过总预算，比如给"其它支出"留缓冲）
   budgets?: Record<string, number>;
+  // 分类别**周**预算：与月预算并存，一个类别可以同时有周和月两种。
+  // 单独用 map 而不是给 budgets 换成 {cents, period} 结构 —— 兼容老 JSON、
+  // 且账本页可以同时展示两条进度
+  budgetsWeekly?: Record<string, number>;
 };
 
+function parseBudgetMap(v: unknown): Record<string, number> {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return {};
+  return Object.fromEntries(
+    Object.entries(v).filter(
+      ([, val]) => typeof val === 'number' && Number.isFinite(val) && val > 0,
+    ) as [string, number][],
+  );
+}
+
 export function parseCustom(json: string | null | undefined): CustomCategoriesJson {
-  if (!json) return { added: [], hidden: [], budgets: {} };
+  if (!json) return { added: [], hidden: [], budgets: {}, budgetsWeekly: {} };
   try {
     const p = JSON.parse(json);
-    const budgets =
-      p.budgets && typeof p.budgets === 'object' && !Array.isArray(p.budgets)
-        ? Object.fromEntries(
-            Object.entries(p.budgets).filter(
-              ([, v]) => typeof v === 'number' && Number.isFinite(v) && v > 0,
-            ) as [string, number][],
-          )
-        : {};
     return {
       added: Array.isArray(p.added) ? p.added : [],
       hidden: Array.isArray(p.hidden) ? p.hidden : [],
-      budgets,
+      budgets: parseBudgetMap(p.budgets),
+      budgetsWeekly: parseBudgetMap(p.budgetsWeekly),
     };
   } catch {
-    return { added: [], hidden: [], budgets: {} };
+    return { added: [], hidden: [], budgets: {}, budgetsWeekly: {} };
   }
 }
 
 export function stringifyCustom(c: CustomCategoriesJson): string {
-  // 空 budgets 不落库 —— 让 diff 干净，也让"没有分类预算"和"预算全清 0"两种状态一致
+  // 空 budgets / budgetsWeekly 不落库 —— 让 diff 干净，
+  // 也让"没有分类预算"和"预算全清 0"两种状态一致
   const clean: CustomCategoriesJson = {
     added: c.added,
     hidden: c.hidden,
   };
   if (c.budgets && Object.keys(c.budgets).length > 0) clean.budgets = c.budgets;
+  if (c.budgetsWeekly && Object.keys(c.budgetsWeekly).length > 0)
+    clean.budgetsWeekly = c.budgetsWeekly;
   return JSON.stringify(clean);
 }
 
