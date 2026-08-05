@@ -159,7 +159,7 @@ async function loadDashboard(userId: string) {
 
   const [
     generalSums,
-    generalIncomeAllTime,
+    generalCumulativeSums,
     travelSums,
     travelMemberCounts,
     budgetSpendMonth,
@@ -176,17 +176,14 @@ async function loadDashboard(userId: string) {
           _sum: { amountCents: true },
         })
       : Promise.resolve([]),
-    // 普通账本的**累计**进项 —— 供"总收入 A"里的 E/F/G… 分量使用。
+    // 普通账本的**累计**收/支 —— 供"总收入 A"里的正/负分量使用。
     // 与 B/C/D 口径一致：累计而不是本月，这样长期趋势稳定；界面上每张普通账本
     // 卡片里的"本月支出/收入"另有一份 groupBy（generalSums）走的是本月口径。
+    // 一次 groupBy 拿两个 direction，避免为 income/expense 各发一条。
     generalIds.length > 0
       ? prisma.generalEntry.groupBy({
-          by: ['ledgerId'],
-          where: {
-            ledgerId: { in: generalIds },
-            ...NOT_DELETED,
-            direction: 'income',
-          },
+          by: ['ledgerId', 'direction'],
+          where: { ledgerId: { in: generalIds }, ...NOT_DELETED },
           _sum: { amountCents: true },
         })
       : Promise.resolve([]),
@@ -300,31 +297,63 @@ async function loadDashboard(userId: string) {
   }
 
   // "总收入 A" 的组成清单。key 是稳定标识（见 lib/userPrefs.ts），letter 是渲染
-  // 顺序里的展示层字母。B/C/D 固定语义；E 起按普通账本 order 依次分配。
-  // 每个组件独立可开/关，缺配置 = 启用（新增账本 / 新增来源默认自动进 A）。
+  // 顺序里的展示层字母。B/C/D 固定语义；E 起按账本 order 依次分配。
+  // sign=+1 是进项（加），sign=-1 是出项（减）。默认全开，新增账本会自动进 A。
+  //
+  // 排列顺序：先所有进项分量（B/C/D 固定，再普通账本进项），后所有出项分量
+  // （每本普通账本出项，再每本旅游账本出项）。这样字母顺序与视觉分组同步。
   const components: IncomeComponent[] = [];
-  const push = (key: IncomeComponentKey, name: string, cents: number) => {
+  const push = (
+    key: IncomeComponentKey,
+    name: string,
+    cents: number,
+    sign: 1 | -1,
+  ) => {
     components.push({
       key,
       letter: letterFor(components.length),
       name,
       cents,
+      sign,
       enabled: isIncomeComponentEnabled(prefs, key),
     });
   };
-  if (hasWork) push('work', '工作账本 · 进项', B);
+  if (hasWork) push('work', '工作账本 · 进项', B, 1);
   if (hasTaoyuan) {
-    push('taoyuan:cash', '桃源 · 现金奖励', C);
-    push('taoyuan:jd', '桃源 · 京东卡奖励', D);
+    push('taoyuan:cash', '桃源 · 现金奖励', C, 1);
+    push('taoyuan:jd', '桃源 · 京东卡奖励', D, 1);
   }
-  // 普通账本按 ledgers 顺序（order asc）—— generalLedgers 会保持这个顺序
+  // 普通账本按 ledgers 顺序（order asc）—— generalLedgers 保持这个顺序
   const generalLedgers = ledgers.filter((l) => l.kind === 'general');
-  const generalIncomeOf = (ledgerId: string) =>
-    generalIncomeAllTime.find((r) => r.ledgerId === ledgerId)?._sum.amountCents ?? 0;
+  const generalCumOf = (ledgerId: string, dir: string) =>
+    generalCumulativeSums.find((r) => r.ledgerId === ledgerId && r.direction === dir)?._sum
+      .amountCents ?? 0;
   for (const l of generalLedgers) {
-    push(`general:${l.id}` as IncomeComponentKey, `${l.name} · 进项`, generalIncomeOf(l.id));
+    push(`general:${l.id}` as IncomeComponentKey, `${l.name} · 进项`, generalCumOf(l.id, 'income'), 1);
   }
-  const A = components.filter((c) => c.enabled).reduce((sum, c) => sum + c.cents, 0);
+  // 出项减项（工作/桃源不在这里 —— 工作出项是垫款迟早回款，桃源没出项概念）
+  for (const l of generalLedgers) {
+    push(
+      `general-expense:${l.id}` as IncomeComponentKey,
+      `${l.name} · 出项`,
+      generalCumOf(l.id, 'expense'),
+      -1,
+    );
+  }
+  const travelLedgers = ledgers.filter((l) => l.kind === 'travel');
+  const travelCumOf = (ledgerId: string) =>
+    travelSums.find((r) => r.ledgerId === ledgerId)?._sum.amountBaseCents ?? 0;
+  for (const l of travelLedgers) {
+    push(
+      `travel-expense:${l.id}` as IncomeComponentKey,
+      `${l.name} · 出项`,
+      travelCumOf(l.id),
+      -1,
+    );
+  }
+  const A = components
+    .filter((c) => c.enabled)
+    .reduce((sum, c) => sum + c.cents * c.sign, 0);
 
   return {
     hasWork,

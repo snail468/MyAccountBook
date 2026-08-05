@@ -7,22 +7,32 @@
 //   * 合并写入而不是覆盖：PATCH 只改传入的字段，其它偏好保留
 
 /**
- * 首页"总收入"组成的开关。key 用**稳定字符串**做主键，不用字母 ——
+ * 首页"总收入 A"组成的开关。key 用**稳定字符串**做主键，不用字母 ——
  * 字母（B/C/D/E…）是渲染时按顺序算出来的展示层概念，会随账本增删漂移；
  * key 必须跟具体来源绑定：
- *   * 'work'          → 工作账本进项
- *   * 'taoyuan:cash'  → 桃源现金奖励
- *   * 'taoyuan:jd'    → 桃源京东卡奖励
- *   * 'general:<id>'  → 具体一本普通账本的进项
+ *   * 'work'                     → 工作账本进项 (+)
+ *   * 'taoyuan:cash'             → 桃源现金奖励 (+)
+ *   * 'taoyuan:jd'               → 桃源京东卡奖励 (+)
+ *   * 'general:<id>'             → 具体一本普通账本的进项 (+)
+ *   * 'general-expense:<id>'     → 具体一本普通账本的出项 (-)
+ *   * 'travel-expense:<id>'      → 具体一本旅游账本的出项，基准币种累计 (-)
  *
- * 值缺失或 true 都视为启用（默认全开）；显式 false 才是禁用。
- * 这样新加一本账本、新加一个来源不用改 prefs 也能自动出现在 A 里。
+ * 工作/桃源的出项**不出现**在这里：工作出项本质是垫款迟早回款，
+ * 桃源没有出项概念（活动只有 predicted/announced/paid 三段进项）。
+ *
+ * 值缺失或 true 都视为启用（默认全开）；显式 false 才是禁用。这样新加一本
+ * 账本、新加一个来源都会自动出现在 A 里 —— 不想要就手动 toggle 掉。
+ *
+ * 字段名沿用 incomeComponents 是历史包袱（v1 只有进项分量），如今它其实是
+ * "A 的所有分量（进项与出项）"的 map。不改名避免老数据兼容判据变复杂。
  */
 export type IncomeComponentKey =
   | 'work'
   | 'taoyuan:cash'
   | 'taoyuan:jd'
-  | `general:${string}`;
+  | `general:${string}`
+  | `general-expense:${string}`
+  | `travel-expense:${string}`;
 
 export type UserPrefs = {
   incomeComponents?: Record<string, boolean>;

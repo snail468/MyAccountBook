@@ -21,6 +21,8 @@ export type IncomeComponent = {
   letter: string;
   name: string;
   cents: number;
+  /** +1 = 进项（加入 A）；-1 = 出项（从 A 减去） */
+  sign: 1 | -1;
   enabled: boolean;
 };
 
@@ -40,11 +42,14 @@ export default function IncomeComponentsCard({
   const [showSettings, setShowSettings] = useState(false);
   const enabled = components.filter((c) => c.enabled);
 
-  // 公式串 "A = B + C + D"。禁用项从公式里省略 —— 缺字母本身就在暗示"你把它关了"。
+  // 公式串 "A = B + C - D"。第一项恒用 letter 打头（不加正号），后续按 sign
+  // 决定 " + X" 还是 " - X"。禁用项从公式里省略 —— 缺字母本身就在暗示"关了它"。
   const formula =
     enabled.length === 0
       ? '总收入 A（未启用任何来源）'
-      : `总收入 A = ${enabled.map((c) => c.letter).join(' + ')} (元)`;
+      : `总收入 A = ${enabled
+          .map((c, i) => (i === 0 ? c.letter : `${c.sign === 1 ? '+' : '-'} ${c.letter}`))
+          .join(' ')} (元)`;
 
   return (
     <div className="rounded-3xl bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 p-6 mt-4 shadow-sm">
@@ -61,20 +66,24 @@ export default function IncomeComponentsCard({
           </button>
         )}
       </div>
-      <div className="num text-5xl font-bold" style={{ color: '#ff2d87' }}>
+      {/* A 现在可能为负（出项减项超过进项）。负值不能用品牌粉，
+          换红色避免"负数展示成好看粉色"的误导 */}
+      <div
+        className={`num text-5xl font-bold ${A < 0 ? 'text-red-500' : ''}`}
+        style={A < 0 ? undefined : { color: '#ff2d87' }}
+      >
         <Money cents={A} />
       </div>
 
       {enabled.length > 0 && (
         <div className="mt-5 space-y-2 text-sm">
-          {enabled.map((c, i) => (
+          {enabled.map((c) => (
             <ComponentRow
               key={c.key}
               letter={c.letter}
               name={c.name}
               cents={c.cents}
-              // 第一项高亮，后续项弱化 —— 老 UI 里 D 就是灰的，保留视觉层级
-              dim={i > 1}
+              sign={c.sign}
             />
           ))}
         </div>
@@ -89,7 +98,8 @@ export default function IncomeComponentsCard({
               .filter((c) => !c.enabled)
               .map((c) => (
                 <span key={c.key} className="line-through">
-                  {c.name} <Money cents={c.cents} />
+                  {c.name} {c.sign === -1 && '−'}
+                  <Money cents={c.cents} />
                 </span>
               ))}
           </div>
@@ -132,13 +142,14 @@ function ComponentRow({
   letter,
   name,
   cents,
-  dim,
+  sign,
 }: {
   letter: string;
   name: string;
   cents: number;
-  dim?: boolean;
+  sign: 1 | -1;
 }) {
+  const isSubtract = sign === -1;
   return (
     <div className="flex items-baseline justify-between">
       <span className="text-xs text-ink-500">
@@ -146,9 +157,10 @@ function ComponentRow({
       </span>
       <span
         className={`num text-base font-medium ${
-          dim ? 'text-ink-400 dark:text-ink-500' : 'text-ink-900 dark:text-ink-100'
+          isSubtract ? 'text-red-500' : 'text-ink-900 dark:text-ink-100'
         }`}
       >
+        {isSubtract && '−'}
         <Money cents={cents} />
       </span>
     </div>
@@ -216,31 +228,47 @@ function SettingsModal({
       >
         <h3 className="text-lg font-medium mb-1">总收入 A 的组成</h3>
         <p className="text-xs text-ink-500 mb-4">
-          勾选想计入 A 的来源。B/C/D 是固定分量，E 起按普通账本顺序自动分配。
+          A = 勾选的进项之和 − 勾选的出项之和。字母按顺序静态分配，勾选不影响字母。
         </p>
 
-        <div className="space-y-2">
-          {components.map((c) => (
-            <label
-              key={c.key}
-              className="flex items-center gap-3 p-3 rounded-2xl bg-ink-50 dark:bg-ink-800 cursor-pointer"
-            >
-              <input
-                type="checkbox"
-                checked={!!local[c.key]}
-                onChange={(e) =>
-                  setLocal((prev) => ({ ...prev, [c.key]: e.target.checked }))
-                }
-                className="w-4 h-4"
-              />
-              <span className="w-6 text-sm font-semibold text-ink-500">{c.letter}</span>
-              <span className="flex-1 min-w-0 text-sm truncate">{c.name}</span>
-              <span className="num text-xs text-ink-500 shrink-0">
-                <Money cents={c.cents} />
-              </span>
-            </label>
-          ))}
-        </div>
+        {(['income', 'expense'] as const).map((group) => {
+          const list = components.filter((c) => (group === 'income' ? c.sign === 1 : c.sign === -1));
+          if (list.length === 0) return null;
+          return (
+            <div key={group} className="mb-3">
+              <div className="text-[11px] text-ink-500 mb-1.5 px-1">
+                {group === 'income' ? '进项（加入 A）' : '出项（从 A 减去）'}
+              </div>
+              <div className="space-y-2">
+                {list.map((c) => (
+                  <label
+                    key={c.key}
+                    className="flex items-center gap-3 p-3 rounded-2xl bg-ink-50 dark:bg-ink-800 cursor-pointer"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={!!local[c.key]}
+                      onChange={(e) =>
+                        setLocal((prev) => ({ ...prev, [c.key]: e.target.checked }))
+                      }
+                      className="w-4 h-4"
+                    />
+                    <span className="w-6 text-sm font-semibold text-ink-500">{c.letter}</span>
+                    <span className="flex-1 min-w-0 text-sm truncate">{c.name}</span>
+                    <span
+                      className={`num text-xs shrink-0 ${
+                        c.sign === -1 ? 'text-red-500' : 'text-ink-500'
+                      }`}
+                    >
+                      {c.sign === -1 && '−'}
+                      <Money cents={c.cents} />
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          );
+        })}
 
         {!Object.values(local).some(Boolean) && (
           <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-2">
