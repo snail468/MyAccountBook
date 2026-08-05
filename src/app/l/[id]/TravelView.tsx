@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import Money from '@/components/ui/Money';
 import Lightbox from '@/components/ui/Lightbox';
+import PendingBadge from '@/components/ui/PendingBadge';
 import { formatShort } from '@/lib/datetime';
 import type { NetBalance, Transfer } from '@/lib/settlement';
 import { useConfirm } from '@/components/ui/Dialog';
@@ -213,6 +214,8 @@ export default function TravelView({
           成员
         </button>
       </div>
+
+      <PendingBadge kind="travel" ledgerId={ledger.id} />
 
       <div className="rounded-3xl bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 p-5">
         <div className="text-xs text-ink-500 mb-1">

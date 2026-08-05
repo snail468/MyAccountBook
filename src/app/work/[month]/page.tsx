@@ -4,6 +4,7 @@ import { requireUser } from '@/lib/session';
 import { prisma } from '@/lib/db';
 import Money from '@/components/ui/Money';
 import Prefetcher from '@/components/ui/Prefetcher';
+import PendingBadge from '@/components/ui/PendingBadge';
 import NewEntryFlow from './NewEntryFlow';
 import EntryRow from './EntryRow';
 import { NOT_DELETED } from '@/lib/softDelete';
@@ -38,6 +39,7 @@ export default async function MonthPage({
       <div className="flex items-center gap-3 mb-6">
         <Link href="/work" className="text-ink-500 text-sm">‹ 工作账本</Link>
       </div>
+      <PendingBadge kind="work" />
       <div className="rounded-3xl bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 p-5">
         <div className="text-xs text-ink-500">
           {month.split('-')[0]} 年 {Number(month.split('-')[1])} 月

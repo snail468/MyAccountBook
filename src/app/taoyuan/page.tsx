@@ -7,6 +7,7 @@ import { buildEventTree } from '@/lib/taoyuanSerialize';
 import { NOT_DELETED } from '@/lib/softDelete';
 import { CREATED_DESC_ORDER, slicePageByCreated } from '@/lib/pagination';
 import Prefetcher from '@/components/ui/Prefetcher';
+import PendingBadge from '@/components/ui/PendingBadge';
 import TaoyuanClient from './TaoyuanClient';
 
 export const dynamic = 'force-dynamic';
@@ -78,6 +79,8 @@ export default async function TaoyuanPage() {
         <Link href="/" className="text-ink-500 text-sm">‹ 返回</Link>
         <h1 className="text-2xl font-semibold flex-1">桃源账本</h1>
       </div>
+
+      <PendingBadge kind="taoyuan" />
 
       <TaoyuanClient initialEvents={data.events} initialPaidCursor={data.paidCursor} />
     </div>

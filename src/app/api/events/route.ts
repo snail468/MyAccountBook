@@ -18,6 +18,8 @@ const bodySchema = z.object({
   contentImages: z.array(z.string().max(500)).max(9).optional(),
   topicTag: z.string().max(200).optional().nullable(),
   note: z.string().max(500).optional().nullable(),
+  // 离线队列幂等键。见 lib/offlineQueue.ts
+  clientId: z.string().length(36).optional().nullable(),
 });
 
 export async function POST(req: Request) {
@@ -29,23 +31,49 @@ export async function POST(req: Request) {
   if (!parsed.success) return badRequest();
   const p = parsed.data;
 
-  const event = await prisma.event.create({
-    data: {
-      userId: user.id,
-      title: p.title,
-      participate: p.participate,
-      startAt: p.startAt ? new Date(p.startAt) : null,
-      deadline: p.deadline ? new Date(p.deadline) : null,
-      content: p.content?.trim() || null,
-      reward: p.reward?.trim() || null,
-      rewardMethods: stringifyRewardMethods(p.rewardMethods ?? []),
-      contentImages: p.contentImages && p.contentImages.length > 0
-        ? JSON.stringify(p.contentImages)
-        : null,
-      topicTag: p.topicTag?.trim() || null,
-      note: p.note?.trim() || null,
-      status: 'published',
-    },
-  });
-  return NextResponse.json({ ok: true, id: event.id });
+  if (p.clientId) {
+    const existing = await prisma.event.findUnique({
+      where: { userId_clientId: { userId: user.id, clientId: p.clientId } },
+      select: { id: true },
+    });
+    if (existing) return NextResponse.json({ ok: true, id: existing.id, deduped: true });
+  }
+
+  try {
+    const event = await prisma.event.create({
+      data: {
+        userId: user.id,
+        title: p.title,
+        participate: p.participate,
+        startAt: p.startAt ? new Date(p.startAt) : null,
+        deadline: p.deadline ? new Date(p.deadline) : null,
+        content: p.content?.trim() || null,
+        reward: p.reward?.trim() || null,
+        rewardMethods: stringifyRewardMethods(p.rewardMethods ?? []),
+        contentImages: p.contentImages && p.contentImages.length > 0
+          ? JSON.stringify(p.contentImages)
+          : null,
+        topicTag: p.topicTag?.trim() || null,
+        note: p.note?.trim() || null,
+        status: 'published',
+        clientId: p.clientId ?? null,
+      },
+    });
+    return NextResponse.json({ ok: true, id: event.id });
+  } catch (err) {
+    if (
+      p.clientId &&
+      err &&
+      typeof err === 'object' &&
+      'code' in err &&
+      (err as { code: string }).code === 'P2002'
+    ) {
+      const existing = await prisma.event.findUnique({
+        where: { userId_clientId: { userId: user.id, clientId: p.clientId } },
+        select: { id: true },
+      });
+      if (existing) return NextResponse.json({ ok: true, id: existing.id, deduped: true });
+    }
+    throw err;
+  }
 }

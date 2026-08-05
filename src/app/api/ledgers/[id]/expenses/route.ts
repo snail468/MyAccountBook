@@ -40,6 +40,8 @@ const bodySchema = z
     note: z.string().max(500).optional().nullable(),
     imageUrls: z.array(z.string().max(500)).max(9).optional(),
     occurredAt: z.string().datetime().optional().nullable(),
+    // 离线队列幂等键。见 lib/offlineQueue.ts
+    clientId: z.string().length(36).optional().nullable(),
   })
   .refine((v) => v.allocation || v.splits, {
     message: '需要提供 allocation 或 splits',
@@ -155,32 +157,59 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
   const splits = resolved.shares;
 
-  const created = await prisma.$transaction(async (tx) => {
-    const e = await tx.tripExpense.create({
-      data: {
-        ledgerId: id,
-        payerId: p.payerId,
-        title: p.title,
-        category: p.category,
-        phase: p.phase,
-        currency: p.currency.toUpperCase(),
-        amountForeignCents: p.amountForeignCents,
-        rate: p.rate,
-        amountBaseCents,
-        note: p.note?.trim() || null,
-        imageUrls: p.imageUrls && p.imageUrls.length > 0 ? JSON.stringify(p.imageUrls) : null,
-        occurredAt: p.occurredAt ? new Date(p.occurredAt) : new Date(),
-      },
+  // 幂等：客户端传了 clientId 时先查
+  if (p.clientId) {
+    const existing = await prisma.tripExpense.findUnique({
+      where: { ledgerId_clientId: { ledgerId: id, clientId: p.clientId } },
+      select: { id: true },
     });
-    await tx.tripSplit.createMany({
-      data: splits.map((s) => ({
-        expenseId: e.id,
-        memberId: s.memberId,
-        shareCents: s.shareCents,
-      })),
-    });
-    return e;
-  });
+    if (existing) return NextResponse.json({ ok: true, id: existing.id, deduped: true });
+  }
 
-  return NextResponse.json({ ok: true, id: created.id });
+  try {
+    const created = await prisma.$transaction(async (tx) => {
+      const e = await tx.tripExpense.create({
+        data: {
+          ledgerId: id,
+          payerId: p.payerId,
+          title: p.title,
+          category: p.category,
+          phase: p.phase,
+          currency: p.currency.toUpperCase(),
+          amountForeignCents: p.amountForeignCents,
+          rate: p.rate,
+          amountBaseCents,
+          note: p.note?.trim() || null,
+          imageUrls: p.imageUrls && p.imageUrls.length > 0 ? JSON.stringify(p.imageUrls) : null,
+          occurredAt: p.occurredAt ? new Date(p.occurredAt) : new Date(),
+          clientId: p.clientId ?? null,
+        },
+      });
+      await tx.tripSplit.createMany({
+        data: splits.map((s) => ({
+          expenseId: e.id,
+          memberId: s.memberId,
+          shareCents: s.shareCents,
+        })),
+      });
+      return e;
+    });
+
+    return NextResponse.json({ ok: true, id: created.id });
+  } catch (err) {
+    if (
+      p.clientId &&
+      err &&
+      typeof err === 'object' &&
+      'code' in err &&
+      (err as { code: string }).code === 'P2002'
+    ) {
+      const existing = await prisma.tripExpense.findUnique({
+        where: { ledgerId_clientId: { ledgerId: id, clientId: p.clientId } },
+        select: { id: true },
+      });
+      if (existing) return NextResponse.json({ ok: true, id: existing.id, deduped: true });
+    }
+    throw err;
+  }
 }

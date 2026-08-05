@@ -10,10 +10,10 @@
 //   * 有新入队 —— 立即试一次
 
 import { useCallback, useEffect, useState } from 'react';
-import { listPending, syncAll, type QueuedEntry, type SyncResult } from '@/lib/offlineQueue';
+import { listPending, syncAll, type QueuedItem, type SyncResult } from '@/lib/offlineQueue';
 
 export function useOfflineQueue() {
-  const [pending, setPending] = useState<QueuedEntry[]>([]);
+  const [pending, setPending] = useState<QueuedItem[]>([]);
   const [syncing, setSyncing] = useState(false);
   const [lastResult, setLastResult] = useState<SyncResult | null>(null);
 
@@ -42,11 +42,15 @@ export function useOfflineQueue() {
     const onVisible = () => {
       if (document.visibilityState === 'visible') void sync();
     };
+    // 全局 OfflineSync 跑完时也刷新一下，让 badge 及时消失
+    const onGlobalSynced = () => void refresh();
     window.addEventListener('online', onOnline);
     document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('xyd:offline-synced', onGlobalSynced);
     return () => {
       window.removeEventListener('online', onOnline);
       document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('xyd:offline-synced', onGlobalSynced);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

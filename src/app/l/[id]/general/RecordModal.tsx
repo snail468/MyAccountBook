@@ -58,14 +58,18 @@ export default function RecordModal({
       if (shouldQueue) {
         try {
           await enqueue({
+            kind: 'general',
             ledgerId,
-            direction: data.direction,
-            category: data.category,
-            amountCents: data.amountCents,
-            tags: data.tags,
-            note: data.note,
-            imageUrls: data.imageUrls,
-            occurredAt: data.occurredAt ?? new Date().toISOString(),
+            payload: {
+              ledgerId,
+              direction: data.direction,
+              category: data.category,
+              amountCents: data.amountCents,
+              tags: data.tags,
+              note: data.note,
+              imageUrls: data.imageUrls,
+              occurredAt: data.occurredAt ?? new Date().toISOString(),
+            },
           });
           toast({
             message: '已存到本地，联网后自动同步',

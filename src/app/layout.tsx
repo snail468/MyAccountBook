@@ -6,6 +6,7 @@ import { DialogProvider } from '@/components/ui/Dialog';
 import FloatingToolbar from '@/components/ui/FloatingToolbar';
 import FxDelegator from '@/components/ui/FxDelegator';
 import GlobalProgress from '@/components/ui/GlobalProgress';
+import OfflineSync from '@/components/ui/OfflineSync';
 
 export const metadata: Metadata = {
   title: '心愿便利贴',
@@ -77,6 +78,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             <GlobalProgress />
             <FxDelegator />
             <FloatingToolbar />
+            <OfflineSync />
             <div className="mx-auto max-w-md min-h-dvh pb-20">{children}</div>
           </DialogProvider>
         </UIProvider>

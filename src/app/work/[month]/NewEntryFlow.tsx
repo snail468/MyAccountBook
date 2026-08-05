@@ -5,7 +5,9 @@ import { useRouter } from 'next/navigation';
 import { PRESET_CATEGORIES, type Direction } from '@/lib/categories';
 import { yuanToCents } from '@/lib/money';
 import { localInputToISO, toLocalInput } from '@/lib/datetime';
-import { friendlyFetchError } from '@/lib/netError';
+import { friendlyFetchError, isNetworkError } from '@/lib/netError';
+import { enqueue } from '@/lib/offlineQueue';
+import { useToast } from '@/components/ui/Dialog';
 
 type Step = 'closed' | 'category' | 'amount';
 
@@ -22,6 +24,7 @@ export default function NewEntryFlow({ yearMonth }: { yearMonth: string }) {
   const [occurredAt, setOccurredAt] = useState<string>(() => toLocalInput(new Date()));
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const toast = useToast();
 
   function reset() {
     setStep('closed');
@@ -59,6 +62,9 @@ export default function NewEntryFlow({ yearMonth }: { yearMonth: string }) {
       return;
     }
     setSaving(true);
+    // 幂等键：正常路径直接传给后端；断网入队时同一 clientId 让重放去重
+    const clientId = crypto.randomUUID();
+    const occurredAtISO = localInputToISO(occurredAt) ?? new Date().toISOString();
     try {
       const res = await fetch('/api/entries', {
         method: 'POST',
@@ -69,15 +75,48 @@ export default function NewEntryFlow({ yearMonth }: { yearMonth: string }) {
           direction,
           amountCents: cents,
           note: note.trim() || null,
-          occurredAt: localInputToISO(occurredAt),
+          occurredAt: occurredAtISO,
+          clientId,
         }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || '保存失败');
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (res.status >= 400 && res.status < 500) {
+          throw new Error(data.error || `HTTP ${res.status}`);
+        }
+        throw Object.assign(new Error(data.error || `HTTP ${res.status}`), { queue: true });
+      }
       reset();
       startTransition(() => router.refresh());
     } catch (err) {
-      // 网络错换成友好文案，避免"Failed to fetch"直出
+      // 网络失败或 5xx → 入队，联网后自动重放
+      const shouldQueue =
+        isNetworkError(err) ||
+        (err && typeof err === 'object' && 'queue' in err && (err as { queue?: boolean }).queue);
+      if (shouldQueue) {
+        try {
+          await enqueue({
+            kind: 'work',
+            ledgerId: 'work',
+            payload: {
+              yearMonth,
+              category,
+              direction,
+              amountCents: cents,
+              note: note.trim() || null,
+              occurredAt: occurredAtISO,
+            },
+          });
+          toast({ message: '已存到本地，联网后自动同步', kind: 'info' });
+          reset();
+          return;
+        } catch (qErr) {
+          setError(
+            '本地存储失败：' + (qErr instanceof Error ? qErr.message : '无法访问 IndexedDB'),
+          );
+          return;
+        }
+      }
       setError(friendlyFetchError(err) ?? (err instanceof Error ? err.message : '保存失败'));
     } finally {
       setSaving(false);

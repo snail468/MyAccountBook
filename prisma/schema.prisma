@@ -49,9 +49,13 @@ model Entry {
   // **所有金额聚合都必须过滤 deletedAt=null** —— 漏一处就把已删条目当有效数据算，
   // 总额会悄悄错。见 src/lib/softDelete.ts 的 NOT_DELETED。
   deletedAt    DateTime?
+  // 离线记账幂等键 —— 客户端在离线队列里生成 UUID，联网重放时后端见到
+  // 相同 (userId, clientId) 直接返回已有 id。见 src/lib/offlineQueue.ts。
+  clientId     String?
 
   @@index([userId, yearMonth])
   @@index([userId, deletedAt])
+  @@unique([userId, clientId])
 }
 
 // ============ 桃源账本 (built-in kind="taoyuan") ============
@@ -86,10 +90,13 @@ model Event {
   updatedAt      DateTime      @updatedAt
   // 软删除。见 src/lib/softDelete.ts。
   deletedAt      DateTime?
+  // 离线记账幂等键。见 src/lib/offlineQueue.ts。
+  clientId       String?
 
   @@index([userId, status])
   @@index([parentId])
   @@index([userId, deletedAt])
+  @@unique([userId, clientId])
 }
 
 model EventAmount {
@@ -222,11 +229,14 @@ model TripExpense {
   // 软删除。见 src/lib/softDelete.ts。
   // **旅游账本尤其危险**：软删的支出必须排除，否则成员净额和最优结算直接算错。
   deletedAt          DateTime?
+  // 离线记账幂等键。见 src/lib/offlineQueue.ts。
+  clientId           String?
 
   splits TripSplit[]
 
   @@index([ledgerId, phase])
   @@index([ledgerId, deletedAt])
+  @@unique([ledgerId, clientId])
 }
 
 model TripSplit {

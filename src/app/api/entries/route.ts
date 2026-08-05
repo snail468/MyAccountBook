@@ -61,6 +61,8 @@ const bodySchema = z.object({
   amountCents: z.number().int().positive().max(1_000_000_00),
   note: z.string().max(200).optional().nullable(),
   occurredAt: z.string().datetime().optional().nullable(),
+  // 离线队列幂等键：同 (userId, clientId) 直接返回已有 id。见 lib/offlineQueue.ts
+  clientId: z.string().length(36).optional().nullable(),
 });
 
 export async function POST(req: Request) {
@@ -72,22 +74,52 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return badRequest();
   }
-  const { yearMonth, category, direction, amountCents, note, occurredAt } = parsed.data;
+  const { yearMonth, category, direction, amountCents, note, occurredAt, clientId } = parsed.data;
 
   // 如果是预设类别，强制方向以预设为准
   const preset = PRESET_CATEGORIES.find((c) => c.name === category);
   const finalDirection = preset ? preset.direction : direction;
 
-  const entry = await prisma.entry.create({
-    data: {
-      userId: user.id,
-      yearMonth,
-      category,
-      direction: finalDirection,
-      amountCents,
-      note: note?.trim() || null,
-      occurredAt: occurredAt ? new Date(occurredAt) : new Date(),
-    },
-  });
-  return NextResponse.json({ ok: true, id: entry.id });
+  // 幂等：客户端传了 clientId 时先查 —— 之前入过的直接返回原 id
+  if (clientId) {
+    const existing = await prisma.entry.findUnique({
+      where: { userId_clientId: { userId: user.id, clientId } },
+      select: { id: true },
+    });
+    if (existing) {
+      return NextResponse.json({ ok: true, id: existing.id, deduped: true });
+    }
+  }
+
+  try {
+    const entry = await prisma.entry.create({
+      data: {
+        userId: user.id,
+        yearMonth,
+        category,
+        direction: finalDirection,
+        amountCents,
+        note: note?.trim() || null,
+        occurredAt: occurredAt ? new Date(occurredAt) : new Date(),
+        clientId: clientId ?? null,
+      },
+    });
+    return NextResponse.json({ ok: true, id: entry.id });
+  } catch (err) {
+    // UNIQUE 约束兜底：查完到 create 之间的竞态窗口
+    if (
+      clientId &&
+      err &&
+      typeof err === 'object' &&
+      'code' in err &&
+      (err as { code: string }).code === 'P2002'
+    ) {
+      const existing = await prisma.entry.findUnique({
+        where: { userId_clientId: { userId: user.id, clientId } },
+        select: { id: true },
+      });
+      if (existing) return NextResponse.json({ ok: true, id: existing.id, deduped: true });
+    }
+    throw err;
+  }
 }

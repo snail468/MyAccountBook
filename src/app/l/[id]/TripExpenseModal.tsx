@@ -5,7 +5,9 @@ import { useEffect, useState } from 'react';
 import { COMMON_CURRENCIES } from '@/lib/currencyList';
 import { yuanToCents } from '@/lib/money';
 import { localInputToISO, toLocalInput } from '@/lib/datetime';
-import { friendlyFetchError } from '@/lib/netError';
+import { friendlyFetchError, isNetworkError } from '@/lib/netError';
+import { enqueue } from '@/lib/offlineQueue';
+import { useToast } from '@/components/ui/Dialog';
 import ImageUploader from '@/app/taoyuan/ImageUploader';
 import {
   allocateByWeight,
@@ -93,6 +95,7 @@ export default function TripExpenseModal({
   );
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const toast = useToast();
 
   // 当币种变化时：先看内存，再拉实时汇率（编辑时首屏用已存汇率，不覆写）
   useEffect(() => {
@@ -190,6 +193,22 @@ export default function TripExpenseModal({
       return;
     }
     setSaving(true);
+    const clientId = crypto.randomUUID();
+    const occurredAtISO = localInputToISO(occurredAt) ?? new Date().toISOString();
+    const body = {
+      title: title.trim(),
+      category,
+      phase,
+      currency: currency.toUpperCase(),
+      amountForeignCents: amountForeignCents!,
+      rate: rateNum,
+      payerId,
+      // 提交权重而不是金额：服务端重算，保证 sum(shares) 恒等于总额
+      allocation,
+      note: note.trim() || null,
+      imageUrls,
+      occurredAt: occurredAtISO,
+    };
     try {
       const url = isEdit
         ? `/api/ledgers/${ledgerId}/expenses/${editing!.id}`
@@ -197,25 +216,39 @@ export default function TripExpenseModal({
       const res = await fetch(url, {
         method: isEdit ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: title.trim(),
-          category,
-          phase,
-          currency: currency.toUpperCase(),
-          amountForeignCents,
-          rate: rateNum,
-          payerId,
-          // 提交权重而不是金额：服务端重算，保证 sum(shares) 恒等于总额
-          allocation,
-          note: note.trim() || null,
-          imageUrls,
-          occurredAt: localInputToISO(occurredAt),
-        }),
+        body: JSON.stringify(isEdit ? body : { ...body, clientId }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || '保存失败');
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (res.status >= 400 && res.status < 500) {
+          throw new Error(data.error || `HTTP ${res.status}`);
+        }
+        throw Object.assign(new Error(data.error || `HTTP ${res.status}`), { queue: true });
+      }
       onSaved();
     } catch (e) {
+      // 编辑走 PATCH，服务端没做幂等，暂不入队 —— 断网编辑失败仍要求用户重来
+      const shouldQueue =
+        !isEdit &&
+        (isNetworkError(e) ||
+          (e && typeof e === 'object' && 'queue' in e && (e as { queue?: boolean }).queue));
+      if (shouldQueue) {
+        try {
+          await enqueue({
+            kind: 'travel',
+            ledgerId,
+            payload: { ledgerId, ...body },
+          });
+          toast({ message: '已存到本地，联网后自动同步', kind: 'info' });
+          onSaved();
+          return;
+        } catch (qErr) {
+          setError(
+            '本地存储失败：' + (qErr instanceof Error ? qErr.message : '无法访问 IndexedDB'),
+          );
+          return;
+        }
+      }
       setError(friendlyFetchError(e) ?? (e instanceof Error ? e.message : '保存失败'));
     } finally {
       setSaving(false);
