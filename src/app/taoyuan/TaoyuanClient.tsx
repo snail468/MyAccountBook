@@ -1,15 +1,60 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { ClientEvent } from './types';
 import { STATUS_LABEL, STATUS_ORDER } from './types';
 import NewEventButton from './NewEventButton';
 import EventCard from './EventCard';
 import MergeBar from './MergeBar';
 
-export default function TaoyuanClient({ events }: { events: ClientEvent[] }) {
+export default function TaoyuanClient({
+  initialEvents,
+  initialPaidCursor,
+}: {
+  initialEvents: ClientEvent[];
+  /** 只有"已到账"归档需要翻页；活跃项已全量加载 */
+  initialPaidCursor: string | null;
+}) {
   const [selecting, setSelecting] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+
+  const [extraPaid, setExtraPaid] = useState<ClientEvent[]>([]);
+  const [paidCursor, setPaidCursor] = useState<string | null>(initialPaidCursor);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [loadError, setLoadError] = useState('');
+
+  // 服务端重新给了首页 → 丢弃已加载的后续页
+  const firstPageSig = initialEvents.map((e) => e.id).join(',');
+  useEffect(() => {
+    setExtraPaid([]);
+    setPaidCursor(initialPaidCursor);
+    setLoadError('');
+  }, [firstPageSig, initialPaidCursor]);
+
+  const events = useMemo(
+    () => [...initialEvents, ...extraPaid],
+    [initialEvents, extraPaid],
+  );
+
+  async function loadMorePaid() {
+    if (!paidCursor || loadingMore) return;
+    setLoadingMore(true);
+    setLoadError('');
+    try {
+      const res = await fetch(
+        `/api/events/paid?cursor=${encodeURIComponent(paidCursor)}`,
+        { cache: 'no-store' },
+      );
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error || '加载失败');
+      setExtraPaid((prev) => [...prev, ...(j.events as ClientEvent[])]);
+      setPaidCursor(j.nextCursor ?? null);
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : '加载失败');
+    } finally {
+      setLoadingMore(false);
+    }
+  }
 
   const groups = useMemo(() => {
     const map = new Map<string, ClientEvent[]>();
@@ -82,6 +127,19 @@ export default function TaoyuanClient({ events }: { events: ClientEvent[] }) {
                     />
                   ))}
                 </div>
+              )}
+
+              {s === 'paid' && paidCursor && (
+                <button
+                  onClick={loadMorePaid}
+                  disabled={loadingMore}
+                  className="mt-2 w-full py-3 rounded-2xl bg-ink-50 dark:bg-ink-800 border border-ink-200 dark:border-ink-700 text-sm text-ink-500 active:scale-[0.98] transition disabled:opacity-60"
+                >
+                  {loadingMore ? '加载中…' : '加载更早的已完成活动'}
+                </button>
+              )}
+              {s === 'paid' && loadError && (
+                <p className="text-red-500 text-xs text-center mt-2">{loadError}</p>
               )}
             </section>
           );

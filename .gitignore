@@ -4,6 +4,9 @@ out
 build
 dist
 
+# TS 增量编译缓存
+*.tsbuildinfo
+
 # env
 .env
 .env.local
@@ -14,6 +17,11 @@ data/
 prisma/dev.db*
 *.db
 *.db-journal
+# prisma/build-placeholder.db 是构建产物，不是开发用的库：
+# next build 的 "Collecting page data" 阶段会 import 所有路由模块，Prisma 客户端
+# 一实例化就要求 DATABASE_URL 指向一个能打开的文件。Dockerfile 的 builder 阶段
+# 因此给了 DATABASE_URL="file:./build-placeholder.db"，构建时自动生成这个空库。
+# 它**不会**进入运行镜像（runner 是独立的 FROM 阶段），也不含任何数据，可随时删。
 
 # logs
 *.log

@@ -4,6 +4,9 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { REWARD_METHODS, rewardMethodLabel } from '@/lib/rewardMethod';
 import { localInputToISO } from '@/lib/datetime';
+import { friendlyFetchError, isNetworkError } from '@/lib/netError';
+import { enqueue } from '@/lib/offlineQueue';
+import { useToast } from '@/components/ui/Dialog';
 import ImageUploader from './ImageUploader';
 
 export default function NewEventButton() {
@@ -23,6 +26,7 @@ export default function NewEventButton() {
   const [note, setNote] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const toast = useToast();
 
   function reset() {
     setOpen(false);
@@ -62,29 +66,58 @@ export default function NewEventButton() {
       return;
     }
     setSaving(true);
+    const clientId = crypto.randomUUID();
+    // 离线时先剥掉图片：ImageUploader 只在联网时能拿到 imageUrls（网络失败它自己就报错），
+    // 走到这里如果 contentImages 有值那都是在线时上传完的；断网后重放直接原样发就好
+    const payload = {
+      title: title.trim(),
+      participate,
+      startAt: localInputToISO(startAt),
+      deadline: localInputToISO(deadline),
+      content: content.trim() || null,
+      contentImages,
+      reward: reward.trim() || null,
+      rewardMethods,
+      topicTag: topicTag.trim() || null,
+      note: note.trim() || null,
+    };
     try {
       const res = await fetch('/api/events', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: title.trim(),
-          participate,
-          startAt: localInputToISO(startAt),
-          deadline: localInputToISO(deadline),
-          content: content.trim() || null,
-          contentImages,
-          reward: reward.trim() || null,
-          rewardMethods,
-          topicTag: topicTag.trim() || null,
-          note: note.trim() || null,
-        }),
+        body: JSON.stringify({ ...payload, clientId }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || '保存失败');
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (res.status >= 400 && res.status < 500) {
+          throw new Error(data.error || `HTTP ${res.status}`);
+        }
+        throw Object.assign(new Error(data.error || `HTTP ${res.status}`), { queue: true });
+      }
       reset();
       startTransition(() => router.refresh());
     } catch (err) {
-      setError(err instanceof Error ? err.message : '保存失败');
+      const shouldQueue =
+        isNetworkError(err) ||
+        (err && typeof err === 'object' && 'queue' in err && (err as { queue?: boolean }).queue);
+      if (shouldQueue) {
+        try {
+          await enqueue({
+            kind: 'taoyuan',
+            ledgerId: 'taoyuan',
+            payload,
+          });
+          toast({ message: '已存到本地，联网后自动同步', kind: 'info' });
+          reset();
+          return;
+        } catch (qErr) {
+          setError(
+            '本地存储失败：' + (qErr instanceof Error ? qErr.message : '无法访问 IndexedDB'),
+          );
+          return;
+        }
+      }
+      setError(friendlyFetchError(err) ?? (err instanceof Error ? err.message : '保存失败'));
     } finally {
       setSaving(false);
     }

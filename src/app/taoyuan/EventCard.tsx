@@ -9,7 +9,9 @@ import type { Stage } from '@/lib/amounts';
 import Money from '@/components/ui/Money';
 import Lightbox from '@/components/ui/Lightbox';
 import type { ClientEvent } from './types';
-import { aggregateCount, aggregateSum } from './types';
+import { aggregateCount, aggregateNonMoney, aggregateSum, aggregateTaxSplit, hasMoney } from './types';
+import RewardValue from '@/components/ui/RewardValue';
+import type { NonMoneySummary } from '@/lib/amounts';
 import StageDetail from './StageDetail';
 import EditEventModal from './EditEventModal';
 import { useConfirm } from '@/components/ui/Dialog';
@@ -63,6 +65,18 @@ export default function EventCard({
     predicted: aggregateCount(event, 'predicted'),
     announced: aggregateCount(event, 'announced'),
     paid: aggregateCount(event, 'paid'),
+  };
+  // 非金额奖励（Q币个数、周边名目）与该阶段有没有金额分开算 ——
+  // 只发了 Q币的阶段金额是 0，但不能显示成 0.00，那会让人以为没发东西
+  const nonMoney: Record<Stage, NonMoneySummary[]> = {
+    predicted: aggregateNonMoney(event, 'predicted'),
+    announced: aggregateNonMoney(event, 'announced'),
+    paid: aggregateNonMoney(event, 'paid'),
+  };
+  const moneyFlags: Record<Stage, boolean> = {
+    predicted: hasMoney(event, 'predicted'),
+    announced: hasMoney(event, 'announced'),
+    paid: hasMoney(event, 'paid'),
   };
 
   async function del() {
@@ -159,7 +173,7 @@ export default function EventCard({
                   className="aspect-square rounded-lg overflow-hidden bg-ink-100 dark:bg-ink-700"
                   aria-label={`查看图片 ${i + 1}`}
                 >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  { }
                   <img src={url} alt="" className="w-full h-full object-cover" />
                 </button>
               ))}
@@ -205,6 +219,8 @@ export default function EventCard({
             label={STAGE_LABEL[s]}
             sum={sums[s]}
             count={counts[s]}
+            hasMoney={moneyFlags[s]}
+            nonMoney={nonMoney[s]}
             highlight={s === 'paid' && sums.paid > 0}
             disabled={selecting}
             onClick={() => setOpenStage(s)}
@@ -212,20 +228,30 @@ export default function EventCard({
         ))}
       </div>
 
-      {sums.announced > 0 && (
-        <div className="mt-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200/60 dark:border-amber-800/40 p-3 text-xs">
-          <div className="text-amber-800 dark:text-amber-300 flex items-center justify-between">
-            <span>税后金额（劳务报酬）</span>
-            <span className="num font-semibold text-base">
-              <Money cents={afterTaxCents(sums.announced)} />
-            </span>
+      {sums.announced > 0 && (() => {
+        // 京东卡不并入税基 —— 实物等价物在劳务报酬预扣里不参与个税，
+        // 之前用 afterTaxCents(sums.announced) 把它一起算了会多扣税
+        const { taxable, nonTaxable } = aggregateTaxSplit(event, 'announced');
+        const tax = calcTaxCents(taxable);
+        const afterTax = afterTaxCents(taxable) + nonTaxable;
+        return (
+          <div className="mt-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200/60 dark:border-amber-800/40 p-3 text-xs">
+            <div className="text-amber-800 dark:text-amber-300 flex items-center justify-between">
+              <span>税后金额（劳务报酬）</span>
+              <span className="num font-semibold text-base">
+                <Money cents={afterTax} />
+              </span>
+            </div>
+            <div className="mt-1 text-[10px] text-amber-700/80 dark:text-amber-400/70 num">
+              公示 <Money cents={sums.announced} /> · 应纳税{' '}
+              <Money cents={tax} />
+              {nonTaxable > 0 && (
+                <> · 京东卡 <Money cents={nonTaxable} /> 不计税</>
+              )}
+            </div>
           </div>
-          <div className="mt-1 text-[10px] text-amber-700/80 dark:text-amber-400/70 num">
-            公示 <Money cents={sums.announced} /> · 应纳税{' '}
-            <Money cents={calcTaxCents(sums.announced)} />
-          </div>
-        </div>
-      )}
+        );
+      })()}
 
       {merged && (
         <button
@@ -277,6 +303,8 @@ function StageButton({
   label,
   sum,
   count,
+  hasMoney,
+  nonMoney,
   highlight,
   disabled,
   onClick,
@@ -285,6 +313,8 @@ function StageButton({
   label: string;
   sum: number;
   count: number;
+  hasMoney: boolean;
+  nonMoney: NonMoneySummary[];
   highlight: boolean;
   disabled: boolean;
   onClick: () => void;
@@ -305,7 +335,11 @@ function StageButton({
         {hasValue && count > 1 && <span> · {count}</span>}
       </div>
       <div className="num text-sm font-bold mt-0.5">
-        {hasValue ? <Money cents={sum} /> : '+ 填写'}
+        {hasValue ? (
+          <RewardValue cents={sum} hasMoney={hasMoney} nonMoney={nonMoney} />
+        ) : (
+          '+ 填写'
+        )}
       </div>
     </button>
   );

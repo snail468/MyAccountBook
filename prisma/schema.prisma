@@ -15,10 +15,21 @@ model User {
   role         String   @default("user")
   createdAt    DateTime @default(now())
 
+  // 会话失效：改密码 / 管理员重置 / 强制下线时 +1。
+  // 已签发的 cookie 里带着旧值，校验不过就当未登录 ——
+  // 否则 iron-session 的 30 天有效期内，改完密码旧会话依然能用。
+  sessionVersion Int @default(0)
+
+  // 登录限流：连续失败累加，成功清零。lockedUntil 到点前拒绝尝试。
+  failedLoginCount Int       @default(0)
+  lockedUntil      DateTime?
+
   entries       Entry[]
   events        Event[]
   ledgers       Ledger[]
   memberships   TripMember[]
+  bankCards     BankCard[]
+  recurringRules RecurringRule[]
 }
 
 // ============ 工作账本 (built-in kind="work") ============
@@ -34,8 +45,17 @@ model Entry {
   occurredAt   DateTime  @default(now())
   refundedAt   DateTime?
   createdAt    DateTime  @default(now())
+  // 软删除：非空 = 在回收站，60 天后由 purgeExpiredRecords 硬删。
+  // **所有金额聚合都必须过滤 deletedAt=null** —— 漏一处就把已删条目当有效数据算，
+  // 总额会悄悄错。见 src/lib/softDelete.ts 的 NOT_DELETED。
+  deletedAt    DateTime?
+  // 离线记账幂等键 —— 客户端在离线队列里生成 UUID，联网重放时后端见到
+  // 相同 (userId, clientId) 直接返回已有 id。见 src/lib/offlineQueue.ts。
+  clientId     String?
 
   @@index([userId, yearMonth])
+  @@index([userId, deletedAt])
+  @@unique([userId, clientId])
 }
 
 // ============ 桃源账本 (built-in kind="taoyuan") ============
@@ -68,9 +88,15 @@ model Event {
   amounts        EventAmount[]
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
+  // 软删除。见 src/lib/softDelete.ts。
+  deletedAt      DateTime?
+  // 离线记账幂等键。见 src/lib/offlineQueue.ts。
+  clientId       String?
 
   @@index([userId, status])
   @@index([parentId])
+  @@index([userId, deletedAt])
+  @@unique([userId, clientId])
 }
 
 model EventAmount {
@@ -78,13 +104,22 @@ model EventAmount {
   eventId      String
   event        Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
   stage        String
+  // 金额（分）。**非金额奖励一律存 0** —— 这样所有既有的金额聚合天然不受影响。
+  // 计量方式由 rewardMethod 决定，见 src/lib/rewardMethod.ts 的 rewardValueKind
   cents        Int
+  // 个数类奖励：Q币、萝卜币多少个
+  quantity     Int?
+  // 文字类奖励：什么周边 / 什么自定义
+  itemDesc     String?
   note         String?
   rewardMethod String?
   occurredAt   DateTime @default(now())
   createdAt    DateTime @default(now())
+  // 软删除。见 src/lib/softDelete.ts。
+  deletedAt    DateTime?
 
   @@index([eventId, stage])
+  @@index([eventId, deletedAt])
 }
 
 // ============ 账本 (通用容器) ============
@@ -118,6 +153,7 @@ model Ledger {
   entries      GeneralEntry[]
   tripMembers  TripMember[]
   tripExpenses TripExpense[]
+  recurringRules RecurringRule[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -139,8 +175,22 @@ model GeneralEntry {
   imageUrls   String?  // JSON array
   occurredAt  DateTime @default(now())
   createdAt   DateTime @default(now())
+  // 软删除。见 src/lib/softDelete.ts。
+  deletedAt   DateTime?
+  // 离线记账幂等键：客户端在入队时生成一个 UUID，后端见到相同 clientId +
+  // ledgerId 时直接返回已有的 id，重放安全。
+  //
+  // 为什么放在 GeneralEntry 而不是所有表：普通账本是最常用于日常"随手记"的
+  // 场景 —— 也就最容易在断网时错过一笔。工作/桃源/旅游用户是坐在电脑前
+  // 有意识地维护的，先不上离线队列。见 src/lib/offlineQueue.ts。
+  //
+  // SQLite 允许 UNIQUE 里出现多个 NULL，所以历史条目（clientId=null）
+  // 不会互相冲突，只有客户端明确传了 UUID 的条目才走去重路径。
+  clientId    String?
 
   @@index([ledgerId, occurredAt])
+  @@index([ledgerId, deletedAt])
+  @@unique([ledgerId, clientId])
 }
 
 // ============ 旅游账本 ============
@@ -176,10 +226,17 @@ model TripExpense {
   imageUrls          String?  // JSON array
   occurredAt         DateTime @default(now())
   createdAt          DateTime @default(now())
+  // 软删除。见 src/lib/softDelete.ts。
+  // **旅游账本尤其危险**：软删的支出必须排除，否则成员净额和最优结算直接算错。
+  deletedAt          DateTime?
+  // 离线记账幂等键。见 src/lib/offlineQueue.ts。
+  clientId           String?
 
   splits TripSplit[]
 
   @@index([ledgerId, phase])
+  @@index([ledgerId, deletedAt])
+  @@unique([ledgerId, clientId])
 }
 
 model TripSplit {
@@ -203,4 +260,77 @@ model CurrencyRate {
   fetchedAt  DateTime @default(now())
 
   @@unique([base, quote])
+}
+
+// ============ 银行卡备份（加密存储） ============
+//
+// 威胁模型与加密方案见 src/lib/cardCrypto.ts。
+//
+// 字段分两类：
+//   * 明文：银行名、别名、卡类型、持卡人、**尾号** —— 列表页要显示，
+//     单独存尾号是为了列出卡片时不必把所有卡号都解密一遍
+//   * 密文：完整卡号、备注 —— AES-256-GCM，格式 v1$<iv>$<密文>
+//
+// **刻意没有 CVV 和取款密码字段**。它们不是"加密后就能存"的东西，
+// 支付行业规范明确禁止存储 CVV，本应用也没有任何场景需要。
+// 从 schema 层面不给这两个字段，就杜绝了以后有人"顺手加一个"。
+model BankCard {
+  id       String @id @default(cuid())
+  userId   String
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  bankName String  // 银行名，如"招商银行"
+  alias    String? // 用户自己起的别名，如"工资卡"
+  cardType String  // "debit" | "credit"
+  holder   String? // 持卡人姓名
+  last4    String  // 卡号后四位，明文
+
+  numberEnc String  // 完整卡号密文
+  noteEnc   String? // 备注密文
+
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, order])
+}
+
+// ============ 周期记账规则 ============
+//
+// 房租、订阅、工资这类固定项：配置一次，到期自动生成或提醒确认。
+// 排期计算（含月末钳制、补跑漏掉的期）在 src/lib/recurring.ts。
+//
+// target 决定生成到哪里：
+//   "work"    → Entry（工作账本，直接挂 userId）
+//   "general" → GeneralEntry（需要 ledgerId）
+// 旅游账本不支持 —— 它的支出必须带付款人与分摊，没法凭规则自动编一笔出来。
+model RecurringRule {
+  id       String  @id @default(cuid())
+  userId   String
+  user     User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  target   String  // "work" | "general"
+  ledgerId String? // target=general 时必填
+  ledger   Ledger? @relation(fields: [ledgerId], references: [id], onDelete: Cascade)
+
+  direction   String
+  category    String
+  amountCents Int
+  note        String?
+
+  frequency  String    // "monthly" | "weekly"
+  dayOfMonth Int?      // monthly：1-31，超出当月天数落到月末
+  dayOfWeek  Int?      // weekly：0=周日 … 6=周六
+  startDate  DateTime
+  endDate    DateTime?
+
+  // false = 只提醒不自动生成，用户自己确认后再记
+  autoCreate Boolean @default(true)
+  active     Boolean @default(true)
+  // 已经生成到哪一期。null 表示一期都还没生成
+  lastGeneratedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, active])
 }

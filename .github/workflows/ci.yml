@@ -1,0 +1,49 @@
+name: CI
+
+# 原来只有构建镜像的 workflow，没有任何代码检查 —— 类型错误/lint 问题
+# 要等到 Docker 构建那一步才炸，而且测试根本没跑过。
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Node 20 已 EOL，GitHub Actions 也在下线它。22 是当前 LTS，
+          # 与 Dockerfile 的基础镜像保持一致，避免 CI 测的和生产跑的不是一个大版本。
+          node-version: 22
+          # 注意：cache: npm 要求仓库里必须有 package-lock.json，
+          # 缺了会直接报 "Dependencies lock file is not found" 而不是降级
+          cache: npm
+
+      - name: Install deps
+        run: npm ci
+
+      # tsc 需要生成好的 prisma client 才能过
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm test
+
+      # next build 会在收集页面数据时真连数据库，所以先建一个空库
+      - name: Build
+        env:
+          DATABASE_URL: file:./ci.db
+          SESSION_SECRET: ci-only-placeholder-secret-at-least-32-chars
+        run: |
+          npx prisma migrate deploy
+          npm run build

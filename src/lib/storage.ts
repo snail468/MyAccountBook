@@ -1,12 +1,17 @@
-// 存储抽象：文件系统 vs Cloudflare R2
-//   本地/Docker：文件系统（沿用旧行为，不需要任何 env）
-//   Cloudflare：设置 R2_ACCOUNT_ID / R2_ACCESS_KEY / R2_SECRET_KEY / R2_BUCKET 即启用 R2
-//     —— 用 S3 兼容 API 走 fetch，Workers/Node 都能跑
+// 存储抽象：本地文件系统 vs S3 兼容对象存储
+//   默认：写本地文件系统（不需要任何 env），随数据卷一起备份
+//   可选：填齐 R2_ACCOUNT_ID / R2_ACCESS_KEY / R2_SECRET_KEY / R2_BUCKET 即切到对象存储
+//     —— 自己签 SigV4 走 fetch，没有 aws-sdk 依赖。
+//        MinIO / Backblaze B2 / Cloudflare R2 / AWS S3 都是这套协议。
+//        变量名带 R2_ 前缀是历史原因，与服务商无关；换服务商改下面的 r2Endpoint()。
 //
 // 存储的 key 结构与文件系统一致：`<userId>/<yyyy-mm>/<hash>.<ext>`
 // 上传后返回 URL 形如 `/api/uploads/<userId>/<yyyy-mm>/<hash>.<ext>` —— 前端不变
 
 import { createHash, createHmac } from 'node:crypto';
+import { createLogger, errorFields } from '@/lib/logger';
+
+const log = createLogger('storage');
 
 export type StoredFile = {
   key: string; // 相对路径 userId/yyyy-mm/xxx.ext
@@ -82,6 +87,67 @@ export async function getObject(key: string): Promise<ReadResult> {
   };
 }
 
+// ==== 删除 ====
+// 条目/活动/账本被硬删时调用，避免存储只增不减。
+// 失败只记日志不抛错 —— 删业务数据是主操作，清图片是尽力而为的附带操作，
+// 不能因为一张图删不掉就让用户的删除操作失败。
+export async function deleteObject(key: string): Promise<boolean> {
+  try {
+    if (isR2Configured()) {
+      return await r2Delete(key);
+    }
+    const { join, resolve, sep, normalize } = await import('node:path');
+    const { unlink } = await import('node:fs/promises');
+    const root = process.env.UPLOAD_ROOT || join(process.cwd(), 'data', 'uploads');
+    const rootResolved = resolve(root);
+    const rel = normalize(key);
+    // 与 getObject 相同的穿越防护：绝不允许删到上传根目录之外
+    if (rel.includes(`..${sep}`) || rel.startsWith(`..${sep}`) || rel === '..') return false;
+    const full = resolve(root, rel);
+    if (!full.startsWith(rootResolved + sep)) return false;
+    await unlink(full);
+    return true;
+  } catch (err) {
+    // ENOENT 属于正常情况（图片可能早就被删了 / 从没写成功过）
+    if ((err as NodeJS.ErrnoException)?.code !== 'ENOENT') {
+      log.warn('删除对象失败', { key, ...errorFields(err) });
+    }
+    return false;
+  }
+}
+
+/**
+ * 把 `/api/uploads/<userId>/<...>` 形式的 URL 还原成存储 key。
+ * 非本站上传的 URL（用户手填的外链）返回 null，调用方跳过即可。
+ */
+export function keyFromUploadUrl(url: string): string | null {
+  const PREFIX = '/api/uploads/';
+  if (!url.startsWith(PREFIX)) return null;
+  const rest = url.slice(PREFIX.length).split('?')[0];
+  if (!rest) return null;
+  try {
+    const key = rest
+      .split('/')
+      .map((s) => decodeURIComponent(s))
+      .join('/');
+    if (key.includes('..')) return null;
+    return key;
+  } catch {
+    return null;
+  }
+}
+
+/** 批量删除一组上传 URL 对应的对象，返回实际删掉的数量 */
+export async function deleteUploadUrls(urls: string[]): Promise<number> {
+  let n = 0;
+  for (const u of urls) {
+    const key = keyFromUploadUrl(u);
+    if (!key) continue;
+    if (await deleteObject(key)) n += 1;
+  }
+  return n;
+}
+
 // ==================== R2（S3 兼容 API）====================
 // 用 AWS SigV4 手写签名，避免拉 aws-sdk 巨型依赖，Node/Workers 都能跑
 
@@ -121,9 +187,18 @@ async function r2Get(key: string): Promise<ReadResult> {
   };
 }
 
+async function r2Delete(key: string): Promise<boolean> {
+  const bucket = process.env.R2_BUCKET!;
+  const url = `${r2Endpoint()}/${bucket}/${key}`;
+  const headers = await signR2Request('DELETE', url);
+  const res = await fetch(url, { method: 'DELETE', headers });
+  // S3 语义：删不存在的对象也返回 204，这里一并当成功
+  return res.ok || res.status === 404;
+}
+
 // —— SigV4 for R2（region=auto, service=s3）——
 async function signR2Request(
-  method: 'GET' | 'PUT',
+  method: 'GET' | 'PUT' | 'DELETE',
   urlStr: string,
   body?: Uint8Array,
   contentType?: string,

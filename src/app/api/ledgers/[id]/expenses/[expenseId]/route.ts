@@ -1,11 +1,19 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
-import { requireUser } from '@/lib/session';
+import { requireOwnedTripExpense } from '@/lib/ownership';
+import { badRequest } from '@/lib/apiError';
+import { cleanupRemovedImages } from '@/lib/imageCleanup';
+import { resolveShares } from '@/lib/resolveShares';
 
 const splitSchema = z.object({
   memberId: z.string().min(1),
   shareCents: z.number().int().nonnegative().max(1_000_000_00),
+});
+
+const allocationSchema = z.object({
+  memberId: z.string().min(1),
+  weight: z.number().positive().max(1_000_000),
 });
 
 const patchSchema = z.object({
@@ -16,50 +24,43 @@ const patchSchema = z.object({
   amountForeignCents: z.number().int().positive().max(1_000_000_00).optional(),
   rate: z.number().positive().max(1_000_000).optional(),
   payerId: z.string().min(1).optional(),
+  // 与 POST 保持同一套语义：allocation 走服务端重算，splits 走零容差校验
+  allocation: z.array(allocationSchema).min(1).max(50).optional(),
   splits: z.array(splitSchema).min(1).max(50).optional(),
   note: z.string().max(500).nullable().optional(),
   imageUrls: z.array(z.string().max(500)).max(9).optional(),
   occurredAt: z.string().datetime().nullable().optional(),
 });
 
-async function ensureOwn(ledgerId: string, expenseId: string, userId: string) {
-  const exp = await prisma.tripExpense.findUnique({
-    where: { id: expenseId },
-    select: { ledgerId: true, ledger: { select: { userId: true } } },
-  });
-  if (!exp || exp.ledgerId !== ledgerId || exp.ledger.userId !== userId) return null;
-  return exp;
-}
-
 export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string; expenseId: string }> },
 ) {
-  const user = await requireUser();
-  if (!user) return NextResponse.json({ error: '未登录' }, { status: 401 });
   const { id, expenseId } = await params;
-  const own = await ensureOwn(id, expenseId, user.id);
-  if (!own) return NextResponse.json({ error: '不存在' }, { status: 404 });
+  const ctx = await requireOwnedTripExpense(id, expenseId);
+  if (ctx instanceof Response) return ctx;
+  const { expense } = ctx;
 
   const body = await req.json().catch(() => null);
   const parsed = patchSchema.safeParse(body);
-  if (!parsed.success) return NextResponse.json({ error: '参数错误' }, { status: 400 });
+  if (!parsed.success) return badRequest();
   const p = parsed.data;
 
   // 若涉及成员/分摊，先确认所有 id 属于同一账本
-  if (p.payerId || p.splits) {
+  const participants = p.allocation ?? p.splits;
+  if (p.payerId || participants) {
     const members = await prisma.tripMember.findMany({
       where: { ledgerId: id },
       select: { id: true },
     });
     const memberIds = new Set(members.map((m) => m.id));
     if (p.payerId && !memberIds.has(p.payerId)) {
-      return NextResponse.json({ error: '付款人不在成员列表' }, { status: 400 });
+      return badRequest('付款人不在成员列表');
     }
-    if (p.splits) {
-      for (const s of p.splits) {
+    if (participants) {
+      for (const s of participants) {
         if (!memberIds.has(s.memberId)) {
-          return NextResponse.json({ error: '分摊成员不在成员列表' }, { status: 400 });
+          return badRequest('分摊成员不在成员列表');
         }
       }
     }
@@ -92,31 +93,48 @@ export async function PATCH(
     data.amountBaseCents = Math.round(foreign * rate);
   }
 
-  // 若 splits 变，校验总和
-  if (p.splits) {
-    const baseAfter =
-      (data.amountBaseCents as number | undefined) ??
-      (await prisma.tripExpense.findUniqueOrThrow({
+  // 金额或分摊有变动，就得重算分摊 —— 注意即便只改了金额、没改分摊人，
+  // 也必须按新总额重新分配，否则会留下一笔不守恒的账。
+  // （原来这里只在 p.splits 存在时校验，改金额不动分摊就能绕过去。）
+  const baseAfter =
+    (data.amountBaseCents as number | undefined) ??
+    (
+      await prisma.tripExpense.findUniqueOrThrow({
         where: { id: expenseId },
         select: { amountBaseCents: true },
-      })).amountBaseCents;
-    const sumShares = p.splits.reduce((a, s) => a + s.shareCents, 0);
-    if (Math.abs(sumShares - baseAfter) > Math.max(2, p.splits.length)) {
-      return NextResponse.json(
-        {
-          error: `分摊之和 ${(sumShares / 100).toFixed(2)} 与本币总额 ${(baseAfter / 100).toFixed(2)} 不匹配`,
-        },
-        { status: 400 },
-      );
+      })
+    ).amountBaseCents;
+
+  let newSplits: { memberId: string; shareCents: number }[] | null = null;
+
+  if (participants) {
+    const resolved = resolveShares(baseAfter, p.allocation, p.splits);
+    if (!resolved.ok) return badRequest(resolved.reason);
+    newSplits = resolved.shares;
+  } else if (data.amountBaseCents !== undefined) {
+    // 只改了金额：按原有分摊比例重新分配，保持守恒
+    const existing = await prisma.tripSplit.findMany({
+      where: { expenseId },
+      select: { memberId: true, shareCents: true },
+    });
+    if (existing.length > 0) {
+      const weights = existing.map((s) => ({
+        memberId: s.memberId,
+        // 原分摊为 0 的成员给一个极小权重，避免总权重为 0
+        weight: s.shareCents > 0 ? s.shareCents : 1e-9,
+      }));
+      const resolved = resolveShares(baseAfter, weights, undefined);
+      if (!resolved.ok) return badRequest(resolved.reason);
+      newSplits = resolved.shares;
     }
   }
 
   await prisma.$transaction(async (tx) => {
     await tx.tripExpense.update({ where: { id: expenseId }, data });
-    if (p.splits) {
+    if (newSplits) {
       await tx.tripSplit.deleteMany({ where: { expenseId } });
       await tx.tripSplit.createMany({
-        data: p.splits.map((s) => ({
+        data: newSplits.map((s) => ({
           expenseId,
           memberId: s.memberId,
           shareCents: s.shareCents,
@@ -125,18 +143,28 @@ export async function PATCH(
     }
   });
 
+  // 用户在编辑里移掉的小票照片，清理掉不再被任何记录引用的那些
+  if (p.imageUrls !== undefined) {
+    await cleanupRemovedImages(expense.imageUrls, p.imageUrls);
+  }
+
   return NextResponse.json({ ok: true });
 }
 
+// 软删：进回收站。图片保留 —— 恢复要看得到。TripSplit 不动，跟随支出一起进/出回收站。
+// 净额与最优结算会立即少这一笔（page.tsx 的 groupBy 已加 deletedAt=null 过滤）。
+// 彻底删走 DELETE /api/trash/tripExpense/:id
 export async function DELETE(
   _req: Request,
   { params }: { params: Promise<{ id: string; expenseId: string }> },
 ) {
-  const user = await requireUser();
-  if (!user) return NextResponse.json({ error: '未登录' }, { status: 401 });
   const { id, expenseId } = await params;
-  const own = await ensureOwn(id, expenseId, user.id);
-  if (!own) return NextResponse.json({ error: '不存在' }, { status: 404 });
-  await prisma.tripExpense.delete({ where: { id: expenseId } });
+  const ctx = await requireOwnedTripExpense(id, expenseId);
+  if (ctx instanceof Response) return ctx;
+
+  await prisma.tripExpense.update({
+    where: { id: expenseId },
+    data: { deletedAt: new Date() },
+  });
   return NextResponse.json({ ok: true });
 }

@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
-import { requireUser } from '@/lib/session';
+import { requireSessionUser } from '@/lib/ownership';
+import { badRequest, conflict } from '@/lib/apiError';
 
 const bodySchema = z.object({
   kind: z.enum(['work', 'taoyuan', 'general', 'travel']),
@@ -15,12 +16,12 @@ const bodySchema = z.object({
 });
 
 export async function POST(req: Request) {
-  const user = await requireUser();
-  if (!user) return NextResponse.json({ error: '未登录' }, { status: 401 });
+  const user = await requireSessionUser();
+  if (user instanceof Response) return user;
 
   const body = await req.json().catch(() => null);
   const parsed = bodySchema.safeParse(body);
-  if (!parsed.success) return NextResponse.json({ error: '参数错误' }, { status: 400 });
+  if (!parsed.success) return badRequest();
   const p = parsed.data;
 
   // 内置账本每人只能有一份
@@ -29,10 +30,7 @@ export async function POST(req: Request) {
       where: { userId: user.id, kind: p.kind, archived: false },
     });
     if (existing) {
-      return NextResponse.json(
-        { error: p.kind === 'work' ? '你已经有工作账本了' : '你已经有桃源账本了' },
-        { status: 409 },
-      );
+      return conflict(p.kind === 'work' ? '你已经有工作账本了' : '你已经有桃源账本了');
     }
   }
 

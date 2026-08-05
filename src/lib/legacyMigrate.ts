@@ -1,4 +1,7 @@
 import { prisma } from '@/lib/db';
+import { createLogger } from '@/lib/logger';
+
+const log = createLogger('legacyMigrate');
 
 // 一次性把旧列 (predictedCents / announcedCents / paidCents) 迁到 EventAmount 表
 // 每个 Node 进程启动后跑一次，幂等：只处理 EventAmount 尚无对应 stage 记录的事件
@@ -68,7 +71,7 @@ export function ensureLegacyMigrated(): Promise<void> {
       }
       done = true;
     } catch (err) {
-      console.error('[legacyMigrate] failed:', err);
+      log.error('旧金额列迁移失败', err);
       running = null; // 允许重试
       throw err;
     }

@@ -76,6 +76,32 @@ export default function FloatingToolbar() {
               </div>
             </div>
 
+            <div className="mb-4">
+              <div className="text-xs text-ink-500 mb-2">字号</div>
+              <div className="grid grid-cols-3 gap-2">
+                {(['small', 'normal', 'large'] as const).map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => ui.setFontScale(s)}
+                    className={`py-3 rounded-2xl ${
+                      ui.fontScale === s
+                        ? 'bg-ink-900 dark:bg-ink-100 text-white dark:text-ink-900'
+                        : 'bg-ink-50 dark:bg-ink-800'
+                    }`}
+                    style={{
+                      fontSize: s === 'small' ? '13px' : s === 'large' ? '18px' : '15px',
+                    }}
+                  >
+                    {s === 'small' ? '小' : s === 'normal' ? '标准' : '大'}
+                  </button>
+                ))}
+              </div>
+              <p className="text-[11px] text-ink-500 mt-2">
+                全局 rem 缩放：小 14px / 标准 16px / 大 18px。所有 Tailwind
+                的 rem 尺度会等比放大，不改任何组件。
+              </p>
+            </div>
+
             <div className="space-y-3">
               <label className="flex items-center justify-between p-3 rounded-2xl bg-ink-50 dark:bg-ink-800 cursor-pointer">
                 <div>

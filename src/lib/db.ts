@@ -1,82 +1,50 @@
 import { PrismaClient } from '@prisma/client';
+import { createLogger, errorFields } from '@/lib/logger';
+
+const log = createLogger('db');
 
 declare global {
-  // eslint-disable-next-line no-var
+  // dev 模式下 HMR 会反复求值模块，用 global 缓存实例避免连接数爆掉
   var prisma: PrismaClient | undefined;
-  // eslint-disable-next-line no-var
   var __xydWalConfigured: boolean | undefined;
 }
 
-// —— 双模式 ——
-//   Docker / 本地：TURSO_DATABASE_URL 未设 → 走 file:./data/app.db（保持不变）
-//   Cloudflare / 远端 SQLite：TURSO_DATABASE_URL 设了 → 用 libsql 适配器
-// 用 Function('return require')() 绕开 webpack 静态分析 ——
-// 让 Docker 构建即便没装 @prisma/adapter-libsql / @libsql/client 也不会
-// 产生 "Module not found" 警告；CF 构建时才真正 require 到。
-function opaqueRequire(id: string): unknown {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-implied-eval, no-new-func
-    const req = Function('return require')() as NodeJS.Require;
-    return req(id);
-  } catch {
-    return null;
-  }
-}
-
-function createPrisma(): PrismaClient {
-  const tursoUrl = process.env.TURSO_DATABASE_URL;
-  if (tursoUrl) {
-    /* eslint-disable @typescript-eslint/no-explicit-any */
-    const adapterMod = opaqueRequire('@prisma/adapter-libsql') as any;
-    const clientMod = opaqueRequire('@libsql/client') as any;
-    if (adapterMod?.PrismaLibSQL && clientMod?.createClient) {
-      try {
-        const libsql = clientMod.createClient({
-          url: tursoUrl,
-          authToken: process.env.TURSO_AUTH_TOKEN,
-        });
-        const adapter = new adapterMod.PrismaLibSQL(libsql);
-        return new PrismaClient({
-          adapter,
-          log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
-        } as any);
-      } catch (err) {
-        console.error('[db] 初始化 libsql 适配器失败，回退本地 SQLite:', err);
-      }
-    } else {
-      console.error(
-        '[db] TURSO_DATABASE_URL 已设置但 @prisma/adapter-libsql / @libsql/client 未安装。' +
-          '请先跑 npm run cf:setup。回退到本地 SQLite。',
-      );
-    }
-    /* eslint-enable */
-  }
-  return new PrismaClient({
+// 单一数据源：本地 SQLite 文件，路径由 DATABASE_URL 指定。
+//   本地开发：file:./data/app.db（注意 Prisma 对相对路径是**相对 prisma/ 目录**
+//             解析的，实际落在 prisma/data/app.db）
+//   Docker  ：file:/data/app.db（绝对路径，挂载卷）
+//
+// 曾经这里有一套「TURSO_DATABASE_URL 存在则切到 libsql 驱动适配器」的双模式，
+// 用于 Cloudflare Workers 部署。已整体移除 —— Prisma 5.x 的 @prisma/client
+// 在 workerd 条件下解析到带 Rust 引擎的入口，实例化时就探测文件系统找引擎
+// 二进制，报 "[unenv] fs.readdir is not implemented yet!"，且无法通过
+// bundler 配置绕开（Next 把 @prisma/client 列为 server external package）。
+// 详见 PROGRESS.md。
+export const prisma =
+  global.prisma ??
+  new PrismaClient({
     log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
   });
-}
-
-export const prisma = global.prisma ?? createPrisma();
 
 if (process.env.NODE_ENV !== 'production') {
   global.prisma = prisma;
 }
 
 // 单次初始化：开 WAL + 设 busy timeout。让多人同时读写不互相锁死。
-// Turso 是远端服务不需要 PRAGMA，跳过。
 async function configureSqlite(client: PrismaClient) {
   if (global.__xydWalConfigured) return;
-  if (process.env.TURSO_DATABASE_URL) {
-    global.__xydWalConfigured = true;
-    return;
-  }
   try {
-    await client.$executeRawUnsafe('PRAGMA journal_mode=WAL');
-    await client.$executeRawUnsafe('PRAGMA busy_timeout=5000');
-    await client.$executeRawUnsafe('PRAGMA synchronous=NORMAL');
+    // 必须用 $queryRawUnsafe 而不是 $executeRawUnsafe：
+    // PRAGMA journal_mode=WAL 会返回一行结果（新的 journal 模式名），
+    // 而 $executeRawUnsafe 在 SQLite 上遇到返回值会直接报
+    // "Execute returned results, which is not allowed in SQLite"。
+    // 这个错以前被 catch 吞掉只打了条 warn —— 结果 WAL 其实一直没开成。
+    await client.$queryRawUnsafe('PRAGMA journal_mode=WAL');
+    await client.$queryRawUnsafe('PRAGMA busy_timeout=5000');
+    await client.$queryRawUnsafe('PRAGMA synchronous=NORMAL');
     global.__xydWalConfigured = true;
   } catch (err) {
-    console.warn('[db] configure sqlite failed:', err);
+    log.warn('SQLite 初始化 PRAGMA 失败', errorFields(err));
   }
 }
 

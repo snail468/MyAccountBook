@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
-import { requireUser } from '@/lib/session';
+import { requireOwnedGeneralEntry } from '@/lib/ownership';
+import { badRequest } from '@/lib/apiError';
+import { cleanupRemovedImages } from '@/lib/imageCleanup';
 
 const patchSchema = z.object({
   direction: z.enum(['income', 'expense']).optional(),
@@ -13,28 +15,18 @@ const patchSchema = z.object({
   occurredAt: z.string().datetime().nullable().optional(),
 });
 
-async function ensureOwn(ledgerId: string, entryId: string, userId: string) {
-  const entry = await prisma.generalEntry.findUnique({
-    where: { id: entryId },
-    select: { ledgerId: true, ledger: { select: { userId: true } } },
-  });
-  if (!entry || entry.ledgerId !== ledgerId || entry.ledger.userId !== userId) return null;
-  return entry;
-}
-
 export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string; entryId: string }> },
 ) {
-  const user = await requireUser();
-  if (!user) return NextResponse.json({ error: '未登录' }, { status: 401 });
   const { id, entryId } = await params;
-  const own = await ensureOwn(id, entryId, user.id);
-  if (!own) return NextResponse.json({ error: '不存在' }, { status: 404 });
+  const ctx = await requireOwnedGeneralEntry(id, entryId);
+  if (ctx instanceof Response) return ctx;
+  const { entry } = ctx;
 
   const body = await req.json().catch(() => null);
   const parsed = patchSchema.safeParse(body);
-  if (!parsed.success) return NextResponse.json({ error: '参数错误' }, { status: 400 });
+  if (!parsed.success) return badRequest();
   const p = parsed.data;
 
   const data: Record<string, unknown> = {};
@@ -49,18 +41,27 @@ export async function PATCH(
     data.occurredAt = p.occurredAt ? new Date(p.occurredAt) : new Date();
 
   await prisma.generalEntry.update({ where: { id: entryId }, data });
+
+  // 用户在编辑里移掉的图片，清理掉不再被任何记录引用的那些
+  if (p.imageUrls !== undefined) {
+    await cleanupRemovedImages(entry.imageUrls, p.imageUrls);
+  }
   return NextResponse.json({ ok: true });
 }
 
+// 软删：进回收站。图片**不清理** —— 记录仍在保留期内可以恢复，
+// 图删了恢复出来就是空壳。彻底删走 DELETE /api/trash/generalEntry/:id
 export async function DELETE(
   _req: Request,
   { params }: { params: Promise<{ id: string; entryId: string }> },
 ) {
-  const user = await requireUser();
-  if (!user) return NextResponse.json({ error: '未登录' }, { status: 401 });
   const { id, entryId } = await params;
-  const own = await ensureOwn(id, entryId, user.id);
-  if (!own) return NextResponse.json({ error: '不存在' }, { status: 404 });
-  await prisma.generalEntry.delete({ where: { id: entryId } });
+  const ctx = await requireOwnedGeneralEntry(id, entryId);
+  if (ctx instanceof Response) return ctx;
+
+  await prisma.generalEntry.update({
+    where: { id: entryId },
+    data: { deletedAt: new Date() },
+  });
   return NextResponse.json({ ok: true });
 }

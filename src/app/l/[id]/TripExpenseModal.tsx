@@ -1,10 +1,19 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { COMMON_CURRENCIES } from '@/lib/currency';
+// 从 currencyList 而不是 currency 导入 —— 后者 import 了 prisma
+import { COMMON_CURRENCIES } from '@/lib/currencyList';
 import { yuanToCents } from '@/lib/money';
 import { localInputToISO, toLocalInput } from '@/lib/datetime';
+import { friendlyFetchError, isNetworkError } from '@/lib/netError';
+import { enqueue } from '@/lib/offlineQueue';
+import { useToast } from '@/components/ui/Dialog';
 import ImageUploader from '@/app/taoyuan/ImageUploader';
+import {
+  allocateByWeight,
+  type ShareEntry,
+  type WeightEntry,
+} from '@/lib/splitAllocation';
 import type { Member } from './TravelView';
 
 // 每个行程本地记住上次用过的汇率（内存级；关掉页面就没）
@@ -86,6 +95,7 @@ export default function TripExpenseModal({
   );
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const toast = useToast();
 
   // 当币种变化时：先看内存，再拉实时汇率（编辑时首屏用已存汇率，不覆写）
   useEffect(() => {
@@ -133,44 +143,32 @@ export default function TripExpenseModal({
     setRatios((prev) => ({ ...prev, [id]: Math.max(0, v) }));
   }
 
-  // 计算分摊数组
-  function calcSplits(): { memberId: string; shareCents: number }[] {
-    if (amountBaseCents <= 0) return [];
-    if (splitMode === 'even' || splitMode === 'partial') {
-      const targets = splitMode === 'even'
-        ? members.map((m) => m.id)
-        : [...selectedMembers];
-      if (targets.length === 0) return [];
-      const base = Math.floor(amountBaseCents / targets.length);
-      const remainder = amountBaseCents - base * targets.length;
-      return targets.map((id, i) => ({
-        memberId: id,
-        shareCents: base + (i < remainder ? 1 : 0),
-      }));
+  // 只算「谁参与 + 权重」，具体金额交给 allocateByWeight。
+  // 三种模式的差别仅在于权重怎么来：平摊是全 1，按比例是各自的比重。
+  function calcAllocation(): WeightEntry[] {
+    if (splitMode === 'even') {
+      return members.map((m) => ({ memberId: m.id, weight: 1 }));
     }
-    // ratio
-    const totalWeight = Object.values(ratios).reduce((a, b) => a + b, 0);
-    if (totalWeight <= 0) return [];
-    const raw: { memberId: string; share: number }[] = [];
-    for (const m of members) {
-      const w = ratios[m.id] ?? 0;
-      raw.push({ memberId: m.id, share: (amountBaseCents * w) / totalWeight });
+    if (splitMode === 'partial') {
+      return [...selectedMembers].map((id) => ({ memberId: id, weight: 1 }));
     }
-    // 四舍五入后校准：把误差累到最后一个非零份额
-    const result = raw.map((r) => ({
-      memberId: r.memberId,
-      shareCents: Math.round(r.share),
-    }));
-    const sum = result.reduce((a, r) => a + r.shareCents, 0);
-    const diff = amountBaseCents - sum;
-    if (diff !== 0) {
-      const idx = result.findIndex((r) => r.shareCents > 0);
-      if (idx >= 0) result[idx].shareCents += diff;
-    }
-    return result.filter((r) => r.shareCents > 0);
+    return members
+      .filter((m) => (ratios[m.id] ?? 0) > 0)
+      .map((m) => ({ memberId: m.id, weight: ratios[m.id] }));
   }
 
-  const splits = calcSplits();
+  const allocation = calcAllocation();
+
+  // 预览用的是**和服务端完全同一个函数**，所以界面上显示的每一分钱
+  // 就是最终落库的金额，不会出现"看到的和存的不一样"。
+  const splits: ShareEntry[] = (() => {
+    if (amountBaseCents <= 0 || allocation.length === 0) return [];
+    try {
+      return allocateByWeight(amountBaseCents, allocation);
+    } catch {
+      return [];
+    }
+  })();
 
   async function save() {
     setError('');
@@ -195,6 +193,22 @@ export default function TripExpenseModal({
       return;
     }
     setSaving(true);
+    const clientId = crypto.randomUUID();
+    const occurredAtISO = localInputToISO(occurredAt) ?? new Date().toISOString();
+    const body = {
+      title: title.trim(),
+      category,
+      phase,
+      currency: currency.toUpperCase(),
+      amountForeignCents: amountForeignCents!,
+      rate: rateNum,
+      payerId,
+      // 提交权重而不是金额：服务端重算，保证 sum(shares) 恒等于总额
+      allocation,
+      note: note.trim() || null,
+      imageUrls,
+      occurredAt: occurredAtISO,
+    };
     try {
       const url = isEdit
         ? `/api/ledgers/${ledgerId}/expenses/${editing!.id}`
@@ -202,25 +216,40 @@ export default function TripExpenseModal({
       const res = await fetch(url, {
         method: isEdit ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: title.trim(),
-          category,
-          phase,
-          currency: currency.toUpperCase(),
-          amountForeignCents,
-          rate: rateNum,
-          payerId,
-          splits,
-          note: note.trim() || null,
-          imageUrls,
-          occurredAt: localInputToISO(occurredAt),
-        }),
+        body: JSON.stringify(isEdit ? body : { ...body, clientId }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || '保存失败');
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (res.status >= 400 && res.status < 500) {
+          throw new Error(data.error || `HTTP ${res.status}`);
+        }
+        throw Object.assign(new Error(data.error || `HTTP ${res.status}`), { queue: true });
+      }
       onSaved();
     } catch (e) {
-      setError(e instanceof Error ? e.message : '保存失败');
+      // 编辑走 PATCH，服务端没做幂等，暂不入队 —— 断网编辑失败仍要求用户重来
+      const shouldQueue =
+        !isEdit &&
+        (isNetworkError(e) ||
+          (e && typeof e === 'object' && 'queue' in e && (e as { queue?: boolean }).queue));
+      if (shouldQueue) {
+        try {
+          await enqueue({
+            kind: 'travel',
+            ledgerId,
+            payload: { ledgerId, ...body },
+          });
+          toast({ message: '已存到本地，联网后自动同步', kind: 'info' });
+          onSaved();
+          return;
+        } catch (qErr) {
+          setError(
+            '本地存储失败：' + (qErr instanceof Error ? qErr.message : '无法访问 IndexedDB'),
+          );
+          return;
+        }
+      }
+      setError(friendlyFetchError(e) ?? (e instanceof Error ? e.message : '保存失败'));
     } finally {
       setSaving(false);
     }

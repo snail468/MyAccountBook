@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
-import { requireUser } from '@/lib/session';
+import { requireOwnedLedger } from '@/lib/ownership';
+import { badRequest } from '@/lib/apiError';
+import { cleanupCollectedImages, collectLedgerImageUrls } from '@/lib/imageCleanup';
 
 const patchSchema = z.object({
   name: z.string().trim().min(1).max(50).optional(),
@@ -25,33 +27,27 @@ const patchSchema = z.object({
         )
         .max(50),
       hidden: z.array(z.string().max(20)).max(50),
+      // 分类别月预算：{ [category]: cents }。可选，兼容老客户端。
+      // 单值上限 100 万元，防止误输入 —— 谁家一个月餐饮花超 100 万
+      budgets: z.record(z.number().int().nonnegative().max(1_000_000_00)).optional(),
+      // 分类别周预算，同样规则
+      budgetsWeekly: z.record(z.number().int().nonnegative().max(1_000_000_00)).optional(),
     })
     .nullable()
     .optional(),
 });
 
-async function ensureOwn(id: string, userId: string) {
-  const l = await prisma.ledger.findUnique({
-    where: { id },
-    select: { userId: true, kind: true },
-  });
-  if (!l || l.userId !== userId) return null;
-  return l;
-}
-
 export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const user = await requireUser();
-  if (!user) return NextResponse.json({ error: '未登录' }, { status: 401 });
   const { id } = await params;
-  const own = await ensureOwn(id, user.id);
-  if (!own) return NextResponse.json({ error: '不存在' }, { status: 404 });
+  const ctx = await requireOwnedLedger(id);
+  if (ctx instanceof Response) return ctx;
 
   const body = await req.json().catch(() => null);
   const parsed = patchSchema.safeParse(body);
-  if (!parsed.success) return NextResponse.json({ error: '参数错误' }, { status: 400 });
+  if (!parsed.success) return badRequest();
   const p = parsed.data;
 
   const data: Record<string, unknown> = {};
@@ -78,17 +74,18 @@ export async function DELETE(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const user = await requireUser();
-  if (!user) return NextResponse.json({ error: '未登录' }, { status: 401 });
   const { id } = await params;
-  const own = await ensureOwn(id, user.id);
-  if (!own) return NextResponse.json({ error: '不存在' }, { status: 404 });
+  const ctx = await requireOwnedLedger(id);
+  if (ctx instanceof Response) return ctx;
 
   const url = new URL(req.url);
   const permanent = url.searchParams.get('permanent') === '1';
 
   if (permanent) {
+    // 先收集图片 URL（删掉账本后级联删了条目就查不到了），删完再清文件
+    const imageUrls = await collectLedgerImageUrls(id);
     await prisma.ledger.delete({ where: { id } });
+    await cleanupCollectedImages(imageUrls);
     return NextResponse.json({ ok: true, permanent: true });
   }
   await prisma.ledger.update({

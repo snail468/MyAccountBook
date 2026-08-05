@@ -1,0 +1,25 @@
+# 默认让 git 自行判断文本/二进制
+* text=auto
+
+# Shell 脚本必须是 LF —— 在 Windows 上 checkout 成 CRLF 后，
+# Linux 容器里 /bin/sh 会因为行尾的 \r 报 "bad interpreter: no such file or directory"。
+# docker-entrypoint.sh 走的就是这条路，务必锁死。
+*.sh text eol=lf
+docker-entrypoint.sh text eol=lf
+
+# Dockerfile 和 compose 也在容器侧被读取，同样固定 LF
+Dockerfile text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+
+# 迁移 SQL 由 prisma 生成，保持原样避免 diff 噪音
+prisma/migrations/**/*.sql text eol=lf
+
+# 二进制资源不要做行尾转换
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.gif binary
+*.mp3 binary
+*.db binary

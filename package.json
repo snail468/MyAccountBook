@@ -6,15 +6,19 @@
     "dev": "next dev",
     "build": "prisma generate && next build",
     "start": "next start -p ${PORT:-3000}",
-    "lint": "next lint",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "verify": "npm run typecheck && npm run lint && npm run test",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
-    "postinstall": "prisma generate",
-    "cf:setup": "npm i -D @opennextjs/cloudflare wrangler @libsql/client @prisma/adapter-libsql",
-    "build:cf": "prisma generate && opennextjs-cloudflare build",
-    "deploy:cf": "opennextjs-cloudflare deploy",
-    "preview:cf": "opennextjs-cloudflare preview"
+    "prisma:status": "prisma migrate status",
+    "prisma:baseline": "prisma migrate resolve --applied 0_init",
+    "postinstall": "prisma generate"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
@@ -26,6 +30,8 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@next/eslint-plugin-next": "^15.5.22",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^22.9.0",
     "@types/react": "^19.0.0",
@@ -33,9 +39,13 @@
     "autoprefixer": "^10.4.20",
     "eslint": "^9.15.0",
     "eslint-config-next": "^15.0.3",
+    "eslint-plugin-react-hooks": "^5.2.0",
     "postcss": "^8.4.49",
+    "prettier": "^3.9.6",
     "prisma": "^5.22.0",
     "tailwindcss": "^3.4.15",
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "typescript-eslint": "^8.65.0",
+    "vitest": "^2.1.9"
   }
 }

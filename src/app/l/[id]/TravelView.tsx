@@ -1,16 +1,43 @@
 'use client';
 
 import Link from 'next/link';
-import { useMemo, useState, useTransition } from 'react';
+import dynamic from 'next/dynamic';
+import { useEffect, useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import Money from '@/components/ui/Money';
 import Lightbox from '@/components/ui/Lightbox';
+import PendingBadge from '@/components/ui/PendingBadge';
 import { formatShort } from '@/lib/datetime';
-import { computeSettlement } from '@/lib/settlement';
-import TripExpenseModal from './TripExpenseModal';
-import TripMembersModal from './TripMembersModal';
-import TripFunReport from './TripFunReport';
+import type { NetBalance, Transfer } from '@/lib/settlement';
 import { useConfirm } from '@/components/ui/Dialog';
+
+// 三个弹窗按需加载。它们加起来 860 行，全是 `{open && <Modal/>}` 条件渲染 ——
+// 静态 import 会让「只是看一眼账单」的用户也把整套表单、成员管理和趣味报告下下来。
+// TripExpenseModal 是单个内聚组件（不像 GeneralView 有天然的组件边界可拆），
+// 强行按行数切开只会切出互相依赖的碎片；按需加载才是对症的做法。
+//
+// **离线兼容**：mount 后 idle 时段主动 import 一次，让 chunk 落进浏览器缓存
+// （SW 会用 cache-first 命中）。否则离线首次点"记一笔"会因 dynamic import
+// 失败抛出 "Application error: a client-side exception has occurred"。
+const TripExpenseModal = dynamic(() => import('./TripExpenseModal'), { ssr: false });
+const TripMembersModal = dynamic(() => import('./TripMembersModal'), { ssr: false });
+const TripFunReport = dynamic(() => import('./TripFunReport'), { ssr: false });
+
+function warmTripModalChunks() {
+  const run = () => {
+    void import('./TripExpenseModal');
+    void import('./TripMembersModal');
+    void import('./TripFunReport');
+  };
+  if (typeof window === 'undefined') return;
+  if ('requestIdleCallback' in window) {
+    (window as unknown as { requestIdleCallback: (cb: () => void) => void }).requestIdleCallback(
+      run,
+    );
+  } else {
+    setTimeout(run, 800);
+  }
+}
 
 export type Member = { id: string; userId: string | null; displayName: string };
 
@@ -43,11 +70,30 @@ type LedgerMeta = {
 export default function TravelView({
   ledger,
   members,
-  expenses,
+  preTotal,
+  duringTotal,
+  balances,
+  transfers,
+  settlementError,
+  preExpenses,
+  preCursor,
+  duringExpenses,
+  duringCursor,
 }: {
   ledger: LedgerMeta;
   members: Member[];
-  expenses: Expense[];
+  /** 阶段合计、成员净额、最优结算全部由服务端聚合算好 ——
+   *  结算必须基于全量数据，客户端分页后手里只有片段，算出来是错的 */
+  preTotal: number;
+  duringTotal: number;
+  balances: NetBalance[];
+  transfers: Transfer[];
+  /** 老账本可能存了不守恒的分摊，此时结算无法计算，把原因显示出来 */
+  settlementError: string | null;
+  preExpenses: Expense[];
+  preCursor: string | null;
+  duringExpenses: Expense[];
+  duringCursor: string | null;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -59,33 +105,83 @@ export default function TravelView({
   const [zoomImg, setZoomImg] = useState<string | null>(null);
   const confirm = useConfirm();
 
-  const phaseList = expenses.filter((e) => e.phase === phase);
-  const preTotal = expenses
-    .filter((e) => e.phase === 'pre')
-    .reduce((a, e) => a + e.amountBaseCents, 0);
-  const duringTotal = expenses
-    .filter((e) => e.phase === 'during')
-    .reduce((a, e) => a + e.amountBaseCents, 0);
+  // —— 每个阶段各自一套分页状态 ——
+  const [extra, setExtra] = useState<Record<'pre' | 'during', Expense[]>>({
+    pre: [],
+    during: [],
+  });
+  const [cursors, setCursors] = useState<Record<'pre' | 'during', string | null>>({
+    pre: preCursor,
+    during: duringCursor,
+  });
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [loadError, setLoadError] = useState('');
 
-  // 净额（本币）
-  const balances = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const m of members) map.set(m.id, 0);
-    for (const e of expenses) {
-      // 付款人 +total；每个分摊成员 -share
-      map.set(e.payerId, (map.get(e.payerId) ?? 0) + e.amountBaseCents);
-      for (const s of e.splits) {
-        map.set(s.memberId, (map.get(s.memberId) ?? 0) - s.shareCents);
-      }
+  // 服务端重新给了首页 → 丢弃已加载的后续页，避免与新增/删除后的数据打架
+  const firstPageSig =
+    preExpenses.map((e) => e.id).join(',') + '|' + duringExpenses.map((e) => e.id).join(',');
+  useEffect(() => {
+    setExtra({ pre: [], during: [] });
+    setCursors({ pre: preCursor, during: duringCursor });
+    setLoadError('');
+  }, [firstPageSig, preCursor, duringCursor]);
+
+  // 预热弹窗 chunk（离线首次点"记一笔"不再抛 Application error）
+  useEffect(() => {
+    warmTripModalChunks();
+  }, []);
+
+  const phaseList = useMemo(
+    () =>
+      phase === 'pre'
+        ? [...preExpenses, ...extra.pre]
+        : [...duringExpenses, ...extra.during],
+    [phase, preExpenses, duringExpenses, extra],
+  );
+
+  async function loadMore() {
+    const cursor = cursors[phase];
+    if (!cursor || loadingMore) return;
+    setLoadingMore(true);
+    setLoadError('');
+    try {
+      const res = await fetch(
+        `/api/ledgers/${ledger.id}/expenses?phase=${phase}&cursor=${encodeURIComponent(cursor)}`,
+        { cache: 'no-store' },
+      );
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error || '加载失败');
+      setExtra((prev) => ({ ...prev, [phase]: [...prev[phase], ...(j.expenses as Expense[])] }));
+      setCursors((prev) => ({ ...prev, [phase]: j.nextCursor ?? null }));
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : '加载失败');
+    } finally {
+      setLoadingMore(false);
     }
-    return [...map.entries()].map(([id, net]) => ({
-      memberId: id,
-      name: members.find((m) => m.id === id)?.displayName ?? '?',
-      netCents: net,
-    }));
-  }, [members, expenses]);
+  }
 
-  const transfers = useMemo(() => computeSettlement(balances), [balances]);
+  // 趣味报告要算"最烧钱的一天""恩格尔系数"这类跨全量的统计 ——
+  // 打开弹窗时才按需拉全量，不拖慢列表首屏
+  const [reportExpenses, setReportExpenses] = useState<Expense[] | null>(null);
+  const [reportLoading, setReportLoading] = useState(false);
+
+  async function openReport() {
+    setReportLoading(true);
+    setLoadError('');
+    try {
+      const res = await fetch(`/api/ledgers/${ledger.id}/expenses?all=1`, {
+        cache: 'no-store',
+      });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error || '加载失败');
+      setReportExpenses(j.expenses as Expense[]);
+      setShowReport(true);
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : '报告生成失败');
+    } finally {
+      setReportLoading(false);
+    }
+  }
 
   async function del(exp: Expense) {
     const ok = await confirm({
@@ -118,6 +214,8 @@ export default function TravelView({
           成员
         </button>
       </div>
+
+      <PendingBadge kind="travel" ledgerId={ledger.id} />
 
       <div className="rounded-3xl bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 p-5">
         <div className="text-xs text-ink-500 mb-1">
@@ -195,7 +293,33 @@ export default function TravelView({
             onZoomImage={setZoomImg}
           />
         ))}
+
+        {cursors[phase] && (
+          <button
+            onClick={loadMore}
+            disabled={loadingMore}
+            className="w-full py-3 rounded-2xl bg-ink-50 dark:bg-ink-800 border border-ink-200 dark:border-ink-700 text-sm text-ink-500 active:scale-[0.98] transition disabled:opacity-60"
+          >
+            {loadingMore ? '加载中…' : '加载更早的记录'}
+          </button>
+        )}
+        {loadError && <p className="text-red-500 text-xs text-center">{loadError}</p>}
       </div>
+
+      {settlementError && (
+        <div className="mt-6 rounded-3xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 p-4">
+          <div className="text-xs text-amber-800 dark:text-amber-300 font-medium mb-1">
+            结算暂时算不出来
+          </div>
+          <p className="text-[11px] text-amber-700 dark:text-amber-400 leading-relaxed">
+            这个账本里有分摊金额之和与总额不一致的记录（早期版本的宽松校验留下的）。
+            逐笔打开「编辑」再保存一次即可修正 —— 现在保存时分摊金额由服务端重算，不会再出现偏差。
+          </p>
+          <p className="text-[10px] text-amber-600 dark:text-amber-500 mt-1.5 font-mono break-all">
+            {settlementError}
+          </p>
+        </div>
+      )}
 
       {transfers.length > 0 && (
         <div className="mt-6 rounded-3xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 p-4">
@@ -217,10 +341,11 @@ export default function TravelView({
             ))}
           </div>
           <button
-            onClick={() => setShowReport(true)}
-            className="mt-3 w-full py-2.5 rounded-xl bg-emerald-600 dark:bg-emerald-500 text-white text-sm font-medium"
+            onClick={openReport}
+            disabled={reportLoading}
+            className="mt-3 w-full py-2.5 rounded-xl bg-emerald-600 dark:bg-emerald-500 text-white text-sm font-medium disabled:opacity-60"
           >
-            生成趣味报告
+            {reportLoading ? '生成中…' : '生成趣味报告'}
           </button>
         </div>
       )}
@@ -277,11 +402,11 @@ export default function TravelView({
         />
       )}
 
-      {showReport && (
+      {showReport && reportExpenses && (
         <TripFunReport
           ledger={ledger}
           members={members}
-          expenses={expenses}
+          expenses={reportExpenses}
           balances={balances}
           transfers={transfers}
           onClose={() => setShowReport(false)}
@@ -339,7 +464,7 @@ function ExpenseRow({
                   className="w-8 h-8 rounded overflow-hidden bg-ink-100 dark:bg-ink-700"
                   aria-label={`查看图 ${i + 1}`}
                 >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  { }
                   <img src={url} alt="" className="w-full h-full object-cover" />
                 </button>
               ))}

@@ -19,7 +19,9 @@ services:
     volumes:
       - ./data:/data
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:3000/"]
+      # 打 /api/health 而不是 / —— 后者只证明进程活着，
+      # 前者会真的查一次数据库，volume 没挂对或文件权限错时能立刻暴露
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:3000/api/health"]
       interval: 30s
       timeout: 5s
       retries: 3

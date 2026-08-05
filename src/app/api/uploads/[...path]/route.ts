@@ -1,31 +1,32 @@
-import { NextResponse } from 'next/server';
-import { requireUser } from '@/lib/session';
+import { requireSessionUser } from '@/lib/ownership';
+import { badRequest, notFound } from '@/lib/apiError';
 import { getObject, guessContentType } from '@/lib/storage';
 
 export async function GET(
   _req: Request,
   { params }: { params: Promise<{ path: string[] }> },
 ) {
-  const user = await requireUser();
-  if (!user) return NextResponse.json({ error: '未登录' }, { status: 401 });
+  const user = await requireSessionUser();
+  if (user instanceof Response) return user;
 
   const { path } = await params;
-  if (!path || path.length === 0)
-    return NextResponse.json({ error: 'bad path' }, { status: 400 });
+  if (!path || path.length === 0) return badRequest('路径不合法');
 
-  // 只允许访问自己上传目录下的文件
+  // 只允许访问自己上传目录下的文件。
+  // 这里返回 404 而不是 403 —— 别人的文件对你来说就该"不存在"，
+  // 403 等于确认了这个 key 有效
   const [ownerId, ...rest] = path;
   if (ownerId !== user.id) {
-    return NextResponse.json({ error: '无权访问' }, { status: 403 });
+    return notFound();
   }
   // 防路径穿越
   if (rest.some((s) => s.includes('..'))) {
-    return NextResponse.json({ error: 'bad path' }, { status: 400 });
+    return badRequest('路径不合法');
   }
 
   const key = [ownerId, ...rest].map((s) => decodeURIComponent(s)).join('/');
   const obj = await getObject(key);
-  if (!obj) return NextResponse.json({ error: 'not found' }, { status: 404 });
+  if (!obj) return notFound();
 
   return new Response(obj.body, {
     headers: {

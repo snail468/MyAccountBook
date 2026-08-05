@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { REWARD_METHODS, rewardMethodLabel } from '@/lib/rewardMethod';
 import { localInputToISO, toLocalInput } from '@/lib/datetime';
+import { friendlyFetchError } from '@/lib/netError';
 import ImageUploader from './ImageUploader';
 import type { ClientEvent } from './types';
 
@@ -75,7 +76,7 @@ export default function EditEventModal({
       if (!res.ok) throw new Error(data.error || '保存失败');
       onSaved();
     } catch (err) {
-      setError(err instanceof Error ? err.message : '保存失败');
+      setError(friendlyFetchError(err) ?? (err instanceof Error ? err.message : '保存失败'));
     } finally {
       setSaving(false);
     }

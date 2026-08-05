@@ -1,88 +1,48 @@
 import { NextResponse } from 'next/server';
-import { randomUUID } from 'node:crypto';
-import { requireUser } from '@/lib/session';
-import { isR2Configured, putObject } from '@/lib/storage';
-
-const ALLOWED_MIME = new Map<string, string>([
-  ['image/jpeg', 'jpg'],
-  ['image/jpg', 'jpg'],
-  ['image/png', 'png'],
-  ['image/webp', 'webp'],
-  ['image/gif', 'gif'],
-]);
+import { requireSessionUser } from '@/lib/ownership';
+import { badRequest, payloadTooLarge, unsupportedMediaType } from '@/lib/apiError';
+import { hashOf, monthKey, putObject } from '@/lib/storage';
+import { sniffImage } from '@/lib/imageSniff';
 
 const MAX_BYTES = 8 * 1024 * 1024;
 
-function sanitize(name: string): string {
-  const cleaned = name
-    .replace(/[\\/:*?"<>| -]/g, '')
-    .replace(/\s+/g, '_')
-    .trim();
-  return cleaned.slice(0, 80) || '活动图片';
-}
-
-// 本地：扫描目录找下一个可用编号
-async function nextAvailableLocal(
-  userDir: string,
-  prefix: string,
-  ext: string,
-): Promise<string> {
-  const { access } = await import('node:fs/promises');
-  const { join } = await import('node:path');
-  for (let i = 1; i < 999; i++) {
-    const name = `${prefix}-${i}.${ext}`;
-    try {
-      await access(join(userDir, name));
-    } catch {
-      return name;
-    }
-  }
-  return `${prefix}-${randomUUID().slice(0, 8)}.${ext}`;
-}
-
 export async function POST(req: Request) {
-  const user = await requireUser();
-  if (!user) return NextResponse.json({ error: '未登录' }, { status: 401 });
+  const user = await requireSessionUser();
+  if (user instanceof Response) return user;
 
   const form = await req.formData().catch(() => null);
-  if (!form) return NextResponse.json({ error: '请求格式错误' }, { status: 400 });
+  if (!form) return badRequest('请求格式错误');
 
   const file = form.get('file');
   if (!(file instanceof Blob)) {
-    return NextResponse.json({ error: '缺少文件' }, { status: 400 });
-  }
-  const type = (file as unknown as File).type || '';
-  const ext = ALLOWED_MIME.get(type);
-  if (!ext) {
-    return NextResponse.json({ error: '只支持 jpg/png/webp/gif' }, { status: 415 });
+    return badRequest('缺少文件');
   }
   if (file.size > MAX_BYTES) {
-    return NextResponse.json({ error: '单张最大 8MB' }, { status: 413 });
+    return payloadTooLarge('单张最大 8MB');
   }
 
-  const rawTitle = (form.get('title') as string | null) || '';
-  const prefix = sanitize(rawTitle);
   const bytes = new Uint8Array(await file.arrayBuffer());
-  const contentType = type;
 
-  let filename: string;
-  if (isR2Configured()) {
-    // R2 无廉价目录列举 —— 直接用随机后缀避免碰撞
-    filename = `${prefix}-${randomUUID().slice(0, 8)}.${ext}`;
-  } else {
-    const { join } = await import('node:path');
-    const root = process.env.UPLOAD_ROOT || join(process.cwd(), 'data', 'uploads');
-    const userDir = join(root, user.id);
-    const { mkdir } = await import('node:fs/promises');
-    await mkdir(userDir, { recursive: true });
-    filename = await nextAvailableLocal(userDir, prefix, ext);
+  // 只认文件内容的魔数，不信任客户端声明的 MIME
+  const sniffed = sniffImage(bytes);
+  if (!sniffed) {
+    return unsupportedMediaType('只支持 jpg/png/webp/gif 图片');
   }
 
-  const key = `${user.id}/${filename}`;
-  await putObject(key, bytes, contentType);
+  // 内容寻址：key = <userId>/<yyyy-mm>/<sha256 前 24 位>.<ext>
+  //
+  // 换掉了原来"清洗标题 + 扫描目录找下一个可用编号"的方案，那个方案有三个问题：
+  //   * 并发上传会拿到同一个编号，后写覆盖先写
+  //   * 本地模式最多要做 999 次 access 系统调用
+  //   * 文件名带用户输入，需要额外清洗
+  // 内容寻址天然幂等（同一张图重复上传不产生新文件）、无竞态、O(1)。
+  const filename = `${hashOf(bytes)}.${sniffed.ext}`;
+  const key = `${user.id}/${monthKey()}/${filename}`;
+
+  await putObject(key, bytes, sniffed.mime);
 
   return NextResponse.json({
     ok: true,
-    url: `/api/uploads/${user.id}/${encodeURIComponent(filename)}`,
+    url: `/api/uploads/${key}`,
   });
 }

@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
-import { requireUser } from '@/lib/session';
+import { requireSessionUser } from '@/lib/ownership';
+import { badRequest, notFound } from '@/lib/apiError';
+import { NOT_DELETED } from '@/lib/softDelete';
 
 const bodySchema = z.object({
   // 主活动（合并后作为父）；其余会挂到它下面
@@ -13,32 +15,33 @@ const bodySchema = z.object({
 });
 
 export async function POST(req: Request) {
-  const user = await requireUser();
-  if (!user) return NextResponse.json({ error: '未登录' }, { status: 401 });
+  const user = await requireSessionUser();
+  if (user instanceof Response) return user;
 
   const body = await req.json().catch(() => null);
   const parsed = bodySchema.safeParse(body);
-  if (!parsed.success) return NextResponse.json({ error: '参数错误' }, { status: 400 });
+  if (!parsed.success) return badRequest();
   const { parentId, childIds, title } = parsed.data;
 
   if (childIds.includes(parentId)) {
-    return NextResponse.json({ error: '父活动不能同时是子活动' }, { status: 400 });
+    return badRequest('父活动不能同时是子活动');
   }
 
   const uniqueChildIds = [...new Set(childIds)];
 
   const parent = await prisma.event.findUnique({ where: { id: parentId } });
-  if (!parent || parent.userId !== user.id)
-    return NextResponse.json({ error: '主活动不存在' }, { status: 404 });
+  if (!parent || parent.userId !== user.id || parent.deletedAt !== null) {
+    return notFound('主活动不存在');
+  }
   if (parent.parentId) {
-    return NextResponse.json({ error: '主活动本身已被合并，请选顶层活动' }, { status: 400 });
+    return badRequest('主活动本身已被合并，请选顶层活动');
   }
 
   const children = await prisma.event.findMany({
-    where: { id: { in: uniqueChildIds }, userId: user.id },
+    where: { id: { in: uniqueChildIds }, userId: user.id, ...NOT_DELETED },
   });
   if (children.length !== uniqueChildIds.length) {
-    return NextResponse.json({ error: '存在不属于当前用户的活动' }, { status: 400 });
+    return badRequest('存在不属于当前用户或已在回收站的活动');
   }
 
   await prisma.$transaction(async (tx) => {

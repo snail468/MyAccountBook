@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
-import { requireUser } from '@/lib/session';
+import { requireOwnedLedger } from '@/lib/ownership';
+import { badRequest, conflict, notFound } from '@/lib/apiError';
 
 const bodySchema = z.object({
   // 二选一：填 username 邀请已注册用户；填 displayName 添加纯名字占位
@@ -9,28 +10,14 @@ const bodySchema = z.object({
   displayName: z.string().trim().min(1).max(32).optional(),
 });
 
-async function ownLedger(id: string, userId: string) {
-  const l = await prisma.ledger.findUnique({
-    where: { id },
-    select: { userId: true, kind: true },
-  });
-  if (!l || l.userId !== userId) return null;
-  return l;
-}
-
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const user = await requireUser();
-  if (!user) return NextResponse.json({ error: '未登录' }, { status: 401 });
   const { id } = await params;
-  const own = await ownLedger(id, user.id);
-  if (!own) return NextResponse.json({ error: '账本不存在' }, { status: 404 });
-  if (own.kind !== 'travel') {
-    return NextResponse.json({ error: '仅旅游账本可用' }, { status: 400 });
-  }
+  const ctx = await requireOwnedLedger(id, { kind: 'travel', kindMessage: '仅旅游账本可用' });
+  if (ctx instanceof Response) return ctx;
 
   const body = await req.json().catch(() => null);
   const parsed = bodySchema.safeParse(body);
-  if (!parsed.success) return NextResponse.json({ error: '参数错误' }, { status: 400 });
+  if (!parsed.success) return badRequest();
   const p = parsed.data;
 
   if (p.username) {
@@ -38,12 +25,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       where: { username: p.username },
       select: { id: true, username: true },
     });
-    if (!target) return NextResponse.json({ error: '用户不存在' }, { status: 404 });
+    if (!target) return notFound('用户不存在');
     // 幂等：同一 userId 不重复加
     const exists = await prisma.tripMember.findFirst({
       where: { ledgerId: id, userId: target.id },
     });
-    if (exists) return NextResponse.json({ error: '该用户已在名单里' }, { status: 409 });
+    if (exists) return conflict('该用户已在名单里');
     const created = await prisma.tripMember.create({
       data: { ledgerId: id, userId: target.id, displayName: target.username },
     });
@@ -57,5 +44,5 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ ok: true, id: created.id });
   }
 
-  return NextResponse.json({ error: '需要 username 或 displayName' }, { status: 400 });
+  return badRequest('需要 username 或 displayName');
 }
