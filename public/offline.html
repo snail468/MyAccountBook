@@ -53,21 +53,28 @@
           color: #9c9ca6;
         }
       }
-      button {
+      .actions {
+        display: flex;
+        flex-direction: column;
+        gap: 0.6rem;
+        width: min(320px, 100%);
+      }
+      button, a.btn {
+        display: block;
         appearance: none;
         border: none;
-        background: #17171a;
-        color: #fff;
+        text-decoration: none;
         font-size: 0.95rem;
         padding: 0.75rem 1.5rem;
         border-radius: 999px;
         cursor: pointer;
+        text-align: center;
+        box-sizing: border-box;
       }
+      .primary { background: #ff2d87; color: #fff; }
+      .secondary { background: #17171a; color: #fff; }
       @media (prefers-color-scheme: dark) {
-        button {
-          background: #e6e6e9;
-          color: #17171a;
-        }
+        .secondary { background: #e6e6e9; color: #17171a; }
       }
       .hint {
         margin-top: 1rem;
@@ -82,9 +89,12 @@
     <p>
       检查一下 WiFi 或流量。
       <br />
-      在普通账本里现在也能记账 —— 联网后会自动同步。
+      普通账本现在也能离线记账 —— 联网后会自动同步。
     </p>
-    <button onclick="location.reload()">重新加载</button>
-    <div class="hint">离开这个页面前记的账都会保留。</div>
+    <div class="actions">
+      <a class="btn primary" href="/offline-record.html">离线记一笔</a>
+      <button class="secondary" onclick="location.reload()">重新加载</button>
+    </div>
+    <div class="hint">记的账存在本机，联网后打开任一账本页会自动同步。</div>
   </body>
 </html>

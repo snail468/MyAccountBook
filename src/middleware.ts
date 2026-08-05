@@ -103,8 +103,10 @@ export function middleware(req: NextRequest) {
 }
 
 export const config = {
-  // 静态资源不需要过 middleware
+  // 静态资源不需要过 middleware。
+  // offline.html / offline-record.html 也排除 —— 它们是纯静态兜底页，
+  // 需要 inline 的 onclick / <script>，套上带 nonce 的 CSP 会全被拦掉。
   matcher: [
-    '/((?!_next/static|_next/image|favicon.png|icon-|manifest.json|audio/|sw\\.js).*)',
+    '/((?!_next/static|_next/image|favicon.png|icon-|manifest.json|audio/|sw\\.js|offline\\.html|offline-record\\.html).*)',
   ],
 };

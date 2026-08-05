@@ -1,21 +1,25 @@
-// 心愿便利贴 SW —— v6 · 断网也不摔到浏览器恐龙
+// 心愿便利贴 SW —— v7 · 让"离线记账"真正可用
 //
-// 之前的 v5 只精缓存了 icon/manifest；一断网就"应用消失显示恐龙"。
-// 现在的策略：
+// v6 的漏洞（用户断网真机复现）：
+//   NAV_CACHE 只在 req.mode === 'navigate' 成功时写。SPA 里点 <Link> 走的
+//   是 RSC fetch（?_rsc=xxx），SW 从没见过 navigate 请求 —— 于是 /l/[id]
+//   的 HTML 一次都没被缓存。断网后 RSC 挂 → Next.js 兜底硬跳 → SW 拿不到
+//   缓存 → 掉进 offline.html。B8 那套"离线记账队列"根本走不到 GeneralView
+//   去点"记一笔"。
 //
-//   * navigate 请求（HTML）      network-first → 缓存回退 → offline.html
-//     浏览器不再走浏览器兜底页；用户看到的是我们自己的"网络不可用"页
-//   * RSC / Server Action 请求    network-first → 失败**返 503 空**
-//     Next.js 收到 503 会保留当前页面，不会跳走
-//   * /_next/static/*             cache-first（内容有哈希）+ 写缓存
-//     动态 import 弹窗的 chunk 也在这个前缀下，第一次访问后就永久离线可用
-//   * icon / manifest / audio    cache-first
-//   * /api/*                     不拦截 —— 让应用层判定错误（含离线队列）
+// v7 的三件事：
 //
-// 离线记账队列（普通账本）是应用层的事：见 src/lib/offlineQueue.ts。
-// 这个 SW 不试图代理 API，那样只会把错误提示藏起来。
+//   * 见到 RSC 成功响应 → 后台同时抓一次同 URL 的 HTML，塞进 NAV_CACHE。
+//     这样用户"点过一次"的账本页 HTML 就在缓存里，下次断网硬跳能命中。
+//   * navigate 分支保留 v6 的 network-first + offline.html 兜底。
+//     但**如果缓存里有同 URL 的 HTML**，离线命中就不再落到 offline.html。
+//   * postMessage({ type: 'warm', urls: [...] }) —— 客户端可以主动请 SW
+//     去 warm 一批 URL（首页在挂载时用它把用户所有普通账本 HTML 提前抓下来，
+//     哪怕用户从没点过那个账本卡片，断网也能直接进去记账）。
+//
+// /api/* 依然不拦截 —— 让 app 层的 offlineQueue.ts 判定 TypeError 入队。
 
-const VERSION = 'v6';
+const VERSION = 'v7';
 const NAV_CACHE = `xyd-${VERSION}-nav`;
 const STATIC_CACHE = `xyd-${VERSION}-static`;
 const PRECACHE = [
@@ -24,6 +28,7 @@ const PRECACHE = [
   '/icon-512.png',
   '/favicon.png',
   '/offline.html',
+  '/offline-record.html',
 ];
 
 self.addEventListener('install', (event) => {
@@ -58,12 +63,19 @@ function isStaticAsset(url) {
   );
 }
 
-// Next.js 的 RSC 请求带 RSC:1 头，或 URL 里带 ?_rsc=xxx。
-// 它们不是导航但也不是资源 —— 用 network-first + 503 兜底就好，
-// 因为 Next.js 收到失败会保留旧页面而不是崩溃
 function isRscRequest(req, url) {
   if (req.headers.get('rsc') || req.headers.get('RSC')) return true;
   return url.searchParams.has('_rsc');
+}
+
+// 只在这些"用户会导航到的页面"上做 HTML 预热与缓存。
+// 排除 /api /admin /_next/data 等 —— warm 它们要么无意义要么打回权限错。
+function isWarmablePagePath(pathname) {
+  if (pathname.startsWith('/api/')) return false;
+  if (pathname.startsWith('/admin')) return false;
+  if (pathname.startsWith('/_next/')) return false;
+  if (pathname.startsWith('/offline.html')) return false;
+  return true;
 }
 
 async function cacheFirst(req, cacheName) {
@@ -77,30 +89,69 @@ async function cacheFirst(req, cacheName) {
   return res;
 }
 
+// 后台把某个 URL 的 HTML 抓一份塞进 NAV_CACHE。
+// key 用去掉 _rsc 参数的纯 URL —— 这样 hard nav 请求与 warm 请求命中同一 key。
+async function warmHtmlCache(pathAndSearch) {
+  try {
+    const cache = await caches.open(NAV_CACHE);
+    const warmReq = new Request(pathAndSearch, {
+      method: 'GET',
+      credentials: 'include',
+      // 不带 rsc 头 —— 拿到的是完整 HTML SSR
+      headers: { Accept: 'text/html,application/xhtml+xml' },
+    });
+    const res = await fetch(warmReq);
+    // 只缓 200 且是本站响应；其它（3xx redirect、401 未登录）都跳过
+    if (res.ok && res.type !== 'opaque') {
+      // 存到 NAV_CACHE 时用不带 _rsc 的 key，让下次 navigate 匹配
+      await cache.put(new Request(pathAndSearch), res);
+    }
+  } catch {
+    /* warm 失败无所谓，下次再来 */
+  }
+}
+
 async function networkFirstNavigation(req) {
+  const url = new URL(req.url);
   try {
     const res = await fetch(req);
-    // 只缓存 200 且是本站 HTML
     if (res.ok && res.type !== 'opaque') {
       const copy = res.clone();
-      caches.open(NAV_CACHE).then((c) => c.put(req, copy)).catch(() => {});
+      // key 用"无 _rsc"的纯 URL，与 warmHtmlCache 保持一致
+      const keyReq = new Request(url.pathname + url.search);
+      caches.open(NAV_CACHE).then((c) => c.put(keyReq, copy)).catch(() => {});
     }
     return res;
   } catch {
-    // 网络挂了：先回同 URL 的历史缓存，再回 offline.html
-    const cached = await caches.match(req);
+    // 网络挂了：先找同 URL（去掉 _rsc）的历史缓存，再回 offline.html
+    const cache = await caches.open(NAV_CACHE);
+    const keyReq = new Request(url.pathname + url.search);
+    const cached = await cache.match(keyReq);
     if (cached) return cached;
+    // 有些历史缓存可能带旧 query，兜底再按 pathname 查一次
+    const cachedByPath = await cache.match(new Request(url.pathname));
+    if (cachedByPath) return cachedByPath;
     const shell = await caches.match('/offline.html');
     if (shell) return shell;
     return new Response('offline', { status: 503 });
   }
 }
 
-async function networkFirstRsc(req) {
+async function networkFirstRsc(req, url) {
   try {
-    return await fetch(req);
+    const res = await fetch(req);
+    // 成功走 SPA nav → 顺手把 HTML 也 warm 了。这样下次真断网硬跳能命中
+    if (res.ok) {
+      const clean = url.pathname; // 去掉 _rsc 参数
+      if (isWarmablePagePath(clean)) {
+        // fire-and-forget，不阻塞返回
+        warmHtmlCache(clean);
+      }
+    }
+    return res;
   } catch {
-    // Next.js 客户端遇到 RSC 请求失败会保留当前页面，比抛错好得多
+    // Next.js 收到 RSC 失败时会 fallback 到 hard navigation，
+    // hard navigation 会走上面的 networkFirstNavigation → 命中 warm 过的缓存
     return new Response('', { status: 503, statusText: 'Offline' });
   }
 }
@@ -111,23 +162,33 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
 
-  // 导航（HTML 页面）
   if (req.mode === 'navigate') {
     event.respondWith(networkFirstNavigation(req));
     return;
   }
 
-  // 静态资源（包含 next/dynamic 拉的 chunk）
   if (isStaticAsset(url)) {
     event.respondWith(cacheFirst(req, STATIC_CACHE));
     return;
   }
 
-  // RSC / server component payload
   if (isRscRequest(req, url)) {
-    event.respondWith(networkFirstRsc(req));
+    event.respondWith(networkFirstRsc(req, url));
     return;
   }
 
-  // /api/* 与其它请求：不拦截，让浏览器/应用层处理
+  // /api/* 与其它请求：不拦截
+});
+
+// 客户端主动请 SW 预热一批 URL（首页挂载时会调用，把用户所有账本 HTML 抓下来）
+self.addEventListener('message', (event) => {
+  const data = event.data;
+  if (!data || data.type !== 'warm' || !Array.isArray(data.urls)) return;
+  event.waitUntil(
+    Promise.all(
+      data.urls
+        .filter((u) => typeof u === 'string' && u.startsWith('/') && isWarmablePagePath(new URL(u, self.location.origin).pathname))
+        .map((u) => warmHtmlCache(u)),
+    ),
+  );
 });

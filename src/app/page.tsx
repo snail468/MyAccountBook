@@ -14,6 +14,7 @@ import ImportButton from '@/components/ImportButton';
 import ChangePasswordButton from '@/components/ChangePasswordButton';
 import Money from '@/components/ui/Money';
 import Prefetcher from '@/components/ui/Prefetcher';
+import OfflineWarmer, { type WarmableLedger } from '@/components/ui/OfflineWarmer';
 
 export const dynamic = 'force-dynamic';
 
@@ -296,9 +297,24 @@ export default async function HomePage() {
   if (user.role === 'admin') prefetchRoutes.push('/admin');
   for (const c of s.ledgerCards) prefetchRoutes.push(`/l/${c.id}`);
 
+  // 离线预热：把用户所有普通/旅游账本的 HTML 拉进 SW 缓存，
+  // 断网后点账本卡片能直接进入 GeneralView 而不是掉到 offline.html。
+  const warmableLedgers: WarmableLedger[] = s.ledgerCards
+    .filter((c) => c.kind === 'general' || c.kind === 'travel')
+    .map((c) => ({
+      id: c.id,
+      kind: c.kind as 'general' | 'travel',
+      name: c.name,
+      icon: c.icon,
+    }));
+  const warmExtraUrls: string[] = [];
+  if (s.hasWork) warmExtraUrls.push('/work');
+  if (s.hasTaoyuan) warmExtraUrls.push('/taoyuan');
+
   return (
     <div className="px-6 pt-14">
       <Prefetcher routes={prefetchRoutes} />
+      <OfflineWarmer ledgers={warmableLedgers} extraUrls={warmExtraUrls} />
       <div className="flex items-center justify-between mb-2">
         <div className="text-sm text-ink-500">{user.username} · 心愿便利贴</div>
         <LogoutButton />

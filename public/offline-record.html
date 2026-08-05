@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>离线记账 · 心愿便利贴</title>
+    <link rel="icon" href="/favicon.png" />
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: -apple-system, system-ui, "PingFang SC", "Microsoft YaHei", sans-serif;
+      }
+      html, body { margin: 0; padding: 0; min-height: 100dvh; }
+      body {
+        background: #fafafa;
+        color: #17171a;
+        padding: 1.5rem 1.25rem 3rem;
+        max-width: 480px;
+        margin: 0 auto;
+      }
+      @media (prefers-color-scheme: dark) {
+        body { background: #0e0e11; color: #e6e6e9; }
+      }
+      .back { display: inline-block; color: #6b6b73; text-decoration: none; font-size: 0.875rem; margin-bottom: 0.75rem; }
+      h1 { font-size: 1.4rem; margin: 0 0 0.25rem; font-weight: 600; }
+      .hint { color: #6b6b73; font-size: 0.8rem; margin: 0 0 1.5rem; }
+      @media (prefers-color-scheme: dark) { .hint, .back { color: #9c9ca6; } }
+      label { display: block; font-size: 0.75rem; color: #6b6b73; margin: 1rem 0 0.4rem; }
+      select, input, textarea, button {
+        appearance: none;
+        font-family: inherit;
+        font-size: 1rem;
+        width: 100%;
+        box-sizing: border-box;
+        padding: 0.7rem 0.9rem;
+        border-radius: 12px;
+        border: 1px solid #dcdce0;
+        background: #fff;
+        color: inherit;
+      }
+      @media (prefers-color-scheme: dark) {
+        select, input, textarea { background: #17171a; border-color: #35353b; color: #e6e6e9; }
+      }
+      textarea { min-height: 3rem; resize: vertical; }
+      .direction-row { display: flex; gap: 0.5rem; margin-top: 0.4rem; }
+      .direction-row button {
+        flex: 1; padding: 0.6rem 0; font-size: 0.9rem; border: 1px solid #dcdce0;
+        background: #fff; color: #6b6b73; border-radius: 12px; cursor: pointer;
+      }
+      .direction-row button.active { background: #17171a; color: #fff; border-color: #17171a; }
+      @media (prefers-color-scheme: dark) {
+        .direction-row button { background: #17171a; border-color: #35353b; color: #9c9ca6; }
+        .direction-row button.active { background: #e6e6e9; color: #17171a; border-color: #e6e6e9; }
+      }
+      .cat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.4rem; margin-top: 0.4rem; }
+      .cat-grid button {
+        padding: 0.5rem 0.25rem; font-size: 0.75rem; border-radius: 12px;
+        border: 1px solid #dcdce0; background: #fff; color: inherit; cursor: pointer;
+      }
+      .cat-grid button.active { background: #17171a; color: #fff; border-color: #17171a; }
+      @media (prefers-color-scheme: dark) {
+        .cat-grid button { background: #17171a; border-color: #35353b; }
+        .cat-grid button.active { background: #e6e6e9; color: #17171a; border-color: #e6e6e9; }
+      }
+      .cat-icon { font-size: 1.25rem; display: block; }
+      .submit {
+        margin-top: 1.5rem; background: #ff2d87; color: #fff;
+        border: none; padding: 0.9rem; font-size: 1rem; font-weight: 600;
+        border-radius: 999px; cursor: pointer;
+      }
+      .submit:disabled { opacity: 0.5; cursor: default; }
+      .status { margin-top: 1rem; padding: 0.7rem 0.9rem; border-radius: 12px; font-size: 0.85rem; }
+      .status.ok { background: #dcfce7; color: #166534; }
+      .status.err { background: #fee2e2; color: #991b1b; }
+      @media (prefers-color-scheme: dark) {
+        .status.ok { background: rgba(22, 101, 52, 0.25); color: #86efac; }
+        .status.err { background: rgba(153, 27, 27, 0.25); color: #fca5a5; }
+      }
+      .empty { padding: 2rem 1rem; text-align: center; color: #6b6b73; }
+    </style>
+  </head>
+  <body>
+    <a class="back" href="/">‹ 返回首页</a>
+    <h1>离线记账</h1>
+    <p class="hint">
+      现在无法联网。这里记的每一笔会存到本机，联网后打开任一账本页会自动同步。
+    </p>
+
+    <div id="app">
+      <div class="empty" id="loading">加载中…</div>
+    </div>
+
+    <script>
+      // —— 本页的数据模型必须和 src/lib/offlineQueue.ts 保持一致 ——
+      // DB: xyd:offline v1, store pendingEntries, keyPath = clientId
+      // 主账本页面挂载时的 useOfflineQueue 会读同一份 store，联网时同步到后端。
+      var DB_NAME = 'xyd:offline';
+      var DB_VERSION = 1;
+      var STORE = 'pendingEntries';
+      var CACHED_LEDGERS_KEY = 'xyd:cachedLedgers';
+
+      var DEFAULT_EXPENSE_CATS = [
+        { name: '餐饮', icon: '🍜' },
+        { name: '交通', icon: '🚌' },
+        { name: '购物', icon: '🛍️' },
+        { name: '居住', icon: '🏠' },
+        { name: '娱乐', icon: '🎬' },
+        { name: '医疗', icon: '💊' },
+        { name: '人情', icon: '🎁' },
+        { name: '学习', icon: '📚' },
+        { name: '其它支出', icon: '💸' }
+      ];
+      var DEFAULT_INCOME_CATS = [
+        { name: '工资', icon: '💰' },
+        { name: '奖金', icon: '🎊' },
+        { name: '副业', icon: '💡' },
+        { name: '理财', icon: '📈' },
+        { name: '红包', icon: '🧧' },
+        { name: '其它收入', icon: '💵' }
+      ];
+
+      function readLedgers() {
+        try {
+          var raw = localStorage.getItem(CACHED_LEDGERS_KEY);
+          if (!raw) return [];
+          var data = JSON.parse(raw);
+          if (!data || !Array.isArray(data.ledgers)) return [];
+          // 只支持普通账本 —— B8 的 offlineQueue.ts 只覆盖普通账本
+          return data.ledgers.filter(function (l) { return l && l.kind === 'general' && l.id; });
+        } catch (e) {
+          return [];
+        }
+      }
+
+      function openDb() {
+        return new Promise(function (resolve, reject) {
+          var req = indexedDB.open(DB_NAME, DB_VERSION);
+          req.onupgradeneeded = function () {
+            var db = req.result;
+            if (!db.objectStoreNames.contains(STORE)) {
+              db.createObjectStore(STORE, { keyPath: 'clientId' });
+            }
+          };
+          req.onsuccess = function () { resolve(req.result); };
+          req.onerror = function () { reject(req.error); };
+        });
+      }
+
+      function addQueued(entry) {
+        return openDb().then(function (db) {
+          return new Promise(function (resolve, reject) {
+            var tx = db.transaction(STORE, 'readwrite');
+            var store = tx.objectStore(STORE);
+            var r = store.add(entry);
+            r.onsuccess = function () { resolve(); };
+            r.onerror = function () { reject(r.error); };
+          });
+        });
+      }
+
+      function uuid() {
+        if (crypto && crypto.randomUUID) return crypto.randomUUID();
+        // 兜底：v4-like，仅用于极老浏览器
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+          var r = Math.random() * 16 | 0;
+          var v = c === 'x' ? r : (r & 0x3) | 0x8;
+          return v.toString(16);
+        });
+      }
+
+      function render() {
+        var app = document.getElementById('app');
+        var ledgers = readLedgers();
+        if (ledgers.length === 0) {
+          app.innerHTML =
+            '<div class="empty">' +
+            '还没有普通账本可以离线记账。<br/>' +
+            '<span style="font-size:0.75rem">（在线打开一次首页后，你的账本清单会自动缓存到本机。）</span>' +
+            '</div>';
+          return;
+        }
+
+        var state = {
+          ledgerId: ledgers[0].id,
+          direction: 'expense',
+          category: DEFAULT_EXPENSE_CATS[0].name,
+          amountText: '',
+          note: ''
+        };
+
+        app.innerHTML =
+          '<label for="ledger">账本</label>' +
+          '<select id="ledger">' +
+          ledgers.map(function (l) {
+            return '<option value="' + escapeAttr(l.id) + '">' +
+              (l.icon ? l.icon + ' ' : '') + escapeHtml(l.name) + '</option>';
+          }).join('') +
+          '</select>' +
+
+          '<label>方向</label>' +
+          '<div class="direction-row" id="dir-row">' +
+          '<button type="button" data-dir="expense" class="active">支出</button>' +
+          '<button type="button" data-dir="income">收入</button>' +
+          '</div>' +
+
+          '<label>类别</label>' +
+          '<div class="cat-grid" id="cat-grid"></div>' +
+
+          '<label for="amount">金额（元）</label>' +
+          '<input id="amount" type="text" inputmode="decimal" placeholder="0.00" autocomplete="off" />' +
+
+          '<label for="note">备注（可选）</label>' +
+          '<textarea id="note" placeholder="喝了咖啡…"></textarea>' +
+
+          '<button class="submit" id="submit">存到本地</button>' +
+          '<div id="status" style="display:none"></div>';
+
+        var ledgerSel = document.getElementById('ledger');
+        var dirRow = document.getElementById('dir-row');
+        var catGrid = document.getElementById('cat-grid');
+        var amountInput = document.getElementById('amount');
+        var noteInput = document.getElementById('note');
+        var submitBtn = document.getElementById('submit');
+        var statusEl = document.getElementById('status');
+
+        function paintCategories() {
+          var cats = state.direction === 'expense' ? DEFAULT_EXPENSE_CATS : DEFAULT_INCOME_CATS;
+          if (cats.indexOf(cats.filter(function (c) { return c.name === state.category; })[0]) < 0) {
+            state.category = cats[0].name;
+          }
+          catGrid.innerHTML = cats.map(function (c) {
+            return '<button type="button" data-cat="' + escapeAttr(c.name) + '"' +
+              (c.name === state.category ? ' class="active"' : '') +
+              '><span class="cat-icon">' + c.icon + '</span>' + escapeHtml(c.name) + '</button>';
+          }).join('');
+          Array.prototype.forEach.call(catGrid.querySelectorAll('button'), function (b) {
+            b.addEventListener('click', function () {
+              state.category = b.getAttribute('data-cat');
+              paintCategories();
+            });
+          });
+        }
+
+        ledgerSel.addEventListener('change', function () { state.ledgerId = ledgerSel.value; });
+        Array.prototype.forEach.call(dirRow.querySelectorAll('button'), function (b) {
+          b.addEventListener('click', function () {
+            state.direction = b.getAttribute('data-dir');
+            Array.prototype.forEach.call(dirRow.querySelectorAll('button'), function (x) {
+              x.classList.toggle('active', x === b);
+            });
+            paintCategories();
+          });
+        });
+        amountInput.addEventListener('input', function () { state.amountText = amountInput.value; });
+        noteInput.addEventListener('input', function () { state.note = noteInput.value; });
+
+        submitBtn.addEventListener('click', function () {
+          statusEl.style.display = 'none';
+          var amt = parseFloat(state.amountText);
+          if (!(amt > 0)) {
+            showStatus('err', '金额需要大于 0');
+            return;
+          }
+          var cents = Math.round(amt * 100);
+          var entry = {
+            clientId: uuid(),
+            ledgerId: state.ledgerId,
+            direction: state.direction,
+            category: state.category,
+            amountCents: cents,
+            tags: null,
+            note: state.note ? state.note.trim() : null,
+            imageUrls: [],
+            occurredAt: new Date().toISOString(),
+            queuedAt: new Date().toISOString(),
+            attempts: 0
+          };
+          submitBtn.disabled = true;
+          addQueued(entry).then(
+            function () {
+              submitBtn.disabled = false;
+              showStatus('ok', '已存到本地。联网后打开账本页会自动同步。');
+              amountInput.value = '';
+              noteInput.value = '';
+              state.amountText = '';
+              state.note = '';
+            },
+            function (err) {
+              submitBtn.disabled = false;
+              showStatus('err', '存储失败：' + (err && err.message ? err.message : 'IndexedDB 不可用'));
+            }
+          );
+        });
+
+        function showStatus(kind, msg) {
+          statusEl.style.display = 'block';
+          statusEl.className = 'status ' + kind;
+          statusEl.textContent = msg;
+        }
+
+        paintCategories();
+      }
+
+      function escapeHtml(s) {
+        return String(s).replace(/[&<>]/g, function (c) {
+          return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c];
+        });
+      }
+      function escapeAttr(s) {
+        return String(s).replace(/["'<>&]/g, function (c) {
+          return { '"': '&quot;', "'": '&#39;', '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c];
+        });
+      }
+
+      render();
+    </script>
+  </body>
+</html>

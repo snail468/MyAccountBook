@@ -388,7 +388,17 @@ export default function GeneralView({
       )}
 
       <button
-        onClick={() => setShowRecord(true)}
+        onClick={async () => {
+          // 离线时首次点开：dynamic chunk 可能没进过缓存（用户没在线打开过账本），
+          // 直接打 setShowRecord 会让 next/dynamic 抛未捕获异常，掉进
+          // "Application error"。这里先探一下 chunk 能否加载，不能就跳静态兜底页
+          try {
+            await import('./general/RecordModal');
+            setShowRecord(true);
+          } catch {
+            window.location.href = '/offline-record.html';
+          }
+        }}
         className="mt-4 w-full py-4 rounded-2xl bg-ink-900 dark:bg-ink-100 text-white dark:text-ink-900 text-base font-medium active:scale-[0.98]"
       >
         + 记一笔
