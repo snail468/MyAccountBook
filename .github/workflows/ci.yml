@@ -1,10 +1,16 @@
 name: CI
 
-# 原来只有构建镜像的 workflow，没有任何代码检查 —— 类型错误/lint 问题
-# 要等到 Docker 构建那一步才炸，而且测试根本没跑过。
+# 合并前的两个 workflow（ci.yml + docker-publish.yml）曾并行跑：
+# 坏提交会白白花掉一次多架构镜像构建时间。现在改成 verify → docker，
+# tsc/lint/test/build 任一挂了就不再去构镜像。
+#
+# 触发矩阵：
+#   push 到任意分支 / PR / 手动 dispatch → verify
+#   push 到 main / 打 v*.*.* 标签 / 手动 dispatch → verify → docker
 on:
   push:
     branches: ['**']
+    tags: ['v*.*.*']
   pull_request:
   workflow_dispatch:
 
@@ -47,3 +53,79 @@ jobs:
         run: |
           npx prisma migrate deploy
           npm run build
+
+  # 只在 push 到 main / 打 tag / 手动 dispatch 时构镜像。
+  # PR 与其它分支的 push 只跑 verify，别浪费镜像仓库配额和多架构构建时间。
+  docker:
+    needs: verify
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    env:
+      REGISTRY: ghcr.io
+      IMAGE_NAME: ${{ github.repository }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=sha,prefix=sha-
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # gha 后端会把 Dockerfile 里的 --mount=type=cache 也一起持久化，
+          # 所以下一次构建时 .next/cache 和 npm/prisma engines 缓存都还在
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # 把实际推上去的标签写进任务摘要 —— 手动构建分支时不用再猜标签名叫什么，
+      # 直接从 Actions 页面复制到服务器上 docker pull 即可。
+      - name: 输出可拉取的镜像标签
+        run: |
+          {
+            echo "## 可拉取的镜像"
+            echo
+            echo '分支/引用：`${{ github.ref_name }}`'
+            echo
+            echo '```'
+            echo "${{ steps.meta.outputs.tags }}"
+            echo '```'
+            echo
+            echo "在服务器上拉取："
+            echo '```bash'
+            echo "docker pull $(echo '${{ steps.meta.outputs.tags }}' | head -n 1)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
