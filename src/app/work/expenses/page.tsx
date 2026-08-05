@@ -22,11 +22,7 @@ type CategoryStat = {
 async function loadExpenses(userId: string) {
   const baseWhere = { userId, ...NOT_DELETED, direction: 'expense' as const };
 
-  // 未回款超期阈值：occurredAt 早于此的未回款条目算超期。
-  // 见 lib/refundStatus.ts 的 REFUND_OVERDUE_DAYS。
-  const overdueCutoff = new Date(Date.now() - REFUND_OVERDUE_DAYS * 24 * 60 * 60 * 1000);
-
-  const [overall, refundedOverall, byCategory, refundedByCategory, overdueRows, firstPage] =
+  const [overall, refundedOverall, byCategory, refundedByCategory, pendingRows, firstPage] =
     await Promise.all([
       // 汇总下推到 SQL —— 不再把全部出项拉进内存 reduce
       prisma.entry.aggregate({
@@ -52,9 +48,16 @@ async function loadExpenses(userId: string) {
         where: { ...baseWhere, refundedAt: { not: null } },
         _sum: { amountCents: true },
       }),
-      // 超期条目：只查最必要的字段，扔进 summarizeOverdue 得到合计
+      // 全部未回款出项 —— 不在 SQL 层做 occurredAt < 30 天前 的裁剪，
+      // 交给 summarizeOverdue（与客户端徽章共用 refundStatus）判定。
+      // 曾经的 bug：SQL 用 occurredAt: { lt: overdueCutoff } 过滤，
+      // 而客户端 ExpenseList 用 refundStatus() 打红标，两处判定分裂 ——
+      // 老数据（旧 CLI 导入 / 时区偏移 / SQLite TEXT-比较边界）会让 SQL 漏掉
+      // 明明列表已经标红的行，顶部"N 笔已超 30 天"就少数、少钱。个人账本量
+      // 通常几百行，全量拉不成本问题；换来的是"看到的红条数 === 汇总条数"的
+      // 铁律，永远不会再出现"页面自己说自己数错了"。
       prisma.entry.findMany({
-        where: { ...baseWhere, refundedAt: null, occurredAt: { lt: overdueCutoff } },
+        where: { ...baseWhere, refundedAt: null },
         select: { amountCents: true, occurredAt: true, refundedAt: true },
       }),
       prisma.entry.findMany({
@@ -63,7 +66,7 @@ async function loadExpenses(userId: string) {
         take: DEFAULT_PAGE_SIZE + 1,
       }),
     ]);
-  const overdue = summarizeOverdue(overdueRows);
+  const overdue = summarizeOverdue(pendingRows);
 
   const refundedMap = new Map(
     refundedByCategory.map((r) => [r.category, r._sum.amountCents ?? 0]),

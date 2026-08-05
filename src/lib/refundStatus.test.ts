@@ -79,6 +79,27 @@ describe('refundStatus', () => {
       });
     });
 
+    // 回归：早期 /work/expenses/page.tsx 在 SQL 层用 occurredAt < cutoff 过滤
+    // 得到 overdueRows，客户端 ExpenseList 却用 refundStatus() 打红标，两处判定
+    // 分裂 —— 老数据 / 时区偏移能让 SQL 漏掉列表已标红的行，页面顶部数字比实际
+    // 小。改成 SQL 只筛 refundedAt: null，overdueness 全交给 summarizeOverdue，
+    // 保证"看到几条红条 === 汇总显示几条"。
+    it('传入全部未回款条目也能得到正确数字（不再依赖 SQL 层的 occurredAt 裁剪）', () => {
+      const allPending = [
+        { occurredAt: daysAgo(1), refundedAt: null, amountCents: 100 },
+        { occurredAt: daysAgo(15), refundedAt: null, amountCents: 200 },
+        { occurredAt: daysAgo(29), refundedAt: null, amountCents: 300 }, // 恰好未超
+        { occurredAt: daysAgo(30), refundedAt: null, amountCents: 400 }, // 恰好达标
+        { occurredAt: daysAgo(97), refundedAt: null, amountCents: 500 },
+        { occurredAt: daysAgo(300), refundedAt: null, amountCents: 600 },
+      ];
+      expect(summarizeOverdue(allPending, now)).toEqual({
+        count: 3,
+        totalCents: 400 + 500 + 600,
+        oldestDays: 300,
+      });
+    });
+
     it('都不超期 → 空汇总', () => {
       expect(
         summarizeOverdue(
