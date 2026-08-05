@@ -8,6 +8,12 @@ import { materializeDueRules } from '@/lib/recurringRun';
 import { parseRewardMethods, rewardValueKind } from '@/lib/rewardMethod';
 import { NOT_DELETED } from '@/lib/softDelete';
 import { parseCustom } from '@/lib/generalCategories';
+import {
+  isIncomeComponentEnabled,
+  letterFor,
+  parsePrefs,
+  type IncomeComponentKey,
+} from '@/lib/userPrefs';
 import LogoutButton from '@/components/LogoutButton';
 import ExportButton from '@/components/ExportButton';
 import ImportButton from '@/components/ImportButton';
@@ -15,6 +21,8 @@ import ChangePasswordButton from '@/components/ChangePasswordButton';
 import Money from '@/components/ui/Money';
 import Prefetcher from '@/components/ui/Prefetcher';
 import OfflineWarmer, { type WarmableLedger } from '@/components/ui/OfflineWarmer';
+import IncomeComponentsCard from './IncomeComponentsCard';
+import type { IncomeComponent } from './IncomeComponentsCard';
 
 export const dynamic = 'force-dynamic';
 
@@ -35,10 +43,15 @@ async function loadDashboard(userId: string) {
     /* 内部已记日志 */
   }
 
-  const ledgers = await prisma.ledger.findMany({
-    where: { userId, archived: false, deletedAt: null },
-    orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
-  });
+  const [ledgers, userRow] = await Promise.all([
+    prisma.ledger.findMany({
+      where: { userId, archived: false, deletedAt: null },
+      orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
+    }),
+    // 用户偏好 —— 用来过滤"总收入 A"里启用的组件
+    prisma.user.findUnique({ where: { id: userId }, select: { preferences: true } }),
+  ]);
+  const prefs = parsePrefs(userRow?.preferences ?? null);
 
   const hasWork = ledgers.some((l) => l.kind === 'work');
   const hasTaoyuan = ledgers.some((l) => l.kind === 'taoyuan');
@@ -144,8 +157,14 @@ async function loadDashboard(userId: string) {
     })
     .filter((l) => Object.keys(l.monthBudgets).length + Object.keys(l.weekBudgets).length > 0);
 
-  const [generalSums, travelSums, travelMemberCounts, budgetSpendMonth, budgetSpendWeek] =
-    await Promise.all([
+  const [
+    generalSums,
+    generalIncomeAllTime,
+    travelSums,
+    travelMemberCounts,
+    budgetSpendMonth,
+    budgetSpendWeek,
+  ] = await Promise.all([
     generalIds.length > 0
       ? prisma.generalEntry.groupBy({
           by: ['ledgerId', 'direction'],
@@ -153,6 +172,20 @@ async function loadDashboard(userId: string) {
             ledgerId: { in: generalIds },
             ...NOT_DELETED,
             occurredAt: { gte: monthStart, lt: monthEnd },
+          },
+          _sum: { amountCents: true },
+        })
+      : Promise.resolve([]),
+    // 普通账本的**累计**进项 —— 供"总收入 A"里的 E/F/G… 分量使用。
+    // 与 B/C/D 口径一致：累计而不是本月，这样长期趋势稳定；界面上每张普通账本
+    // 卡片里的"本月支出/收入"另有一份 groupBy（generalSums）走的是本月口径。
+    generalIds.length > 0
+      ? prisma.generalEntry.groupBy({
+          by: ['ledgerId'],
+          where: {
+            ledgerId: { in: generalIds },
+            ...NOT_DELETED,
+            direction: 'income',
           },
           _sum: { amountCents: true },
         })
@@ -266,13 +299,38 @@ async function loadDashboard(userId: string) {
     });
   }
 
+  // "总收入 A" 的组成清单。key 是稳定标识（见 lib/userPrefs.ts），letter 是渲染
+  // 顺序里的展示层字母。B/C/D 固定语义；E 起按普通账本 order 依次分配。
+  // 每个组件独立可开/关，缺配置 = 启用（新增账本 / 新增来源默认自动进 A）。
+  const components: IncomeComponent[] = [];
+  const push = (key: IncomeComponentKey, name: string, cents: number) => {
+    components.push({
+      key,
+      letter: letterFor(components.length),
+      name,
+      cents,
+      enabled: isIncomeComponentEnabled(prefs, key),
+    });
+  };
+  if (hasWork) push('work', '工作账本 · 进项', B);
+  if (hasTaoyuan) {
+    push('taoyuan:cash', '桃源 · 现金奖励', C);
+    push('taoyuan:jd', '桃源 · 京东卡奖励', D);
+  }
+  // 普通账本按 ledgers 顺序（order asc）—— generalLedgers 会保持这个顺序
+  const generalLedgers = ledgers.filter((l) => l.kind === 'general');
+  const generalIncomeOf = (ledgerId: string) =>
+    generalIncomeAllTime.find((r) => r.ledgerId === ledgerId)?._sum.amountCents ?? 0;
+  for (const l of generalLedgers) {
+    push(`general:${l.id}` as IncomeComponentKey, `${l.name} · 进项`, generalIncomeOf(l.id));
+  }
+  const A = components.filter((c) => c.enabled).reduce((sum, c) => sum + c.cents, 0);
+
   return {
     hasWork,
     hasTaoyuan,
-    A: B + C + D,
-    B,
-    C,
-    D,
+    components,
+    A,
     expenseTotal,
     pendingCount,
     otherReward: [...otherReward.entries()],
@@ -288,7 +346,6 @@ export default async function HomePage() {
   if (!user) redirect('/login');
 
   const s = await loadDashboard(user.id);
-  const showCombined = s.hasWork && s.hasTaoyuan;
 
   // 预取所有可能的目标路由
   const prefetchRoutes: string[] = ['/ledgers', '/trash'];
@@ -342,75 +399,14 @@ export default async function HomePage() {
         </div>
       )}
 
-      {showCombined && (
-        <div className="rounded-3xl bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 p-6 mt-4 shadow-sm">
-          <div className="text-xs text-ink-500 mb-1">总收入 A = B + C + D (元)</div>
-          <div className="num text-5xl font-bold" style={{ color: '#ff2d87' }}>
-            <Money cents={s.A} />
-          </div>
-          <div className="mt-5 space-y-2 text-sm">
-            <SumRow label="B  工作账本 · 进项" cents={s.B} className="text-ink-900 dark:text-ink-100" />
-            <SumRow label="C  桃源 · 现金奖励" cents={s.C} className="text-ink-900 dark:text-ink-100" />
-            <SumRow
-              label="D  桃源 · 京东卡奖励"
-              cents={s.D}
-              className="text-ink-400 dark:text-ink-500"
-            />
-          </div>
-          {(s.otherReward.length > 0 ||
-            s.countReward.length > 0 ||
-            s.textReward.length > 0) && (
-            <div className="mt-4 pt-3 border-t border-ink-100 dark:border-ink-700">
-              <div className="text-[11px] text-ink-500 mb-1">
-                以下奖励不计入 A，仅存档展示
-              </div>
-              <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-ink-500 num">
-                {s.otherReward.map(([k, v]) => (
-                  <span key={k}>
-                    {rewardLabel(k)} <Money cents={v} />
-                  </span>
-                ))}
-                {/* 个数类：显示个数而不是金额，且**不受「隐藏金额」开关影响** ——
-                    Q币的个数不是钱，藏起来没有意义 */}
-                {s.countReward.map(([k, n]) => (
-                  <span key={k}>
-                    {rewardLabel(k)} {n} 个
-                  </span>
-                ))}
-                {s.textReward.map(([k, items]) => (
-                  <span key={k}>
-                    {rewardLabel(k)}：{items.join(' / ')}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {!showCombined && s.hasWork && (
-        <div className="rounded-3xl bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 p-6 mt-4 shadow-sm">
-          <div className="text-xs text-ink-500 mb-1">工作账本 · 累计进项 (元)</div>
-          <div className="num text-4xl font-bold" style={{ color: '#ff2d87' }}>
-            <Money cents={s.B} />
-          </div>
-          <div className="mt-3 text-xs text-ink-500 num">
-            累计出项 <Money cents={s.expenseTotal} />
-          </div>
-        </div>
-      )}
-
-      {!showCombined && s.hasTaoyuan && (
-        <div className="rounded-3xl bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 p-6 mt-4 shadow-sm">
-          <div className="text-xs text-ink-500 mb-1">桃源账本 · 累计到账 (元)</div>
-          <div className="num text-4xl font-bold" style={{ color: '#ff2d87' }}>
-            <Money cents={s.C + s.D} />
-          </div>
-          <div className="mt-3 text-xs text-ink-500 num flex gap-4">
-            <span>现金 <Money cents={s.C} /></span>
-            <span>京东卡 <Money cents={s.D} /></span>
-          </div>
-        </div>
+      {s.components.length > 0 && (
+        <IncomeComponentsCard
+          components={s.components}
+          A={s.A}
+          otherReward={s.otherReward}
+          countReward={s.countReward}
+          textReward={s.textReward}
+        />
       )}
 
       <div className="mt-8 space-y-3">
@@ -605,35 +601,3 @@ export default async function HomePage() {
   );
 }
 
-function SumRow({
-  label,
-  cents,
-  className,
-}: {
-  label: string;
-  cents: number;
-  className?: string;
-}) {
-  return (
-    <div className="flex items-baseline justify-between">
-      <span className="text-xs text-ink-500">{label}</span>
-      <span className={`num text-base font-medium ${className ?? ''}`}>
-        <Money cents={cents} />
-      </span>
-    </div>
-  );
-}
-
-function rewardLabel(k: string) {
-  if (k.startsWith('custom:')) return k.slice('custom:'.length);
-  switch (k) {
-    case 'qcoin':
-      return 'Q币';
-    case 'carrotcoin':
-      return '萝卜币';
-    case 'merch':
-      return '周边';
-    default:
-      return k;
-  }
-}

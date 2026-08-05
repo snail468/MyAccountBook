@@ -24,6 +24,11 @@ model User {
   failedLoginCount Int       @default(0)
   lockedUntil      DateTime?
 
+  // 用户偏好（JSON blob）。目前只装首页"总收入组成"配置 ——
+  //   { incomeComponents: { "B": true, "C": false, "gen:<ledgerId>": true } }
+  // 见 src/lib/userPrefs.ts。未来添别的偏好也塞这里，不用每次加列。
+  preferences String?
+
   entries       Entry[]
   events        Event[]
   ledgers       Ledger[]
