@@ -11,8 +11,10 @@ export default async function LedgersPage() {
   const user = await requireUser();
   if (!user) redirect('/login');
 
+  // 列出"我作为成员的所有账本"—— B7 后一个账本可以有多位成员，Ledger.userId
+  // 只是建者，不再等价于访问权。这里改成走 LedgerMember。
   const all = await prisma.ledger.findMany({
-    where: { userId: user.id },
+    where: { members: { some: { userId: user.id } } },
     orderBy: [{ deletedAt: 'asc' }, { order: 'asc' }, { createdAt: 'asc' }],
   });
 

@@ -24,24 +24,32 @@ export async function POST(req: Request) {
   if (!parsed.success) return badRequest();
   const p = parsed.data;
 
-  // 内置账本每人只能有一份
+  // 内置账本每人只能有一份 —— 判定条件：作为 owner 参与、未归档、未软删
   if (p.kind === 'work' || p.kind === 'taoyuan') {
     const existing = await prisma.ledger.findFirst({
-      where: { userId: user.id, kind: p.kind, archived: false },
+      where: {
+        kind: p.kind,
+        archived: false,
+        deletedAt: null,
+        members: { some: { userId: user.id, role: 'owner' } },
+      },
     });
     if (existing) {
       return conflict(p.kind === 'work' ? '你已经有工作账本了' : '你已经有桃源账本了');
     }
   }
 
-  // 计算 order：追加到末尾
+  // 计算 order：追加到末尾（仅看自己作为成员的账本）
   const last = await prisma.ledger.findFirst({
-    where: { userId: user.id },
+    where: { members: { some: { userId: user.id } } },
     orderBy: { order: 'desc' },
     select: { order: true },
   });
   const order = (last?.order ?? -1) + 1;
 
+  // 建者自动落一条 LedgerMember(role='owner') —— 从今以后归属都以这张表为准。
+  // Ledger.userId 保留是为了让老代码路径（导出/迁移/统计）继续能拿到"建者"，
+  // 但**任何权限判断都不要用 userId 直接比对**，改走 requireOwnedLedger。
   const created = await prisma.ledger.create({
     data: {
       userId: user.id,
@@ -54,6 +62,7 @@ export async function POST(req: Request) {
       baseCurrency: p.baseCurrency || null,
       startDate: p.startDate ? new Date(p.startDate) : null,
       endDate: p.endDate ? new Date(p.endDate) : null,
+      members: { create: { userId: user.id, role: 'owner' } },
     },
   });
   return NextResponse.json({ ok: true, id: created.id, kind: created.kind });

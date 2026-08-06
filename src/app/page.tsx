@@ -44,8 +44,18 @@ async function loadDashboard(userId: string) {
   }
 
   const [ledgers, userRow] = await Promise.all([
+    // B7：首页显示"我作为成员的所有账本" —— 走 LedgerMember 而不是 Ledger.userId。
+    // work/taoyuan 目前仍是 user-scoped（Entry/Event 未迁移到 ledgerId），
+    // 所以对被邀请者来说，即便"看到"了别人的 work/taoyuan 卡片，卡片里的金额
+    // 也是"你自己的 Entry/Event"—— 不会有数据泄露，但显示会不一致。
+    // Phase 2 迁移完 Entry/Event 后这一点自然对齐。为避免困惑，先在下面把
+    // work/taoyuan 卡片的显示口径改成"只算 owner 自己是本人的账本"。
     prisma.ledger.findMany({
-      where: { userId, archived: false, deletedAt: null },
+      where: {
+        archived: false,
+        deletedAt: null,
+        members: { some: { userId } },
+      },
       orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
     }),
     // 用户偏好 —— 用来过滤"总收入 A"里启用的组件

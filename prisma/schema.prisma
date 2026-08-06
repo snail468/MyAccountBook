@@ -35,6 +35,11 @@ model User {
   memberships   TripMember[]
   bankCards     BankCard[]
   recurringRules RecurringRule[]
+
+  // B7 账本共享：跨账本的 ACL 成员身份，与 TripMember（旅游同伴占位）是两回事。
+  ledgerMemberships LedgerMember[]
+  createdInvites    LedgerInvite[] @relation("InviteCreator")
+  acceptedInvites   LedgerInvite[] @relation("InviteAcceptor")
 }
 
 // ============ 工作账本 (built-in kind="work") ============
@@ -160,11 +165,68 @@ model Ledger {
   tripExpenses TripExpense[]
   recurringRules RecurringRule[]
 
+  // B7 账本共享：这条 Ledger 上有哪些协作成员、有哪些未使用的邀请
+  members  LedgerMember[]
+  invites  LedgerInvite[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([userId, order])
   // 唯一性由应用层保证：work/taoyuan 每用户仅一条；general/travel 可多条
+}
+
+// ============ 账本协作（B7） ============
+//
+// 账本共享的 ACL 表。角色阶梯 owner > editor > viewer：
+//   owner  —— 建者本人；能改账本设置、邀请/踢人、软删/恢复/永删账本
+//   editor —— 能增删改条目
+//   viewer —— 只读
+//
+// 与 Ledger.userId 的关系：Ledger.userId 仍在，保持"建者"语义（导出/迁移/
+// 老逻辑仍能拿到一个稳定的 user），但**权限判断一律走本表** —— 见
+// src/lib/ownership.ts。回填脚本会为每个现有 Ledger 建一条 owner 行。
+//
+// 与 TripMember 的关系：两者独立。TripMember 是旅游账本的"参与人占位"，
+// 可以是纯名字（displayName），也可以关联 userId；LedgerMember 才是能进
+// 这个账本的用户。用户接受旅游账本邀请时，UI 会引导他绑定到某个 TripMember。
+model LedgerMember {
+  id        String   @id @default(cuid())
+  ledgerId  String
+  ledger    Ledger   @relation(fields: [ledgerId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // "owner" | "editor" | "viewer"。Prisma 的 SQLite 无 enum，用字符串。
+  // 校验放在 src/lib/ledgerRole.ts，禁止绕过。
+  role      String
+  createdAt DateTime @default(now())
+
+  @@unique([ledgerId, userId])
+  @@index([userId])
+}
+
+// 一次性邀请码：owner 生成 token，被邀请者登录后 POST /api/invites/[token] 接受。
+// 接受成功后 acceptedByUserId / acceptedAt 落库，同一 token 再用会被拒。
+//
+// **不搞永久邀请链接**：token 一旦落库就无法撤回给持有者手里的那份，
+// 一次性 + 短有效期是最保守的选择；owner 想再邀请就再生成一个。
+model LedgerInvite {
+  id              String    @id @default(cuid())
+  ledgerId        String
+  ledger          Ledger    @relation(fields: [ledgerId], references: [id], onDelete: Cascade)
+  // 32 字节随机 base64url —— 客户端拼进 /invite/<token> 链接
+  token           String    @unique
+  role            String    // 邀请后落到 LedgerMember 的角色
+  createdByUserId String
+  createdBy       User      @relation("InviteCreator", fields: [createdByUserId], references: [id], onDelete: Cascade)
+  createdAt       DateTime  @default(now())
+  // 到期时间。null 表示不过期（当前 UI 一律给 7 天，后端不强制）
+  expiresAt       DateTime?
+  acceptedByUserId String?
+  acceptedBy      User?     @relation("InviteAcceptor", fields: [acceptedByUserId], references: [id], onDelete: SetNull)
+  acceptedAt      DateTime?
+
+  @@index([ledgerId])
 }
 
 // ============ 普通账本条目 ============

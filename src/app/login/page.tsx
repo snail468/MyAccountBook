@@ -2,6 +2,15 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
+
+// 登录后跳转白名单：只接受站内相对路径（"/" 开头且不是 "//"），拒绝 next=//evil.com。
+// 缺失或非法一律回首页。
+function safeNext(raw: string | null): string {
+  if (!raw) return '/';
+  if (!raw.startsWith('/') || raw.startsWith('//')) return '/';
+  return raw;
+}
 
 function Spinner() {
   return (
@@ -10,6 +19,8 @@ function Spinner() {
 }
 
 export default function LoginPage() {
+  const searchParams = useSearchParams();
+  const next = safeNext(searchParams.get('next'));
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -28,7 +39,7 @@ export default function LoginPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || '登录失败');
       // 用 location 全量跳转，确保浏览器携带刚 Set-Cookie 的会话
-      window.location.href = '/';
+      window.location.href = next;
     } catch (err) {
       setError(err instanceof Error ? err.message : '登录失败');
     } finally {

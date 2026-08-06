@@ -55,7 +55,11 @@ const bodySchema = z
 // 不影响列表页的首屏。
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const ctx = await requireOwnedLedger(id, { kind: 'travel', kindMessage: '仅旅游账本可用' });
+  const ctx = await requireOwnedLedger(id, {
+    kind: 'travel',
+    kindMessage: '仅旅游账本可用',
+    minRole: 'viewer',
+  });
   if (ctx instanceof Response) return ctx;
 
   const url = new URL(req.url);
@@ -125,7 +129,11 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const ctx = await requireOwnedLedger(id, { kind: 'travel', kindMessage: '仅旅游账本可用' });
+  const ctx = await requireOwnedLedger(id, {
+    kind: 'travel',
+    kindMessage: '仅旅游账本可用',
+    minRole: 'editor',
+  });
   if (ctx instanceof Response) return ctx;
 
   const body = await req.json().catch(() => null);

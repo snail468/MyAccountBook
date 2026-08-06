@@ -31,7 +31,12 @@ const bodySchema = z.object({
 // 供客户端"加载更多"翻页。首屏那一页由 server component 直接查，不走这里。
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const ctx = await requireOwnedLedger(id, { kind: 'general', kindMessage: '仅普通账本可用' });
+  // GET 是只读列表 —— 协作者能看
+  const ctx = await requireOwnedLedger(id, {
+    kind: 'general',
+    kindMessage: '仅普通账本可用',
+    minRole: 'viewer',
+  });
   if (ctx instanceof Response) return ctx;
 
   const url = new URL(req.url);
@@ -63,7 +68,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const ctx = await requireOwnedLedger(id, { kind: 'general', kindMessage: '仅普通账本可用' });
+  // 记账是写操作，editor 起
+  const ctx = await requireOwnedLedger(id, {
+    kind: 'general',
+    kindMessage: '仅普通账本可用',
+    minRole: 'editor',
+  });
   if (ctx instanceof Response) return ctx;
 
   const body = await req.json().catch(() => null);

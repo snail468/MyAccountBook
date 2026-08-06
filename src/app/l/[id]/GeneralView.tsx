@@ -198,6 +198,14 @@ export default function GeneralView({
           <span>{ledger.icon ?? '📒'}</span>
           <span className="truncate">{ledger.name}</span>
         </h1>
+        <Link
+          href={`/l/${ledger.id}/collaborators`}
+          className="text-ink-400 text-sm"
+          aria-label="协作成员"
+          title="协作成员"
+        >
+          👥
+        </Link>
         <button
           onClick={() => setShowSettings(true)}
           className="text-ink-400 text-sm"

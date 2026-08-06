@@ -33,9 +33,24 @@ export async function ensureLedgersForUser(userId: string): Promise<void> {
   }
 
   if (toCreate.length > 0) {
+    // createMany 一次落下所有内置账本 —— 拿不到 id，不能顺便串 LedgerMember。
+    // 分两步：先建 Ledger，再对新建这批 upsert owner 行。upsert 而不是 create
+    // 是为了幂等 —— 万一同一账本已有 owner 行（旧版本用 create+ create 半途报错
+    // 留下的残次品）也不会重复报 UNIQUE。
     await prisma.ledger.createMany({
       data: toCreate.map((t) => ({ ...t, userId })),
     });
+    const created = await prisma.ledger.findMany({
+      where: { userId, kind: { in: toCreate.map((t) => t.kind) } },
+      select: { id: true },
+    });
+    for (const { id } of created) {
+      await prisma.ledgerMember.upsert({
+        where: { ledgerId_userId: { ledgerId: id, userId } },
+        create: { ledgerId: id, userId, role: 'owner' },
+        update: {},
+      });
+    }
   }
 
   doneUsers.add(userId);

@@ -12,7 +12,12 @@ const bodySchema = z.object({
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const ctx = await requireOwnedLedger(id, { kind: 'travel', kindMessage: '仅旅游账本可用' });
+  // 增删旅游成员（TripMember，即"付款人 / 分摊人"占位）—— editor 起
+  const ctx = await requireOwnedLedger(id, {
+    kind: 'travel',
+    kindMessage: '仅旅游账本可用',
+    minRole: 'editor',
+  });
   if (ctx instanceof Response) return ctx;
 
   const body = await req.json().catch(() => null);

@@ -1064,6 +1064,104 @@ CI 覆盖范围。
 ---
 
 
+### 2.25 B7 账本共享协作 · Phase 1（general / travel）
+
+原 [4.4 B 层](#44-功能--b-层)首项。分成两轮做：**Phase 1** 拿下已经是
+ledger-scoped 的普通/旅游账本 —— 它们的数据本来就挂在 `ledgerId` 下，
+把归属校验从 `Ledger.userId === user.id` 换成 "LedgerMember 里有你" 就通了；
+**Phase 2** 才动 `Entry.userId` / `Event.userId`，因为工作/桃源账本共享要
+先把这两张表迁到 ledger-scoped，涉及导出/导入/统计/搜索/首页聚合几十处
+重写，与 Phase 1 属于两个数量级的工作量。
+
+**数据模型**：
+
+新增两张表（见 `prisma/schema.prisma`）：
+
+```
+LedgerMember { id, ledgerId, userId, role, createdAt }
+  role: "owner" | "editor" | "viewer"
+  UNIQUE(ledgerId, userId)
+
+LedgerInvite { id, ledgerId, token, role, createdByUserId,
+               createdAt, expiresAt, acceptedByUserId?, acceptedAt? }
+  UNIQUE(token)
+```
+
+`Ledger.userId` 保留，语义收窄成"建者"（导出/迁移仍要一个稳定 user 引用），
+**但任何权限判断都不再直接用它**。回填迁移 `20260806004700_backfill_ledger_member_owners`
+给每个既有账本插一条 `owner` 行，SQL 走 `INSERT OR IGNORE` 幂等。
+
+**角色阶梯**（见 `src/lib/ledgerRole.ts`）：
+
+| 权限            | owner | editor | viewer |
+|-----------------|-------|--------|--------|
+| 看列表 / 详情    | ✓     | ✓      | ✓      |
+| 增删改条目       | ✓     | ✓      | —      |
+| 改账本设置       | ✓     | —      | —      |
+| 邀请 / 踢人 / 改角色 | ✓ | —      | —      |
+| 软删 / 恢复 / 永删账本 | ✓ | —    | —      |
+
+**权限校验统一收口** —— `requireOwnedLedger` 加了 `minRole` 参数（默认 owner，
+与老行为一致），route 按业务需要显式放宽：
+
+```ts
+// 只读 —— viewer 起
+const ctx = await requireOwnedLedger(id, { kind: 'general', minRole: 'viewer' });
+// 写 —— editor 起
+const ctx = await requireOwnedLedger(id, { kind: 'general', minRole: 'editor' });
+// 管理 —— owner（默认）
+const ctx = await requireOwnedLedger(id);
+```
+
+`requireOwnedGeneralEntry` / `requireOwnedTripExpense` 的默认门槛从 owner
+（隐含）改成 `editor`，因为它们只在 PATCH / DELETE 里出现。**为什么权限不足
+也返回 404 而不是 403**：与 apiError.ts 顶部约定一致 —— 状态码不区分
+"不存在"/"不属于你"/"权限不够"，不给攻击者枚举成员身份的探针。
+
+**邀请流程**：
+
+- `POST /api/ledgers/<id>/invites` (owner) → 32 字节 base64url token，
+  固定 7 天有效期，只能用一次
+- `POST /api/invites/<token>` (登录后) → 幂等，本来就是成员会返回
+  `alreadyMember: true`
+- `DELETE /api/ledgers/<id>/invites/<inviteId>` (owner) → 撤回未接受的邀请
+- `GET /api/ledgers/<id>/collaborators` (viewer 起) → 列成员 + 未接受邀请
+  （token 只对 owner 返回）
+- `PATCH /api/ledgers/<id>/collaborators/<userId>` (owner) → 改 editor/viewer
+  互切；不能改自己、不能改 owner
+- `DELETE /api/ledgers/<id>/collaborators/<userId>` (owner 或 self-exit) →
+  踢人 / 主动退出；**不能移除最后一个 owner**（409），要走"删除账本"
+
+UI：新增 `/l/[id]/collaborators` 面板（`CollaboratorsPanel.tsx`），
+`GeneralView` / `TravelView` 头部加 👥 入口。接受落地页 `/invite/[token]`
+先做登录门（未登录 302 到 `/login?next=/invite/<token>`），登录页新增
+`?next=` 支持（白名单：只接受站内相对路径，`//evil.com` 会被打回首页）。
+
+**旅游账本 TripMember 自动关联**：接受旅游账本邀请时，事务里额外查一次
+`TripMember.displayName == username && userId is null`，只有一条时自动 link；
+多条或零条不动，用户在旅游成员面板手动挂。
+
+**work / taoyuan 显式禁掉**：`POST invites` 对这两种账本 400（"共享暂未支持"），
+Ledger 创建路径的 "每人只能一份" 判定同步改成 `members: some(role='owner')`，
+与新模型对齐。首页 `page.tsx` 的账本列表改成 `members: { some: { userId } }`，
+但 work/taoyuan 目前一定只有 owner 自己一个成员，行为不变。
+
+**验证**：
+
+- 单测 354/354（新增 `src/lib/ledgerRole.test.ts` 9 项）
+- `npm run build` 通过（Next 15 standalone，新增 8 条路由）
+- 起真 dev server 跑两账号冒烟脚本 22 项全绿：登录 → A 建 general →
+  B 未受邀 404 → A 生邀请 → B 接受 → B 能读写 → B 不能 PATCH/DELETE 账本
+  → 邀请重放 404 → 幂等再接受 200 → 列成员 → 改角色 → viewer 不能写但能读
+  → 踢人 → 被踢后 404 → 踢自己（唯一 owner）409
+- work / taoyuan 生成邀请 400 已验证；13 个既有账本全被回填了 owner，无孤儿
+
+**Phase 2 待做**（另开一轮，见 [4.4](#44-功能--b-层)）：
+Entry.userId / Event.userId → ledgerId 迁移；导出/导入/统计/搜索/首页/
+work/[month]/taoyuan 全套页面切到 ledgerId；work/taoyuan 邀请解禁。
+
+---
+
 ## 四、待做
 
 ### 4.1 性能（第四部分剩余）
@@ -1092,7 +1190,7 @@ CI 覆盖范围。
 
 | 项 | 说明 | 风险 |
 |---|---|---|
-| **B7 账本共享协作** | `Ledger` 现在硬绑一个 `userId`，`TripMember.userId` 预留了应用内用户关联但没用起来。改成 `LedgerMember(ledgerId, userId, role)` 就能支持夫妻共同记账、旅游同伴各自记账 | **高**。要改动所有权限校验链路（约 15 处 `ownLedger` / `ensureOwn`）。建议单独一轮做，现在有单测和 CI 兜底会安全得多 |
+| ~~B7 账本共享协作 · Phase 1~~ | ✅ general / travel 已完成，见 [2.25](#225-b7-账本共享协作--phase-1general--travel)。**剩余（Phase 2）**：迁 `Entry.userId` / `Event.userId` → `ledgerId`，覆盖 work/taoyuan 共享 —— 涉及导出/导入/统计/搜索/首页聚合几十处，与 Phase 1 属于两个数量级 | **高**（Phase 2） |
 | ~~B8 离线记账队列~~ | ✅ 普通账本已完成（offline-first + UUID 幂等），见 [2.24](#224-字号--周预算--超支高亮--离线记账)。**剩余**：工作/桃源/旅游账本；真实断网浏览器验证 | 中 |
 | **B9 账单导入** | 支付宝 / 微信账单 CSV 解析导入，比手动记账省事一个数量级 | 中 |
 | ~~B10 预算升级~~ | ✅ 分类别预算 + 周预算 + 页面内超支高亮已完成，见 [2.23](#223-四项迭代垫款--京东卡--批量回款--分类预算) 与 [2.24](#224-字号--周预算--超支高亮--离线记账)。**剩余**：Web Push（部署环境明确后再做） | 低 |

@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/db';
 import { requireUser, requireUserWithRole } from '@/lib/session';
 import { forbidden, notFound, unauthorized } from '@/lib/apiError';
+import { isLedgerRole, roleAtLeast, type LedgerRole } from '@/lib/ledgerRole';
 
 // **软删记录一律按不存在处理**：编辑/删除/PATCH 路径都不能操作回收站里的东西，
 // 否则会出现"用户以为删掉的记录还能被 API 改回来"这种诡异体验。
@@ -16,11 +17,16 @@ import { forbidden, notFound, unauthorized } from '@/lib/apiError';
 // 事实上改造前就已经有 '不存在' / '账本不存在' / 'not found' 三种说法了。
 // 判定规则见 lib/apiError.ts 顶部。
 //
+// B7 之后：账本归属从 "Ledger.userId === user.id" 换成 "LedgerMember 里有你"。
+// 三档角色 owner/editor/viewer 见 lib/ledgerRole.ts。requireOwnedLedger 保留
+// 名字与旧签名，多一个 minRole 参数（默认 owner，与老行为一致），存量调用
+// 无需改。要放宽给协作者调用的路由，显式传 { minRole: 'editor' | 'viewer' }。
+//
 // 用法：返回值要么是拿到的上下文，要么是**已经构造好的错误响应**，直接 return。
 //
 //   const ctx = await requireOwnedLedger(id, { kind: 'travel' });
 //   if (ctx instanceof Response) return ctx;
-//   const { user, ledger } = ctx;
+//   const { user, ledger, role } = ctx;
 //
 // NextResponse 继承自 Response，所以 instanceof 这一句同时兜住 401 和 404。
 
@@ -67,24 +73,58 @@ type LedgerOptions = {
   kindMessage?: string;
   /** 账本不存在/不属于你时的提示文案 */
   message?: string;
+  /**
+   * 最低角色门槛。默认 owner —— 保持与 B7 之前 "只有本人能动" 的语义一致。
+   * 明确开放给协作者的路由（如"看一眼账本"、"记一笔"）传 'viewer' / 'editor'。
+   *
+   * 权限不足时也返回 404 而不是 403：路径本身是有效的，只是这个人碰不到，
+   * 与"不存在 / 不属于你"应该给相同的信号，不让攻击者拿状态码枚举成员身份。
+   */
+  minRole?: LedgerRole;
 };
 
 export async function requireOwnedLedger(
   ledgerId: string,
   opts: LedgerOptions = {},
-): Promise<{ user: SessionUser; ledger: OwnedLedger } | Response> {
+): Promise<{ user: SessionUser; ledger: OwnedLedger; role: LedgerRole } | Response> {
   const user = await requireUser();
   if (!user) return unauthorized();
 
+  // 一次查询把 ledger 元数据 + 当前用户的成员行拿回来。
+  // members: 只匹配当前 userId 的这一行（LedgerMember 上有 UNIQUE(ledgerId,userId)，
+  // 最多一条）—— 用 where 过滤而不是全拉出来 filter，避免大账本上无谓的 O(n)。
   const ledger = await prisma.ledger.findUnique({
     where: { id: ledgerId },
-    select: { id: true, userId: true, kind: true, deletedAt: true },
+    select: {
+      id: true,
+      userId: true,
+      kind: true,
+      deletedAt: true,
+      members: {
+        where: { userId: user.id },
+        select: { role: true },
+        take: 1,
+      },
+    },
   });
-  // 不存在与不属于你走同一个分支 —— 区别对待等于泄露 id 是否存在
-  if (!ledger || ledger.userId !== user.id) return notFound(opts.message ?? '账本不存在');
+
+  const notMember = !ledger || ledger.members.length === 0;
+  if (notMember) return notFound(opts.message ?? '账本不存在');
   if (opts.kind && ledger.kind !== opts.kind) return notFound(opts.kindMessage ?? '账本类型不符');
 
-  return { user, ledger };
+  const rawRole = ledger.members[0]!.role;
+  // 数据库里的 role 理论上受插入路径约束，出现越界字符串意味着数据被人手动改坏了。
+  // 保守起见按"不是成员"处理，避免赋予未知权限。
+  if (!isLedgerRole(rawRole)) return notFound(opts.message ?? '账本不存在');
+
+  const minRole = opts.minRole ?? 'owner';
+  if (!roleAtLeast(rawRole, minRole)) return notFound(opts.message ?? '账本不存在');
+
+  return {
+    user,
+    ledger: { id: ledger.id, userId: ledger.userId, kind: ledger.kind, deletedAt: ledger.deletedAt },
+    role: rawRole,
+  };
 }
 
 export type OwnedGeneralEntry = { ledgerId: string; imageUrls: string | null };
@@ -93,7 +133,8 @@ export type OwnedGeneralEntry = { ledgerId: string; imageUrls: string | null };
 export async function requireOwnedGeneralEntry(
   ledgerId: string,
   entryId: string,
-): Promise<{ user: SessionUser; entry: OwnedGeneralEntry } | Response> {
+  opts: { minRole?: LedgerRole } = {},
+): Promise<{ user: SessionUser; entry: OwnedGeneralEntry; role: LedgerRole } | Response> {
   const user = await requireUser();
   if (!user) return unauthorized();
 
@@ -103,18 +144,25 @@ export async function requireOwnedGeneralEntry(
       ledgerId: true,
       imageUrls: true,
       deletedAt: true,
-      ledger: { select: { userId: true } },
+      ledger: {
+        select: {
+          members: { where: { userId: user.id }, select: { role: true }, take: 1 },
+        },
+      },
     },
   });
-  if (
-    !entry ||
-    entry.ledgerId !== ledgerId ||
-    entry.ledger.userId !== user.id ||
-    entry.deletedAt !== null
-  ) {
-    return notFound();
-  }
-  return { user, entry: { ledgerId: entry.ledgerId, imageUrls: entry.imageUrls } };
+  if (!entry || entry.ledgerId !== ledgerId || entry.deletedAt !== null) return notFound();
+
+  const rawRole = entry.ledger.members[0]?.role;
+  if (!rawRole || !isLedgerRole(rawRole)) return notFound();
+  const minRole = opts.minRole ?? 'editor';
+  if (!roleAtLeast(rawRole, minRole)) return notFound();
+
+  return {
+    user,
+    entry: { ledgerId: entry.ledgerId, imageUrls: entry.imageUrls },
+    role: rawRole,
+  };
 }
 
 export type OwnedTripExpense = { ledgerId: string; imageUrls: string | null };
@@ -123,7 +171,8 @@ export type OwnedTripExpense = { ledgerId: string; imageUrls: string | null };
 export async function requireOwnedTripExpense(
   ledgerId: string,
   expenseId: string,
-): Promise<{ user: SessionUser; expense: OwnedTripExpense } | Response> {
+  opts: { minRole?: LedgerRole } = {},
+): Promise<{ user: SessionUser; expense: OwnedTripExpense; role: LedgerRole } | Response> {
   const user = await requireUser();
   if (!user) return unauthorized();
 
@@ -133,21 +182,32 @@ export async function requireOwnedTripExpense(
       ledgerId: true,
       imageUrls: true,
       deletedAt: true,
-      ledger: { select: { userId: true } },
+      ledger: {
+        select: {
+          members: { where: { userId: user.id }, select: { role: true }, take: 1 },
+        },
+      },
     },
   });
-  if (
-    !expense ||
-    expense.ledgerId !== ledgerId ||
-    expense.ledger.userId !== user.id ||
-    expense.deletedAt !== null
-  ) {
-    return notFound();
-  }
-  return { user, expense: { ledgerId: expense.ledgerId, imageUrls: expense.imageUrls } };
+  if (!expense || expense.ledgerId !== ledgerId || expense.deletedAt !== null) return notFound();
+
+  const rawRole = expense.ledger.members[0]?.role;
+  if (!rawRole || !isLedgerRole(rawRole)) return notFound();
+  const minRole = opts.minRole ?? 'editor';
+  if (!roleAtLeast(rawRole, minRole)) return notFound();
+
+  return {
+    user,
+    expense: { ledgerId: expense.ledgerId, imageUrls: expense.imageUrls },
+    role: rawRole,
+  };
 }
 
-/** 工作账本的条目直接挂在 user 下，没有中间的 ledger */
+/**
+ * 工作账本的条目直接挂在 user 下，没有中间的 ledger。
+ * B7 阶段还没把 Entry 迁到 ledger-scoped —— 工作账本共享是 Phase 2。
+ * 所以这个函数保持 user-scoped 语义，共享暂不生效。
+ */
 export async function requireOwnedEntry(
   entryId: string,
 ): Promise<{ user: SessionUser; entry: { id: string } } | Response> {
@@ -164,7 +224,9 @@ export async function requireOwnedEntry(
 
 export type OwnedEvent = { id: string; userId: string };
 
-/** 桃源账本的活动 */
+/**
+ * 桃源账本的活动。同 Entry —— Event 仍是 user-scoped，B7 Phase 1 未迁移。
+ */
 export async function requireOwnedEvent(
   eventId: string,
 ): Promise<{ user: SessionUser; event: OwnedEvent } | Response> {

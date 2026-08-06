@@ -247,8 +247,18 @@ export default async function LedgerPage({ params }: { params: Promise<{ id: str
   if (!user) redirect('/login');
   const { id } = await params;
 
-  const ledger = await prisma.ledger.findUnique({ where: { id } });
-  if (!ledger || ledger.userId !== user.id) notFound();
+  // B7：走 LedgerMember 判定"我能不能看这个账本"。owner/editor/viewer 都能看，
+  // 具体到写操作再由 route handler 自己按 minRole 拦。
+  const ledger = await prisma.ledger.findUnique({
+    where: { id },
+    include: {
+      members: { where: { userId: user.id }, select: { role: true }, take: 1 },
+    },
+  });
+  if (!ledger || ledger.members.length === 0) notFound();
+  // 角色暂时只在服务器端做拦截；UI 上的"隐藏写按钮"要等成员管理面板一并做。
+  // 拿出来只是为了往下游 view 组件传（当前签名还没接，先留 void）。
+  void ledger.members[0]!.role;
 
   if (ledger.kind === 'general') {
     const data = await loadGeneral(id, ledger.customCategories);
