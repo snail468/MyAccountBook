@@ -5,6 +5,9 @@ import { requireSessionUser } from '@/lib/ownership';
 import { badRequest, notFound } from '@/lib/apiError';
 import { NOT_DELETED } from '@/lib/softDelete';
 
+// Phase 2：归属判定改成"这些 Entry 所属的 Ledger 上，请求方是 editor 起"。
+// 一次查 rows 时把每条的 ledger.members 一并拉出来做校验。
+
 // 一次性大金额回款：8 张单据合计 3200 元，公司一次转账过来 3200 元。
 // 之前只能一笔一笔标已回款，很烦。这里接受一个 ids 数组，事务里给它们
 // 打同样的 refundedAt。
@@ -31,13 +34,15 @@ export async function POST(req: Request) {
 
   const uniqueIds = [...new Set(ids)];
 
-  // 一次查询确认：属于该用户、未软删、当前未回款
+  // 一次查询确认：ids 属于本人有 editor+ 权限的 Ledger 下、未软删、未回款
   const rows = await prisma.entry.findMany({
     where: {
       id: { in: uniqueIds },
-      userId: user.id,
       ...NOT_DELETED,
       refundedAt: null,
+      ledger: {
+        members: { some: { userId: user.id, role: { in: ['owner', 'editor'] } } },
+      },
     },
     select: { id: true, amountCents: true },
   });
@@ -54,10 +59,12 @@ export async function POST(req: Request) {
   await prisma.entry.updateMany({
     where: {
       id: { in: uniqueIds },
-      userId: user.id,
       // 双保险：即便并发下有一条刚被标过，updateMany 也不会覆盖它 ——
       // where 里带 refundedAt: null 只更新还没标的
       refundedAt: null,
+      ledger: {
+        members: { some: { userId: user.id, role: { in: ['owner', 'editor'] } } },
+      },
     },
     data: { refundedAt: at },
   });

@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { requireSessionUser } from '@/lib/ownership';
+import { requireSessionUser, resolveOwnLedgerId } from '@/lib/ownership';
+import { badRequest, notFound } from '@/lib/apiError';
+import { isLedgerRole, roleAtLeast } from '@/lib/ledgerRole';
 import { buildEventTree } from '@/lib/taoyuanSerialize';
 import {
   CREATED_DESC_ORDER,
@@ -24,9 +26,13 @@ export async function GET(req: Request) {
   const limit = parsePageSize(url.searchParams.get('limit'));
   const cursor = decodeCursor(url.searchParams.get('cursor'));
 
+  // Phase 2：读默认走"我 owner 的 taoyuan 账本"；显式带 ledgerId 走该账本（需 viewer 起）
+  const ledgerId = await resolveTaoyuanRead(user.id, url.searchParams.get('ledgerId'));
+  if (ledgerId instanceof Response) return ledgerId;
+
   const rows = await prisma.event.findMany({
     where: {
-      userId: user.id,
+      ledgerId,
       ...NOT_DELETED,
       status: 'paid',
       parentId: null,
@@ -46,7 +52,7 @@ export async function GET(req: Request) {
     items.length > 0
       ? await prisma.event.findMany({
           where: {
-            userId: user.id,
+            ledgerId,
             ...NOT_DELETED,
             parentId: { in: items.map((e) => e.id) },
           },
@@ -61,3 +67,23 @@ export async function GET(req: Request) {
     nextCursor,
   });
 }
+
+async function resolveTaoyuanRead(
+  userId: string,
+  explicit: string | null,
+): Promise<string | Response> {
+  if (!explicit) return resolveOwnLedgerId(userId, 'taoyuan');
+  const ledger = await prisma.ledger.findUnique({
+    where: { id: explicit },
+    select: {
+      kind: true,
+      members: { where: { userId }, select: { role: true }, take: 1 },
+    },
+  });
+  if (!ledger || ledger.kind !== 'taoyuan') return notFound('账本不存在');
+  const rawRole = ledger.members[0]?.role;
+  if (!rawRole || !isLedgerRole(rawRole)) return notFound('账本不存在');
+  if (!roleAtLeast(rawRole, 'viewer')) return notFound('账本不存在');
+  return explicit;
+}
+void badRequest;

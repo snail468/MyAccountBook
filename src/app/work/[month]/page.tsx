@@ -8,6 +8,7 @@ import PendingBadge from '@/components/ui/PendingBadge';
 import NewEntryFlow from './NewEntryFlow';
 import EntryRow from './EntryRow';
 import { NOT_DELETED } from '@/lib/softDelete';
+import { resolveOwnLedgerId } from '@/lib/ownership';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,8 +22,9 @@ export default async function MonthPage({
   const { month } = await params;
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) notFound();
 
+  const workLedgerId = await resolveOwnLedgerId(user.id, 'work');
   const entries = await prisma.entry.findMany({
-    where: { userId: user.id, ...NOT_DELETED, yearMonth: month },
+    where: { ledgerId: workLedgerId, ...NOT_DELETED, yearMonth: month },
     orderBy: [{ occurredAt: 'desc' }, { createdAt: 'desc' }],
   });
 

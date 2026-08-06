@@ -5,6 +5,7 @@ import { prisma } from '@/lib/db';
 import Money from '@/components/ui/Money';
 import Prefetcher from '@/components/ui/Prefetcher';
 import { NOT_DELETED } from '@/lib/softDelete';
+import { resolveOwnLedgerId } from '@/lib/ownership';
 
 export const dynamic = 'force-dynamic';
 
@@ -45,8 +46,12 @@ export default async function WorkPage() {
   const user = await requireUser();
   if (!user) redirect('/login');
 
+  // Phase 2：/work 显示"我 owner 的那本工作账本"里的所有 Entry —— 与老行为一致
+  // （创建者过滤已被 ledgerId 过滤替代；一个 ledger 可以有多人写入的条目）。
+  // 共享的 work 账本走 /l/[id]（详情列表），/work 不聚合别人的 work。
+  const workLedgerId = await resolveOwnLedgerId(user.id, 'work');
   const entries = await prisma.entry.findMany({
-    where: { userId: user.id, ...NOT_DELETED },
+    where: { ledgerId: workLedgerId, ...NOT_DELETED },
     select: { yearMonth: true, direction: true, amountCents: true },
   });
 

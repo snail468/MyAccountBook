@@ -127,6 +127,50 @@ export async function requireOwnedLedger(
   };
 }
 
+/**
+ * 解析当前用户 owner 身份下的 work / taoyuan 账本 id。
+ *
+ * 用途：POST /api/entries、POST /api/events、/work 页面、/taoyuan 页面 —— 这些
+ * 老入口没有 URL 里的 ledgerId 参数，语义上是"我的工作/桃源"，所以需要一个
+ * 稳定入口拿到"我 owner 的那一本"。共享账本走 /l/[id]/... 路径，那边显式带
+ * ledgerId 参数，不会调这个函数。
+ *
+ * 幂等：没有账本时补建（ledgerBootstrap 逻辑内联），保证任何时刻返回值非空。
+ * 用 upsert 兜住并发 —— 两个请求同一时刻 miss，只有一条会写进去。
+ */
+export async function resolveOwnLedgerId(
+  userId: string,
+  kind: 'work' | 'taoyuan',
+): Promise<string> {
+  const existing = await prisma.ledger.findFirst({
+    where: {
+      kind,
+      archived: false,
+      deletedAt: null,
+      members: { some: { userId, role: 'owner' } },
+    },
+    orderBy: { createdAt: 'asc' },
+    select: { id: true },
+  });
+  if (existing) return existing.id;
+
+  // 兜底：老用户 / 迁移遗漏。用一个短事务把 Ledger + LedgerMember 一起落下。
+  const name = kind === 'work' ? '工作账本' : '桃源账本';
+  const icon = kind === 'work' ? '💼' : '🌸';
+  const created = await prisma.ledger.create({
+    data: {
+      userId,
+      kind,
+      name,
+      icon,
+      order: 0,
+      members: { create: { userId, role: 'owner' } },
+    },
+    select: { id: true },
+  });
+  return created.id;
+}
+
 export type OwnedGeneralEntry = { ledgerId: string; imageUrls: string | null };
 
 /** 普通账本下的一条记账。imageUrls 一并取出：删除/改图时要清理不再被引用的文件 */
@@ -204,48 +248,83 @@ export async function requireOwnedTripExpense(
 }
 
 /**
- * 工作账本的条目直接挂在 user 下，没有中间的 ledger。
- * B7 阶段还没把 Entry 迁到 ledger-scoped —— 工作账本共享是 Phase 2。
- * 所以这个函数保持 user-scoped 语义，共享暂不生效。
+ * 工作账本的一条 Entry。Phase 2 之后 Entry.ledgerId 必填，权限走 LedgerMember。
+ * 默认门槛 editor：所有调用点（PATCH/DELETE）都是写操作。
+ * entry.userId 仍存但只是"创建者"，不再是归属判定字段。
  */
 export async function requireOwnedEntry(
   entryId: string,
-): Promise<{ user: SessionUser; entry: { id: string } } | Response> {
+  opts: { minRole?: LedgerRole } = {},
+): Promise<
+  { user: SessionUser; entry: { id: string; ledgerId: string }; role: LedgerRole } | Response
+> {
   const user = await requireUser();
   if (!user) return unauthorized();
 
   const entry = await prisma.entry.findUnique({
     where: { id: entryId },
-    select: { id: true, userId: true, deletedAt: true },
+    select: {
+      id: true,
+      ledgerId: true,
+      deletedAt: true,
+      ledger: {
+        select: {
+          members: { where: { userId: user.id }, select: { role: true }, take: 1 },
+        },
+      },
+    },
   });
-  if (!entry || entry.userId !== user.id || entry.deletedAt !== null) return notFound();
-  return { user, entry: { id: entry.id } };
+  if (!entry || entry.deletedAt !== null) return notFound();
+  const rawRole = entry.ledger.members[0]?.role;
+  if (!rawRole || !isLedgerRole(rawRole)) return notFound();
+  const minRole = opts.minRole ?? 'editor';
+  if (!roleAtLeast(rawRole, minRole)) return notFound();
+
+  return { user, entry: { id: entry.id, ledgerId: entry.ledgerId }, role: rawRole };
 }
 
-export type OwnedEvent = { id: string; userId: string };
+export type OwnedEvent = { id: string; ledgerId: string };
 
 /**
- * 桃源账本的活动。同 Entry —— Event 仍是 user-scoped，B7 Phase 1 未迁移。
+ * 桃源账本的活动。同 Entry —— ledgerId-scoped，权限走 LedgerMember。
  */
 export async function requireOwnedEvent(
   eventId: string,
-): Promise<{ user: SessionUser; event: OwnedEvent } | Response> {
+  opts: { minRole?: LedgerRole } = {},
+): Promise<{ user: SessionUser; event: OwnedEvent; role: LedgerRole } | Response> {
   const user = await requireUser();
   if (!user) return unauthorized();
 
   const event = await prisma.event.findUnique({
     where: { id: eventId },
-    select: { id: true, userId: true, deletedAt: true },
+    select: {
+      id: true,
+      ledgerId: true,
+      deletedAt: true,
+      ledger: {
+        select: {
+          members: { where: { userId: user.id }, select: { role: true }, take: 1 },
+        },
+      },
+    },
   });
-  if (!event || event.userId !== user.id || event.deletedAt !== null) return notFound();
-  return { user, event: { id: event.id, userId: event.userId } };
+  if (!event || event.deletedAt !== null) return notFound();
+  const rawRole = event.ledger.members[0]?.role;
+  if (!rawRole || !isLedgerRole(rawRole)) return notFound();
+  const minRole = opts.minRole ?? 'editor';
+  if (!roleAtLeast(rawRole, minRole)) return notFound();
+
+  return { user, event: { id: event.id, ledgerId: event.ledgerId }, role: rawRole };
 }
 
 /** 活动下的一条金额 */
 export async function requireOwnedEventAmount(
   eventId: string,
   amountId: string,
-): Promise<{ user: SessionUser; amount: { eventId: string } } | Response> {
+  opts: { minRole?: LedgerRole } = {},
+): Promise<
+  { user: SessionUser; amount: { eventId: string }; role: LedgerRole } | Response
+> {
   const user = await requireUser();
   if (!user) return unauthorized();
 
@@ -254,17 +333,30 @@ export async function requireOwnedEventAmount(
     select: {
       eventId: true,
       deletedAt: true,
-      event: { select: { userId: true, deletedAt: true } },
+      event: {
+        select: {
+          deletedAt: true,
+          ledger: {
+            select: {
+              members: { where: { userId: user.id }, select: { role: true }, take: 1 },
+            },
+          },
+        },
+      },
     },
   });
   if (
     !amount ||
     amount.eventId !== eventId ||
-    amount.event.userId !== user.id ||
     amount.deletedAt !== null ||
     amount.event.deletedAt !== null
   ) {
     return notFound();
   }
-  return { user, amount: { eventId: amount.eventId } };
+  const rawRole = amount.event.ledger.members[0]?.role;
+  if (!rawRole || !isLedgerRole(rawRole)) return notFound();
+  const minRole = opts.minRole ?? 'editor';
+  if (!roleAtLeast(rawRole, minRole)) return notFound();
+
+  return { user, amount: { eventId: amount.eventId }, role: rawRole };
 }

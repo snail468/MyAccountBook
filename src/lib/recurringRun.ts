@@ -54,10 +54,13 @@ export async function materializeDueRules(
 
     try {
       await prisma.$transaction(async (tx) => {
+        // Phase 2 后 r.ledgerId 一定非空（schema 层约束），走同样的路径。
+        // userId 保留为"规则创建者"，方便后续审计"这笔自动记账是谁配的规则"。
         if (r.target === 'work') {
           await tx.entry.createMany({
             data: dates.map((d) => ({
               userId,
+              ledgerId: r.ledgerId,
               // 工作账本按 yearMonth 归集，要与 occurredAt 保持一致
               yearMonth: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`,
               category: r.category,
@@ -67,10 +70,10 @@ export async function materializeDueRules(
               occurredAt: d,
             })),
           });
-        } else if (r.target === 'general' && r.ledgerId) {
+        } else if (r.target === 'general') {
           await tx.generalEntry.createMany({
             data: dates.map((d) => ({
-              ledgerId: r.ledgerId!,
+              ledgerId: r.ledgerId,
               direction: r.direction,
               category: r.category,
               amountCents: r.amountCents,
@@ -79,9 +82,8 @@ export async function materializeDueRules(
             })),
           });
         } else {
-          // 目标非法（比如 general 但 ledgerId 为空）—— 跳过并停用，
-          // 否则每次打开首页都白跑一遍
-          throw new Error(`规则 ${r.id} 的目标无效：target=${r.target} ledgerId=${r.ledgerId}`);
+          // 未知 target —— 老数据兜底，不该走到
+          throw new Error(`规则 ${r.id} 的 target 非法：${r.target}`);
         }
 
         await tx.recurringRule.update({

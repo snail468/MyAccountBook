@@ -53,6 +53,9 @@ const ledgerSchema = z.object({
 
 const entrySchema = z.object({
   id: z.string().min(1),
+  // Phase 2 之后 Entry 挂 Ledger；老备份没有 ledgerId，用 optional 兼容 ——
+  // 缺失时 planImport 会 fallback 到 existingBuiltinLedgerIds.work
+  ledgerId: z.string().min(1).nullable().optional(),
   yearMonth: z.string(),
   category: z.string(),
   direction: z.string(),
@@ -82,6 +85,8 @@ const eventAmountSchema = z.object({
 
 const eventSchema = z.object({
   id: z.string().min(1),
+  // Phase 2；同 entrySchema
+  ledgerId: z.string().min(1).nullable().optional(),
   title: z.string(),
   startAt: nullableIso,
   content: z.string().nullable(),
@@ -223,6 +228,12 @@ export type ImportOptions = {
    * replace 模式会先清空，所以传空集合即可。
    */
   existingBuiltinKinds?: ReadonlySet<string>;
+  /**
+   * Phase 2：merge 模式下"已存在的 built-in Ledger id"。
+   * planImport 用它把备份里指向旧 work/taoyuan 账本的 Entry/Event 重定向到
+   * 现有账本上，避免"丢掉了新账本行、条目也就找不着家"。缺失时按新建走。
+   */
+  existingBuiltinLedgerIds?: Partial<Record<'work' | 'taoyuan', string>>;
   /** 生成新 id 的函数。默认 crypto.randomUUID，单测里可注入确定性实现 */
   newId?: () => string;
 };
@@ -248,6 +259,7 @@ export type PlannedLedger = {
 export type PlannedEntry = {
   id: string;
   userId: string;
+  ledgerId: string;
   yearMonth: string;
   category: string;
   direction: string;
@@ -262,6 +274,7 @@ export type PlannedEntry = {
 export type PlannedEvent = {
   id: string;
   userId: string;
+  ledgerId: string;
   title: string;
   startAt: Date | null;
   content: string | null;
@@ -367,6 +380,15 @@ export type ImportPlan = {
 const toDate = (s: string): Date => new Date(s);
 const toDateOrNull = (s: string | null): Date | null => (s === null ? null : new Date(s));
 
+// ledgerId 解析辅助：先看 map，再看兜底
+function eventLedgerIdOrFallback(
+  oldId: string,
+  map: Map<string, string>,
+  fallback: string | undefined,
+): string | null {
+  return map.get(oldId) ?? fallback ?? null;
+}
+
 /** 把 /api/uploads/<旧userId>/... 里的 owner 段换成导入者的 id */
 export function rewriteImageOwner(raw: string | null, targetUserId: string): string | null {
   if (!raw) return raw;
@@ -398,6 +420,7 @@ export function rewriteImageOwner(raw: string | null, targetUserId: string): str
 export function planImport(backup: ParsedBackup, opts: ImportOptions): ImportPlan {
   const newId = opts.newId ?? (() => crypto.randomUUID());
   const existingBuiltins = opts.existingBuiltinKinds ?? new Set<string>();
+  const existingBuiltinIds = opts.existingBuiltinLedgerIds ?? {};
   const uid = opts.targetUserId;
   const skipped: string[] = [];
   let imageRefCount = 0;
@@ -410,8 +433,11 @@ export function planImport(backup: ParsedBackup, opts: ImportOptions): ImportPla
   for (const l of backup.ledgers) {
     const isBuiltin = l.kind === 'work' || l.kind === 'taoyuan';
     if (isBuiltin && existingBuiltins.has(l.kind)) {
-      // 已经有一个同类型的了。**不建立 id 映射** ——
-      // work/taoyuan 的数据挂在 userId 上而不是账本上，所以丢掉这行元数据没有副作用
+      // 已经有一个同类型的了。备份里旧 built-in 的 id 映射到"现有 built-in 的 id"，
+      // 这样 Entry/Event 里带的旧 ledgerId 会重定向到用户现有的 built-in 上，
+      // 而不是丢失。Phase 2 之前的行为（"元数据丢掉、数据挂 userId"）已经失效了。
+      const targetId = existingBuiltinIds[l.kind as 'work' | 'taoyuan'];
+      if (targetId) ledgerIdMap.set(l.id, targetId);
       skippedBuiltin += 1;
       continue;
     }
@@ -439,20 +465,44 @@ export function planImport(backup: ParsedBackup, opts: ImportOptions): ImportPla
     skipped.push(`${skippedBuiltin} 个内置账本（你已经有同类型的了，其中的数据仍会导入）`);
   }
 
-  // ---- 工作账本条目（直接挂 userId，与账本无关）----
-  const entries: PlannedEntry[] = backup.entries.map((e) => ({
-    id: newId(),
-    userId: uid,
-    yearMonth: e.yearMonth,
-    category: e.category,
-    direction: e.direction,
-    amountCents: e.amountCents,
-    note: e.note,
-    occurredAt: toDate(e.occurredAt),
-    refundedAt: toDateOrNull(e.refundedAt),
-    createdAt: toDate(e.createdAt),
-    deletedAt: toDateOrNull(e.deletedAt ?? null),
-  }));
+  // ---- 工作账本条目 ----
+  // Phase 2 之后 Entry.ledgerId 必填。解析优先级：
+  //   1) e.ledgerId 存在 → 走 ledgerIdMap（新导入的 ledger 或已 merge 的 built-in）
+  //   2) 存在但映射不到（备份里的 ledger 被 skip 又没提供 built-in fallback）→ existingBuiltinLedgerIds.work
+  //   3) 都失败 → 丢弃这一条，累计到 skipped 提示用户
+  //
+  // 老备份（Phase 1 及以前）没有 e.ledgerId 字段，走 fallback。
+  const entries: PlannedEntry[] = [];
+  let orphanEntries = 0;
+  for (const e of backup.entries) {
+    let ledgerId: string | null = null;
+    if (e.ledgerId) {
+      ledgerId = ledgerIdMap.get(e.ledgerId) ?? existingBuiltinIds.work ?? null;
+    } else {
+      ledgerId = existingBuiltinIds.work ?? null;
+    }
+    if (!ledgerId) {
+      orphanEntries += 1;
+      continue;
+    }
+    entries.push({
+      id: newId(),
+      userId: uid,
+      ledgerId,
+      yearMonth: e.yearMonth,
+      category: e.category,
+      direction: e.direction,
+      amountCents: e.amountCents,
+      note: e.note,
+      occurredAt: toDate(e.occurredAt),
+      refundedAt: toDateOrNull(e.refundedAt),
+      createdAt: toDate(e.createdAt),
+      deletedAt: toDateOrNull(e.deletedAt ?? null),
+    });
+  }
+  if (orphanEntries > 0) {
+    skipped.push(`${orphanEntries} 条工作条目找不到目标账本（且无 work 兜底）`);
+  }
 
   // ---- 桃源活动（parentId 自引用，先全部建映射再改写）----
   const eventIdMap = new Map<string, string>();
@@ -461,6 +511,7 @@ export function planImport(backup: ParsedBackup, opts: ImportOptions): ImportPla
   const events: PlannedEvent[] = [];
   const eventAmounts: PlannedEventAmount[] = [];
   let orphanParents = 0;
+  let orphanEvents = 0;
 
   for (const ev of backup.events) {
     const id = eventIdMap.get(ev.id)!;
@@ -470,12 +521,24 @@ export function planImport(backup: ParsedBackup, opts: ImportOptions): ImportPla
       if (mapped) parentId = mapped;
       else orphanParents += 1; // 父活动不在备份里 → 摘成顶层活动，不丢数据
     }
+    // Phase 2 ledgerId 解析，与 Entry 同规则
+    let ledgerId: string | null = null;
+    if (ev.ledgerId) {
+      ledgerId = eventLedgerIdOrFallback(ev.ledgerId, ledgerIdMap, existingBuiltinIds.taoyuan);
+    } else {
+      ledgerId = existingBuiltinIds.taoyuan ?? null;
+    }
+    if (!ledgerId) {
+      orphanEvents += 1;
+      continue;
+    }
     const contentImages = rewriteImageOwner(ev.contentImages, uid);
     if (contentImages) imageRefCount += 1;
 
     events.push({
       id,
       userId: uid,
+      ledgerId,
       title: ev.title,
       startAt: toDateOrNull(ev.startAt),
       content: ev.content,
@@ -518,6 +581,9 @@ export function planImport(backup: ParsedBackup, opts: ImportOptions): ImportPla
   }
   if (orphanParents > 0) {
     skipped.push(`${orphanParents} 个活动的父活动不在备份里，已摘成顶层活动`);
+  }
+  if (orphanEvents > 0) {
+    skipped.push(`${orphanEvents} 个桃源活动找不到目标账本（且无 taoyuan 兜底）`);
   }
 
   // ---- 普通账本条目 ----

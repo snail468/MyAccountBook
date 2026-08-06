@@ -11,9 +11,15 @@ export default async function RecurringPage() {
   if (!user) redirect('/login');
 
   // 普通账本列表供选择目标账本。旅游账本不支持周期记账 ——
-  // 它的支出必须带付款人与分摊，没法凭规则自动编一笔出来
+  // 它的支出必须带付款人与分摊，没法凭规则自动编一笔出来。
+  // Phase 2：只列自己 editor+ 权限的（一条规则一旦启用就会往账本里写条目）。
   const ledgers = await prisma.ledger.findMany({
-    where: { userId: user.id, kind: 'general', deletedAt: null, archived: false },
+    where: {
+      kind: 'general',
+      deletedAt: null,
+      archived: false,
+      members: { some: { userId: user.id, role: { in: ['owner', 'editor'] } } },
+    },
     orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
     select: { id: true, name: true },
   });

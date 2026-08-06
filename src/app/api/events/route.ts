@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
-import { requireSessionUser } from '@/lib/ownership';
-import { badRequest } from '@/lib/apiError';
+import { requireSessionUser, resolveOwnLedgerId } from '@/lib/ownership';
+import { badRequest, notFound } from '@/lib/apiError';
+import { isLedgerRole, roleAtLeast } from '@/lib/ledgerRole';
 import { stringifyRewardMethods } from '@/lib/rewardMethod';
 
 const rewardMethodStr = z.string().trim().min(1).max(64);
@@ -20,6 +21,8 @@ const bodySchema = z.object({
   note: z.string().max(500).optional().nullable(),
   // 离线队列幂等键。见 lib/offlineQueue.ts
   clientId: z.string().length(36).optional().nullable(),
+  // 可选：写入特定 taoyuan 账本（共享场景）。留空 = 用户 owner 的那本。
+  ledgerId: z.string().min(1).optional().nullable(),
 });
 
 export async function POST(req: Request) {
@@ -31,9 +34,12 @@ export async function POST(req: Request) {
   if (!parsed.success) return badRequest();
   const p = parsed.data;
 
+  const ledgerId = await resolveTaoyuanLedger(user.id, p.ledgerId ?? null);
+  if (ledgerId instanceof Response) return ledgerId;
+
   if (p.clientId) {
     const existing = await prisma.event.findUnique({
-      where: { userId_clientId: { userId: user.id, clientId: p.clientId } },
+      where: { ledgerId_clientId: { ledgerId, clientId: p.clientId } },
       select: { id: true },
     });
     if (existing) return NextResponse.json({ ok: true, id: existing.id, deduped: true });
@@ -43,6 +49,7 @@ export async function POST(req: Request) {
     const event = await prisma.event.create({
       data: {
         userId: user.id,
+        ledgerId,
         title: p.title,
         participate: p.participate,
         startAt: p.startAt ? new Date(p.startAt) : null,
@@ -69,11 +76,33 @@ export async function POST(req: Request) {
       (err as { code: string }).code === 'P2002'
     ) {
       const existing = await prisma.event.findUnique({
-        where: { userId_clientId: { userId: user.id, clientId: p.clientId } },
+        where: { ledgerId_clientId: { ledgerId, clientId: p.clientId } },
         select: { id: true },
       });
       if (existing) return NextResponse.json({ ok: true, id: existing.id, deduped: true });
     }
     throw err;
   }
+}
+
+// 与 /api/entries 的 resolveWorkLedger 对称：taoyuan 版
+async function resolveTaoyuanLedger(
+  userId: string,
+  explicit: string | null,
+): Promise<string | Response> {
+  if (!explicit) {
+    return resolveOwnLedgerId(userId, 'taoyuan');
+  }
+  const ledger = await prisma.ledger.findUnique({
+    where: { id: explicit },
+    select: {
+      kind: true,
+      members: { where: { userId }, select: { role: true }, take: 1 },
+    },
+  });
+  if (!ledger || ledger.kind !== 'taoyuan') return notFound('账本不存在');
+  const rawRole = ledger.members[0]?.role;
+  if (!rawRole || !isLedgerRole(rawRole)) return notFound('账本不存在');
+  if (!roleAtLeast(rawRole, 'editor')) return notFound('账本不存在');
+  return explicit;
 }

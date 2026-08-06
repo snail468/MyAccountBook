@@ -42,11 +42,20 @@ model User {
   acceptedInvites   LedgerInvite[] @relation("InviteAcceptor")
 }
 
-// ============ 工作账本 (built-in kind="work") ============
+// ============ 工作账本 (kind="work") ============
+//
+// B7 Phase 2：Entry 挂到 Ledger 上，权限判断走 LedgerMember（不再直接看 userId）。
+//   * ledgerId —— 归属；共享账本时同一 ledgerId 会对应多个 userId 的 Entry
+//   * userId   —— **创建者**（谁写的这一笔），共享账本里保留有意义，
+//                 报表/审计能追溯来源；但**不再是权限判断依据**
+// 幂等键 UNIQUE 也从 (userId,clientId) 换成 (ledgerId,clientId)：客户端的
+// 离线队列本来就是 per-ledger 的，key 落到 ledgerId 上更贴近语义。
 model Entry {
   id           String    @id @default(cuid())
   userId       String
   user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ledgerId     String
+  ledger       Ledger    @relation(fields: [ledgerId], references: [id], onDelete: Cascade)
   yearMonth    String
   category     String
   direction    String
@@ -60,19 +69,22 @@ model Entry {
   // 总额会悄悄错。见 src/lib/softDelete.ts 的 NOT_DELETED。
   deletedAt    DateTime?
   // 离线记账幂等键 —— 客户端在离线队列里生成 UUID，联网重放时后端见到
-  // 相同 (userId, clientId) 直接返回已有 id。见 src/lib/offlineQueue.ts。
+  // 相同 (ledgerId, clientId) 直接返回已有 id。见 src/lib/offlineQueue.ts。
   clientId     String?
 
-  @@index([userId, yearMonth])
-  @@index([userId, deletedAt])
-  @@unique([userId, clientId])
+  @@index([ledgerId, yearMonth])
+  @@index([ledgerId, deletedAt])
+  @@unique([ledgerId, clientId])
 }
 
-// ============ 桃源账本 (built-in kind="taoyuan") ============
+// ============ 桃源账本 (kind="taoyuan") ============
+// B7 Phase 2：同 Entry —— ledgerId 归属，userId 只是创建者。
 model Event {
   id             String        @id @default(cuid())
   userId         String
   user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ledgerId       String
+  ledger         Ledger        @relation(fields: [ledgerId], references: [id], onDelete: Cascade)
   title          String
   startAt        DateTime?
   content        String?
@@ -103,10 +115,10 @@ model Event {
   // 离线记账幂等键。见 src/lib/offlineQueue.ts。
   clientId       String?
 
-  @@index([userId, status])
+  @@index([ledgerId, status])
   @@index([parentId])
-  @@index([userId, deletedAt])
-  @@unique([userId, clientId])
+  @@index([ledgerId, deletedAt])
+  @@unique([ledgerId, clientId])
 }
 
 model EventAmount {
@@ -164,6 +176,10 @@ model Ledger {
   tripMembers  TripMember[]
   tripExpenses TripExpense[]
   recurringRules RecurringRule[]
+
+  // B7 Phase 2：kind=work/taoyuan 时挂到这两张关系上
+  workEntries    Entry[]
+  taoyuanEvents  Event[]
 
   // B7 账本共享：这条 Ledger 上有哪些协作成员、有哪些未使用的邀请
   members  LedgerMember[]
@@ -368,16 +384,16 @@ model BankCard {
 // 排期计算（含月末钳制、补跑漏掉的期）在 src/lib/recurring.ts。
 //
 // target 决定生成到哪里：
-//   "work"    → Entry（工作账本，直接挂 userId）
-//   "general" → GeneralEntry（需要 ledgerId）
+//   "work"    → Entry（Phase 2 之后 Entry 也 ledger-scoped，ledgerId 必填）
+//   "general" → GeneralEntry（ledgerId 必填）
 // 旅游账本不支持 —— 它的支出必须带付款人与分摊，没法凭规则自动编一笔出来。
 model RecurringRule {
-  id       String  @id @default(cuid())
+  id       String @id @default(cuid())
   userId   String
-  user     User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  target   String  // "work" | "general"
-  ledgerId String? // target=general 时必填
-  ledger   Ledger? @relation(fields: [ledgerId], references: [id], onDelete: Cascade)
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  target   String // "work" | "general"
+  ledgerId String
+  ledger   Ledger @relation(fields: [ledgerId], references: [id], onDelete: Cascade)
 
   direction   String
   category    String

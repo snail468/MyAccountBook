@@ -29,19 +29,41 @@ export async function POST(req: Request) {
 
   const uniqueChildIds = [...new Set(childIds)];
 
-  const parent = await prisma.event.findUnique({ where: { id: parentId } });
-  if (!parent || parent.userId !== user.id || parent.deletedAt !== null) {
-    return notFound('主活动不存在');
-  }
+  // Phase 2：归属改成 "父和所有子都在同一个 ledger，且请求方是 editor+"。
+  // 合并是账本内的批量操作，不允许跨账本合并（那样语义混乱）。
+  const parent = await prisma.event.findUnique({
+    where: { id: parentId },
+    select: {
+      id: true,
+      title: true,
+      parentId: true,
+      deletedAt: true,
+      ledgerId: true,
+      ledger: {
+        select: {
+          members: { where: { userId: user.id }, select: { role: true }, take: 1 },
+        },
+      },
+    },
+  });
+  if (!parent || parent.deletedAt !== null) return notFound('主活动不存在');
+  const parentRole = parent.ledger.members[0]?.role;
+  if (parentRole !== 'owner' && parentRole !== 'editor') return notFound('主活动不存在');
   if (parent.parentId) {
     return badRequest('主活动本身已被合并，请选顶层活动');
   }
 
+  // 子必须与父同 ledgerId，且未删；不用再重复查 members —— 同一 ledger 权限相同。
   const children = await prisma.event.findMany({
-    where: { id: { in: uniqueChildIds }, userId: user.id, ...NOT_DELETED },
+    where: {
+      id: { in: uniqueChildIds },
+      ledgerId: parent.ledgerId,
+      ...NOT_DELETED,
+    },
+    select: { id: true },
   });
   if (children.length !== uniqueChildIds.length) {
-    return badRequest('存在不属于当前用户或已在回收站的活动');
+    return badRequest('存在不属于该账本或已在回收站的活动');
   }
 
   await prisma.$transaction(async (tx) => {

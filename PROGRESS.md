@@ -1064,6 +1064,105 @@ CI 覆盖范围。
 ---
 
 
+### 2.26 B7 账本共享协作 · Phase 2（work / taoyuan）
+
+Phase 1 打通了 general/travel 的共享路径（[2.25](#225-b7-账本共享协作--phase-1general--travel)），
+但 work/taoyuan 的数据仍是 user-scoped —— Entry.userId / Event.userId 直接
+挂在用户下、Ledger 行只是"启用标记"。Phase 2 把这两张表也迁到 ledger-scoped，
+解锁四种账本的完整共享。
+
+**Schema 迁移**：三个连续 migration，nullable → 回填 → NOT NULL。
+
+```
+Entry  { ..., ledgerId String, ledger Ledger @relation(...) }
+Event  { ..., ledgerId String, ledger Ledger @relation(...) }
+RecurringRule.ledgerId 也从 nullable 改成 required
+```
+
+老索引 `@@unique([userId, clientId])` 换成 `@@unique([ledgerId, clientId])`
+—— 离线队列的 key 天然是 per-ledger 的，落到 ledgerId 上更贴近语义。
+Entry/Event.userId 保留但语义收窄成"**创建者**"（谁写的这一笔）；共享账本里
+它对报表/审计仍有意义，但**不再是权限判断依据**。
+
+回填迁移 `20260806013300_p2_backfill_entry_event_ledger_id` 干三件事：
+1. 为有 Entry 但没 work Ledger 的老 user 补建 work Ledger（应该没有，兜底）
+2. 同理为 Event 补 taoyuan Ledger
+3. UPDATE Entry.ledgerId = 该 user 的 work Ledger.id；Event.ledgerId 同理
+
+**API 契约变化**：
+
+- `POST /api/entries`、`POST /api/events` 新增可选 `ledgerId` body 参数：
+  - 缺省 → 走用户 owner 的 work/taoyuan 账本（老客户端零改动）
+  - 传值 → 校验该账本 kind 匹配 + 请求方 editor+；不匹配 404
+- `GET /api/entries`、`GET /api/events/paid` 同样支持 `?ledgerId=` 查询参数
+- `PATCH/DELETE /api/entries/[id]`、`/api/events/[id]/*` 走新的
+  `requireOwnedEntry` / `requireOwnedEvent`：内部查 entry.ledger.members，
+  editor+ 才能改（与 GeneralEntry / TripExpense 口径一致）
+- `POST /api/ledgers/[id]/invites` 去掉 work/taoyuan 400 拦截 —— 四种账本
+  都能邀请
+- `POST /api/recurring` target='work' 的规则不再允许 ledgerId=null；客户端
+  未传时后端 resolve 到 owner 的 work 账本，写入时保证有值
+
+**读路径口径分层**：
+
+| 位置 | work / taoyuan 数据源 | 理由 |
+|---|---|---|
+| `/`（首页 B/C/D） | 只算 **我 owner** 的 | 首页是"我的收入综合"，聚合共享账本会让语义混乱 |
+| `/work`、`/work/[month]`、`/work/expenses` | 只算 **我 owner** 的 | 同上；共享 work 走 /l/[id] |
+| `/taoyuan` | 只算 **我 owner** 的 | 同上 |
+| `/stats` | **所有我作为成员**的账本 | 统计页看的是"我关注的现金流"，共享账本应该纳入 |
+| `/search` | **所有我作为成员**的账本 | 搜索要能搜到共享账本里的条目 |
+| `/l/[id]` (kind=work/taoyuan) | 就地渲染 `SharedBuiltinView`（只读 MVP） | 完整的记账/月份切换/合并 UI 未迁移；owner 会被重定向回熟悉的 /work、/taoyuan |
+| `/trash` | **所有我作为成员**的账本；editor+ 才能恢复/彻底删 | 与写权限对齐 |
+| `/api/export/json` | 只导 **我 owner** 的 | "我的备份" 语义 —— 别人的账本不属于我的备份 |
+
+**导入端更新**：`ParsedBackup.entries[]` / `events[]` 新增可选 `ledgerId`
+字段（老备份无此字段，用 optional 兼容）。`planImport` 走两级 fallback：
+备份带的 ledgerId → ledgerIdMap → `existingBuiltinLedgerIds.{work,taoyuan}`。
+`/api/import` 在 merge 模式下先 resolve 用户的现有 built-in ledger id 传给
+planImport，保证老备份的孤儿条目能重定向到用户当前的账本。
+
+**权限矩阵扩展**（与 Phase 1 一致）：
+- viewer：读 Entry/Event 列表 / 详情
+- editor：viewer + 增删改条目、软删条目
+- owner：editor + 改账本设置、邀请/踢人、软删/恢复/永删账本
+
+`requireOwnedEntry` / `requireOwnedEvent` / `requireOwnedEventAmount` 都
+接受 `{ minRole }` 参数，默认 editor（PATCH/DELETE 场景）。
+
+**共享 work/taoyuan 的 UX 折中**：
+- owner 点开自己 owner 的 work → /work（完整界面）
+- 非 owner 点开被邀请的 work → /l/[id] 里的 `SharedBuiltinView`（**只读 MVP**）
+- 记账走 API 层：客户端在共享 work 下调 `POST /api/entries { ledgerId, ... }`
+
+**为什么共享账本先只做只读视图**：/work 与 /taoyuan 的完整 UI（月份切换、
+按类别累计、回款进度、活动合并/拆分、多阶段金额）把 "user's owner ledger"
+写死在几十个组件里。把它们抽成可传 ledgerId 的多视角组件是独立一大轮 UI
+重构 —— 与 Phase 2 的数据模型迁移是两个正交的事，硬绑到一起会让 PR 无法
+review。SharedBuiltinView 提供"能看条目、知道有共享"的最小闭环，先把数据
+模型稳下来；UI 打磨留给后续 iter。
+
+**测试与验证**：
+
+- 单测 354/354，`importData.test.ts` 加了两处适配（ledgerId 兼容路径、
+  merge 模式重定向断言）；纯计算部分覆盖不变
+- 现有 `smoke-b7.mjs` (Phase 1) 22 项冒烟仍全绿 —— P2 没破 P1
+- 新增 `smoke-b7-p2.mjs` 19 项覆盖：
+  - A 建 work 条目（默认 ledger）
+  - B 未邀 GET/POST work → 404
+  - A 生成 work editor 邀请（Phase 1 里这里返 400，Phase 2 应通过）
+  - B 接受、GET 看到 A 的条目、POST 记条目到 A 的 work
+  - A 看到 B 加的条目；B 默认 GET 走的仍是 B 自己的 work（不含 A 的）
+  - taoyuan 同上流程
+  - 降级 B 到 viewer → 写 404 但读 200
+- `npm run build` 通过；37 条业务路由 + 2 条协作路由都在
+
+**Phase 3 待做**（另开）：把 /work 与 /taoyuan 的完整 UI 抽成可传 ledgerId
+的多视角组件，替换 SharedBuiltinView，让共享 work/taoyuan 有和 owner 一样
+的记账体验。UI 层工作量与 Phase 2 数据迁移相当。
+
+---
+
 ### 2.25 B7 账本共享协作 · Phase 1（general / travel）
 
 原 [4.4 B 层](#44-功能--b-层)首项。分成两轮做：**Phase 1** 拿下已经是
@@ -1190,7 +1289,7 @@ work/[month]/taoyuan 全套页面切到 ledgerId；work/taoyuan 邀请解禁。
 
 | 项 | 说明 | 风险 |
 |---|---|---|
-| ~~B7 账本共享协作 · Phase 1~~ | ✅ general / travel 已完成，见 [2.25](#225-b7-账本共享协作--phase-1general--travel)。**剩余（Phase 2）**：迁 `Entry.userId` / `Event.userId` → `ledgerId`，覆盖 work/taoyuan 共享 —— 涉及导出/导入/统计/搜索/首页聚合几十处，与 Phase 1 属于两个数量级 | **高**（Phase 2） |
+| ~~B7 账本共享协作 · Phase 1+2~~ | ✅ general/travel 见 [2.25](#225-b7-账本共享协作--phase-1general--travel)；work/taoyuan 数据模型 + 权限迁移完成，见 [2.26](#226-b7-账本共享协作--phase-2work--taoyuan)。**剩余（Phase 3）**：把 /work、/taoyuan 完整 UI 抽成可传 ledgerId 的多视角组件，替换共享账本的 SharedBuiltinView 只读视图 | 中（纯 UI 重构） |
 | ~~B8 离线记账队列~~ | ✅ 普通账本已完成（offline-first + UUID 幂等），见 [2.24](#224-字号--周预算--超支高亮--离线记账)。**剩余**：工作/桃源/旅游账本；真实断网浏览器验证 | 中 |
 | **B9 账单导入** | 支付宝 / 微信账单 CSV 解析导入，比手动记账省事一个数量级 | 中 |
 | ~~B10 预算升级~~ | ✅ 分类别预算 + 周预算 + 页面内超支高亮已完成，见 [2.23](#223-四项迭代垫款--京东卡--批量回款--分类预算) 与 [2.24](#224-字号--周预算--超支高亮--离线记账)。**剩余**：Web Push（部署环境明确后再做） | 低 |

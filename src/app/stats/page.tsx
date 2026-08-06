@@ -30,14 +30,18 @@ const WINDOW_MONTHS = 13;
  * 理由见 lib/stats.ts 顶部。
  */
 async function loadRows(userId: string, since: Date): Promise<StatRow[]> {
+  // Phase 2：所有来源统一按"user 是账本成员"过滤。个人统计包含共享账本 ——
+  // 现金流概念上就应该看所有能看到的账本（与首页 hasWork/hasTaoyuan 的口径不同：
+  // 首页 B/C/D 是"我的收入"，只算 owner；统计页是"我关注的所有账本的现金流"）。
+  const memberLedger = { members: { some: { userId } }, deletedAt: null };
   const [entries, generals, trips, paidAmounts] = await Promise.all([
     // 工作账本**只算进项**：出项本质是"垫款"，公司迟早回款，
     // 记进"支出"会让个人现金流看起来虚亏。回款条目也不需要单独算成收入 ——
     // 它们只是让原来的垫款归零，本身不是新收入
     prisma.entry.findMany({
       where: {
-        userId,
         ...NOT_DELETED,
+        ledger: memberLedger,
         direction: 'income',
         occurredAt: { gte: since },
       },
@@ -46,7 +50,7 @@ async function loadRows(userId: string, since: Date): Promise<StatRow[]> {
     prisma.generalEntry.findMany({
       where: {
         ...NOT_DELETED,
-        ledger: { userId, deletedAt: null },
+        ledger: memberLedger,
         occurredAt: { gte: since },
       },
       select: { occurredAt: true, amountCents: true, direction: true, category: true },
@@ -54,7 +58,7 @@ async function loadRows(userId: string, since: Date): Promise<StatRow[]> {
     prisma.tripExpense.findMany({
       where: {
         ...NOT_DELETED,
-        ledger: { userId, deletedAt: null },
+        ledger: memberLedger,
         occurredAt: { gte: since },
       },
       select: { occurredAt: true, amountBaseCents: true, category: true },
@@ -64,7 +68,7 @@ async function loadRows(userId: string, since: Date): Promise<StatRow[]> {
     prisma.eventAmount.findMany({
       where: {
         ...NOT_DELETED,
-        event: { userId, ...NOT_DELETED },
+        event: { ledger: memberLedger, ...NOT_DELETED },
         stage: 'paid',
         occurredAt: { gte: since },
       },

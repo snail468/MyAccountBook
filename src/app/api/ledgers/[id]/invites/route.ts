@@ -14,18 +14,13 @@ import { badRequest } from '@/lib/apiError';
 // **只允许邀请到 editor / viewer**，不给 owner。转让所有权是独立的流程，
 // 不能通过邀请一键"送出"账本 —— 想让位应该显式操作。
 //
-// **Phase 1 只放开 general / travel**：work/taoyuan 的数据仍是 user-scoped
-// （Entry.userId / Event.userId），共享账本对被邀请者来说看不到别人的条目。
-// 与其埋雷不如先禁掉，Phase 2 迁移完再开。
+// Phase 2 之后 Entry/Event 都已 ledger-scoped，四种账本都放开共享。
 const body = z.object({ role: z.enum(['editor', 'viewer']) });
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const ctx = await requireOwnedLedger(id);
   if (ctx instanceof Response) return ctx;
-  if (ctx.ledger.kind === 'work' || ctx.ledger.kind === 'taoyuan') {
-    return badRequest('工作/桃源账本共享暂未支持，敬请期待');
-  }
 
   const parsed = body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return badRequest();

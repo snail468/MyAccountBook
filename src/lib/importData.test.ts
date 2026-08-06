@@ -77,10 +77,14 @@ function seqIds() {
   return () => `new${++n}`;
 }
 
+// Phase 2：Entry/Event 都必填 ledgerId。测试默认给一份"work/taoyuan 兜底账本 id"，
+// 让不专门测试孤儿分支的 case 不必每个都手动挂 ledgerId 与 built-in 元数据。
+// 专门测试孤儿的 case 可以传 existingBuiltinLedgerIds: {} 覆盖掉。
 const opts = (over: Record<string, unknown> = {}) => ({
   targetUserId: 'newuser',
   mode: 'merge' as const,
   newId: seqIds(),
+  existingBuiltinLedgerIds: { work: 'fallback-work', taoyuan: 'fallback-taoyuan' },
   ...over,
 });
 
@@ -183,11 +187,13 @@ describe('planImport · id 重映射', () => {
   });
 
   it('所有行都挂到导入者名下', () => {
+    // Phase 2 后 Entry.ledgerId 必填，测试要么提供 ledgerId 要么给 work fallback
     const b = emptyBackup({
-      ledgers: [ledger('L1', 'general')],
+      ledgers: [ledger('L_work', 'work'), ledger('L1', 'general')],
       entries: [
         {
           id: 'E1',
+          ledgerId: 'L_work',
           yearMonth: '2026-07',
           category: '工资',
           direction: 'income',
@@ -200,8 +206,12 @@ describe('planImport · id 重映射', () => {
       ],
     });
     const plan = planImport(b, opts());
-    expect(plan.ledgers[0].userId).toBe('newuser');
+    // 两本账本都以新 id 落到 newuser 名下
+    for (const l of plan.ledgers) expect(l.userId).toBe('newuser');
     expect(plan.entries[0].userId).toBe('newuser');
+    // Entry 的 ledgerId 也走了 map（指向新建的 work Ledger 的新 id）
+    const newWorkId = plan.ledgers.find((l) => l.kind === 'work')!.id;
+    expect(plan.entries[0].ledgerId).toBe(newWorkId);
   });
 });
 
@@ -248,12 +258,16 @@ describe('planImport · 活动的父子关系', () => {
 });
 
 describe('planImport · merge 模式下的内置账本', () => {
-  it('已有同类型内置账本时跳过那行元数据，但工作条目照常导入', () => {
+  it('已有同类型内置账本时跳过那行元数据，条目重定向到现有账本', () => {
+    // Phase 2 后 Entry.ledgerId 必填 —— merge 时旧备份里的 work Ledger 元数据行
+    // 会被跳过（不建第二本），但备份里挂在它下面的 Entry 要被重定向到用户现有的
+    // work 账本 id 上，否则会孤儿。所以调用方要把 existingBuiltinLedgerIds 传进来。
     const b = emptyBackup({
       ledgers: [ledger('L1', 'work'), ledger('L2', 'general')],
       entries: [
         {
           id: 'E1',
+          ledgerId: 'L1',
           yearMonth: '2026-07',
           category: '工资',
           direction: 'income',
@@ -265,10 +279,17 @@ describe('planImport · merge 模式下的内置账本', () => {
         },
       ],
     });
-    const plan = planImport(b, opts({ existingBuiltinKinds: new Set(['work']) }));
+    const plan = planImport(
+      b,
+      opts({
+        existingBuiltinKinds: new Set(['work']),
+        existingBuiltinLedgerIds: { work: 'existing-work-id' },
+      }),
+    );
     expect(plan.ledgers.map((l) => l.kind)).toEqual(['general']);
-    // 工作条目挂在 userId 上，与账本无关，所以一条都不能少
+    // Entry 被重定向到现有 work 账本
     expect(plan.entries).toHaveLength(1);
+    expect(plan.entries[0].ledgerId).toBe('existing-work-id');
     expect(plan.skipped.join()).toContain('内置账本');
   });
 

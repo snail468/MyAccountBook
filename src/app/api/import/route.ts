@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { requireSessionUser } from '@/lib/ownership';
+import { requireSessionUser, resolveOwnLedgerId } from '@/lib/ownership';
 import { badRequest } from '@/lib/apiError';
 import { parseBackup, planImport, type ImportMode } from '@/lib/importData';
 import { applyImport, existingBuiltinKinds } from '@/lib/importExecute';
@@ -42,10 +42,24 @@ export async function POST(req: Request) {
   const builtins =
     mode === 'merge' ? await existingBuiltinKinds(user.id) : new Set<string>();
 
+  // Phase 2：Entry/Event 挂 ledgerId，merge 时需要知道现有 work/taoyuan 的 id
+  // 才能把备份里孤儿条目重定向过去。replace 模式下 replace 分支删掉现有账本再
+  // 从备份重建，所以不需要（planImport 里也会检测并按新建走）。
+  const existingBuiltinLedgerIds: { work?: string; taoyuan?: string } = {};
+  if (mode === 'merge') {
+    if (builtins.has('work')) {
+      existingBuiltinLedgerIds.work = await resolveOwnLedgerId(user.id, 'work');
+    }
+    if (builtins.has('taoyuan')) {
+      existingBuiltinLedgerIds.taoyuan = await resolveOwnLedgerId(user.id, 'taoyuan');
+    }
+  }
+
   const plan = planImport(parsed.backup, {
     targetUserId: user.id,
     mode: mode as ImportMode,
     existingBuiltinKinds: builtins,
+    existingBuiltinLedgerIds,
   });
 
   if (dryRun) {

@@ -321,9 +321,21 @@ export default async function LedgerPage({ params }: { params: Promise<{ id: str
     );
   }
 
-  // work/taoyuan 不应该走到这里，兜底跳转
-  if (ledger.kind === 'work') redirect('/work');
-  if (ledger.kind === 'taoyuan') redirect('/taoyuan');
+  // work/taoyuan Phase 2 之后也可能被点开：owner 跳回熟悉的 /work / /taoyuan
+  // 主视图（那里 SQL 聚合都是按 owner 视角优化过的）；共享成员就地渲染一个
+  // 只读的精简视图 —— 全套 UI (记账/月份/回款/合并/金额分阶段) 迁到共享上下文
+  // 是独立的一大轮工作，Phase 2 只做 "能看能记账" 的最小可行。
+  if (ledger.kind === 'work' || ledger.kind === 'taoyuan') {
+    if (ledger.userId === user.id) {
+      redirect(ledger.kind === 'work' ? '/work' : '/taoyuan');
+    }
+    const { default: SharedBuiltinView } = await import('./SharedBuiltinView');
+    return (
+      <div className="px-6 pt-14 pb-24">
+        <SharedBuiltinView ledgerId={ledger.id} ledgerName={ledger.name} ledgerKind={ledger.kind} />
+      </div>
+    );
+  }
 
   return (
     <div className="px-6 pt-14">

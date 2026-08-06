@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
-import { requireSessionUser } from '@/lib/ownership';
+import { requireSessionUser, resolveOwnLedgerId } from '@/lib/ownership';
 import { badRequest, notFound } from '@/lib/apiError';
+import { isLedgerRole, roleAtLeast } from '@/lib/ledgerRole';
 import { materializeDueRules } from '@/lib/recurringRun';
 
 // GET  /api/recurring        列出规则
@@ -26,10 +27,9 @@ const bodySchema = z
   })
   .refine((v) => (v.frequency === 'monthly' ? v.dayOfMonth != null : v.dayOfWeek != null), {
     message: '按月要给 dayOfMonth，按周要给 dayOfWeek',
-  })
-  .refine((v) => (v.target === 'general' ? !!v.ledgerId : true), {
-    message: '普通账本的规则必须指定账本',
   });
+// Phase 2 后 ledgerId 对 work 也是必填 —— 允许 client 省略（服务端 resolve
+// 到该用户 owner 的 work 账本），但入库时保证有值。
 
 export async function GET() {
   const user = await requireSessionUser();
@@ -69,21 +69,31 @@ export async function POST(req: Request) {
   }
   const p = parsed.data;
 
-  // 普通账本的规则要确认账本确实属于当前用户，否则等于给了一个往别人账本写数据的口子
+  // 解析要挂到哪个 Ledger 上：
+  //   * target=general：客户端必须显式带 ledgerId；校验是普通账本 + editor+
+  //   * target=work：优先用客户端传的 ledgerId；没传就 resolve 到 owner 的 work 本
+  // 权限要求 editor 起，因为规则一旦启用就会自动往账本里写条目。
+  let ledgerIdToUse: string;
   if (p.target === 'general') {
-    const ledger = await prisma.ledger.findUnique({
-      where: { id: p.ledgerId! },
-      select: { userId: true, kind: true, deletedAt: true },
-    });
-    if (!ledger || ledger.userId !== user.id || ledger.deletedAt) return notFound('账本不存在');
-    if (ledger.kind !== 'general') return notFound('仅普通账本可用');
+    if (!p.ledgerId) return badRequest('普通账本的规则必须指定账本');
+    const ok = await verifyLedgerForRule(p.ledgerId, user.id, 'general');
+    if (ok instanceof Response) return ok;
+    ledgerIdToUse = p.ledgerId;
+  } else {
+    if (p.ledgerId) {
+      const ok = await verifyLedgerForRule(p.ledgerId, user.id, 'work');
+      if (ok instanceof Response) return ok;
+      ledgerIdToUse = p.ledgerId;
+    } else {
+      ledgerIdToUse = await resolveOwnLedgerId(user.id, 'work');
+    }
   }
 
   const created = await prisma.recurringRule.create({
     data: {
       userId: user.id,
       target: p.target,
-      ledgerId: p.target === 'general' ? p.ledgerId! : null,
+      ledgerId: ledgerIdToUse,
       direction: p.direction,
       category: p.category,
       amountCents: p.amountCents,
@@ -99,4 +109,27 @@ export async function POST(req: Request) {
   });
 
   return NextResponse.json({ ok: true, id: created.id });
+}
+
+async function verifyLedgerForRule(
+  ledgerId: string,
+  userId: string,
+  wantKind: 'general' | 'work',
+): Promise<true | Response> {
+  const ledger = await prisma.ledger.findUnique({
+    where: { id: ledgerId },
+    select: {
+      kind: true,
+      deletedAt: true,
+      members: { where: { userId }, select: { role: true }, take: 1 },
+    },
+  });
+  if (!ledger || ledger.deletedAt) return notFound('账本不存在');
+  if (ledger.kind !== wantKind) {
+    return notFound(wantKind === 'general' ? '仅普通账本可用' : '仅工作账本可用');
+  }
+  const rawRole = ledger.members[0]?.role;
+  if (!rawRole || !isLedgerRole(rawRole)) return notFound('账本不存在');
+  if (!roleAtLeast(rawRole, 'editor')) return notFound('账本不存在');
+  return true;
 }

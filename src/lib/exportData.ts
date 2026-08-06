@@ -30,6 +30,9 @@ export type BackupLedger = {
 
 export type BackupEntry = {
   id: string;
+  // Phase 2 之后 Entry 挂 Ledger；导出/导入端需要 ledgerId 才能重建关系。
+  // 老备份没有这个字段，导入端按 null 兼容处理（会挂到该 user 的 work 账本）。
+  ledgerId: string | null;
   yearMonth: string;
   category: string;
   direction: string;
@@ -58,6 +61,8 @@ export type BackupEventAmount = {
 
 export type BackupEvent = {
   id: string;
+  // Phase 2 之后 Event 也挂 Ledger；同 BackupEntry 的兼容策略
+  ledgerId: string | null;
   title: string;
   startAt: string | null;
   content: string | null;
@@ -148,6 +153,11 @@ const iso = (d: Date | null | undefined): string | null => d?.toISOString() ?? n
 /**
  * 采集某个用户的全部业务数据。
  *
+ * B7 Phase 2 后："我的数据" 定义为**我 owner 的所有账本**下的记录 —— 我只是
+ * editor/viewer 的共享账本不算"我的备份"，那属于账本 owner 的数据。这样一份
+ * 备份能被同一个人在别台机器/别账号完整还原自己的东西，与用户"我要备份"的
+ * 心智模型一致。
+ *
  * 注意：软删除（deletedAt 非空）的账本**也会**被导出 —— 备份的意义就是尽可能不丢东西，
  * 回收站里的账本还在 60 天保留期内，属于用户仍可恢复的数据。
  */
@@ -158,31 +168,34 @@ export async function collectUserData(userId: string): Promise<UserBackup> {
   });
   if (!user) throw new Error(`user not found: ${userId}`);
 
+  // 只导出我 owner 的账本 —— 共享账本别人是 owner，不属于我的备份
+  const ownerLedger = { members: { some: { userId, role: 'owner' } } };
+
   const [ledgers, entries, events, generalEntries, tripMembers, tripExpenses] =
     await Promise.all([
       prisma.ledger.findMany({
-        where: { userId },
+        where: ownerLedger,
         orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
       }),
       prisma.entry.findMany({
-        where: { userId },
+        where: { ledger: ownerLedger },
         orderBy: [{ yearMonth: 'asc' }, { occurredAt: 'asc' }],
       }),
       prisma.event.findMany({
-        where: { userId },
+        where: { ledger: ownerLedger },
         include: { amounts: { orderBy: { occurredAt: 'asc' } } },
         orderBy: { createdAt: 'asc' },
       }),
       prisma.generalEntry.findMany({
-        where: { ledger: { userId } },
+        where: { ledger: ownerLedger },
         orderBy: [{ ledgerId: 'asc' }, { occurredAt: 'asc' }],
       }),
       prisma.tripMember.findMany({
-        where: { ledger: { userId } },
+        where: { ledger: ownerLedger },
         orderBy: [{ ledgerId: 'asc' }, { createdAt: 'asc' }],
       }),
       prisma.tripExpense.findMany({
-        where: { ledger: { userId } },
+        where: { ledger: ownerLedger },
         include: { splits: true },
         orderBy: [{ ledgerId: 'asc' }, { occurredAt: 'asc' }],
       }),
@@ -215,6 +228,7 @@ export async function collectUserData(userId: string): Promise<UserBackup> {
     })),
     entries: entries.map((e) => ({
       id: e.id,
+      ledgerId: e.ledgerId,
       yearMonth: e.yearMonth,
       category: e.category,
       direction: e.direction,
@@ -227,6 +241,7 @@ export async function collectUserData(userId: string): Promise<UserBackup> {
     })),
     events: events.map((ev) => ({
       id: ev.id,
+      ledgerId: ev.ledgerId,
       title: ev.title,
       startAt: iso(ev.startAt),
       content: ev.content,

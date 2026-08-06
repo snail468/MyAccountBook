@@ -47,7 +47,9 @@ export default function CollaboratorsPanel({
   const [newRole, setNewRole] = useState<'editor' | 'viewer'>('editor');
   const [error, setError] = useState('');
 
-  const shareBlocked = ledgerKind === 'work' || ledgerKind === 'taoyuan';
+  // Phase 2 之后所有 kind 都能共享
+  const shareBlocked = false;
+  void ledgerKind;
 
   async function reload() {
     startTransition(() => router.refresh());

@@ -60,14 +60,18 @@ export async function runSearch(
   const occurred = timeRange(f.from, f.to);
   const cents = centsRange(f.minCents, f.maxCents);
 
+  // Phase 2：所有来源统一走 "ledger.members has userId + deletedAt null"。
+  // work/taoyuan 也是 ledger-scoped 了，被邀请者搜到共享账本里的条目 = 合理行为。
+  const memberLedger = { members: { some: { userId } }, deletedAt: null };
+
   // ---------------- 工作账本 ----------------
   // 工作条目没有 tags 字段，按标签筛时整个来源跳过
   if (f.sources.includes('work') && !f.tag) {
     const cur = cursorFilter('occurredAt', f.cursor);
     const rows = await prisma.entry.findMany({
       where: {
-        userId,
         ...NOT_DELETED,
+        ledger: { ...memberLedger, kind: 'work' },
         ...(occurred ? { occurredAt: occurred } : {}),
         ...(cents ? { amountCents: cents } : {}),
         ...(f.direction ? { direction: f.direction } : {}),
@@ -75,6 +79,7 @@ export async function runSearch(
         ...(f.q ? { OR: [{ note: { contains: f.q } }, { category: { contains: f.q } }] } : {}),
         ...(cur ?? {}),
       },
+      include: { ledger: { select: { id: true, name: true } } },
       orderBy: [{ occurredAt: 'desc' }, { id: 'desc' }],
       take,
     });
@@ -82,8 +87,8 @@ export async function runSearch(
       rows.map((e) => ({
         source: 'work' as const,
         id: e.id,
-        ledgerId: null,
-        ledgerName: '工作账本',
+        ledgerId: e.ledgerId,
+        ledgerName: e.ledger.name,
         title: e.category,
         category: e.category,
         direction: e.direction === 'income' ? ('income' as const) : ('expense' as const),
@@ -91,7 +96,11 @@ export async function runSearch(
         note: e.note,
         tags: null,
         occurredAt: e.occurredAt,
-        href: `/work/${e.yearMonth}`,
+        // 共享 work 账本走 /l/[id]；owner 的仍然走 /work/[month]
+        // 简化：只要 ledgerId 不是 user owner 的就用 /l 路径 —— 但这里不能查
+        // resolveOwnLedgerId（会创建）。用一个折中：都指向 /l/[id]，那边的
+        // page.tsx 会 kind=work 时再决定跳 /work 还是就地渲染。
+        href: `/l/${e.ledgerId}`,
       })),
     );
     if (rows.length > f.limit) truncated.push('work');
@@ -104,7 +113,7 @@ export async function runSearch(
       where: {
         ...NOT_DELETED,
         // 回收站里的账本不参与搜索 —— 搜到一条点进去发现账本已删除，体验很差
-        ledger: { userId, deletedAt: null },
+        ledger: { ...memberLedger },
         ...(occurred ? { occurredAt: occurred } : {}),
         ...(cents ? { amountCents: cents } : {}),
         ...(f.direction ? { direction: f.direction } : {}),
@@ -151,7 +160,7 @@ export async function runSearch(
     const rows = await prisma.tripExpense.findMany({
       where: {
         ...NOT_DELETED,
-        ledger: { userId, deletedAt: null },
+        ledger: { ...memberLedger },
         ...(occurred ? { occurredAt: occurred } : {}),
         // 金额用本币（amountBaseCents），与列表页显示的口径一致
         ...(cents ? { amountBaseCents: cents } : {}),
@@ -196,8 +205,8 @@ export async function runSearch(
     const cur = cursorFilter('createdAt', f.cursor);
     const rows = await prisma.event.findMany({
       where: {
-        userId,
         ...NOT_DELETED,
+        ledger: { ...memberLedger, kind: 'taoyuan' },
         ...(occurred ? { createdAt: occurred } : {}),
         // 金额语义：有任意一笔阶段金额落在区间内（同样只看未删除的金额行）
         ...(cents ? { amounts: { some: { cents, deletedAt: null } } } : {}),
@@ -222,6 +231,8 @@ export async function runSearch(
           where: { deletedAt: null },
           select: { stage: true, cents: true, quantity: true, itemDesc: true, rewardMethod: true },
         },
+        // 需要 ledgerId + ledger 名字用于跳转链接
+        ledger: { select: { id: true, name: true } },
       },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take,
@@ -241,8 +252,8 @@ export async function runSearch(
         return {
           source: 'taoyuan' as const,
           id: ev.id,
-          ledgerId: null,
-          ledgerName: '桃源账本',
+          ledgerId: ev.ledgerId,
+          ledgerName: ev.ledger.name,
           title: ev.title,
           category: null,
           direction: 'income' as const,
@@ -250,7 +261,8 @@ export async function runSearch(
           note: ev.note,
           tags: ev.topicTag,
           occurredAt: ev.createdAt,
-          href: '/taoyuan',
+          // 同 work：交给 /l/[id] 决定跳向哪里
+          href: `/l/${ev.ledgerId}`,
         };
       }),
     );

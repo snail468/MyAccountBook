@@ -63,14 +63,23 @@ async function loadDashboard(userId: string) {
   ]);
   const prefs = parsePrefs(userRow?.preferences ?? null);
 
-  const hasWork = ledgers.some((l) => l.kind === 'work');
-  const hasTaoyuan = ledgers.some((l) => l.kind === 'taoyuan');
+  // Phase 2：首页的 B/C/D 依然表示"我 owner 的工作/桃源账本"—— 首页是个人
+  // 综合视图，不聚合共享账本。共享 work/taoyuan 展示为独立卡片，走 /l/[id]。
+  //
+  // 用 Ledger.userId 作为 "我创建的" 代理（建者一定是 owner，未做过所有权转让）。
+  // 这样不必额外一次 members 查询，也不会因为 resolveOwnLedgerId 兜底触发建账本。
+  const ownWork = ledgers.find((l) => l.kind === 'work' && l.userId === userId) ?? null;
+  const ownTaoyuan = ledgers.find((l) => l.kind === 'taoyuan' && l.userId === userId) ?? null;
+  const ownWorkLedgerId = ownWork?.id ?? null;
+  const ownTaoyuanLedgerId = ownTaoyuan?.id ?? null;
+  const hasWork = !!ownWorkLedgerId;
+  const hasTaoyuan = !!ownTaoyuanLedgerId;
 
   // 工作数据 —— 用 SQL 聚合，不再把全部条目拉进内存
   const workSums = hasWork
     ? await prisma.entry.groupBy({
         by: ['direction'],
-        where: { userId, ...NOT_DELETED },
+        where: { ledgerId: ownWorkLedgerId!, ...NOT_DELETED },
         _sum: { amountCents: true },
       })
     : [];
@@ -84,7 +93,7 @@ async function loadDashboard(userId: string) {
     ? await prisma.eventAmount.findMany({
         // event 的软删也要一起过滤 —— 单独删活动时下面的金额行不会被级联软删，
         // 但活动都在回收站了，它的金额自然不该出现在首页
-        where: { stage: 'paid', ...NOT_DELETED, event: { userId, ...NOT_DELETED } },
+        where: { stage: 'paid', ...NOT_DELETED, event: { ledgerId: ownTaoyuanLedgerId!, ...NOT_DELETED } },
         select: {
           cents: true,
           quantity: true,
@@ -130,7 +139,7 @@ async function loadDashboard(userId: string) {
   const pendingCount = hasTaoyuan
     ? await prisma.event.count({
         where: {
-          userId,
+          ledgerId: ownTaoyuanLedgerId!,
           ...NOT_DELETED,
           status: { in: ['published', 'predicted', 'announced'] },
         },

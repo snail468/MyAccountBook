@@ -6,6 +6,7 @@ import { ensureLegacyMigrated } from '@/lib/legacyMigrate';
 import { buildEventTree } from '@/lib/taoyuanSerialize';
 import { NOT_DELETED } from '@/lib/softDelete';
 import { CREATED_DESC_ORDER, slicePageByCreated } from '@/lib/pagination';
+import { resolveOwnLedgerId } from '@/lib/ownership';
 import Prefetcher from '@/components/ui/Prefetcher';
 import PendingBadge from '@/components/ui/PendingBadge';
 import TaoyuanClient from './TaoyuanClient';
@@ -16,6 +17,10 @@ export const dynamic = 'force-dynamic';
 const PAID_PAGE_SIZE = 20;
 
 async function loadTaoyuan(userId: string) {
+  // Phase 2：/taoyuan 与 /work 同思路 —— 展示"我 owner 的那本桃源账本"。
+  // 共享的桃源账本走 /l/[id]。
+  const ledgerId = await resolveOwnLedgerId(userId, 'taoyuan');
+
   // 展开金额时只带未删的金额行 —— 卡片上的三段金额（预测/公示/到账）
   // 就不会包含用户已经删掉的那些
   const include = {
@@ -29,7 +34,7 @@ async function loadTaoyuan(userId: string) {
     // 活跃项（未到账）全量加载：数量天然有界，且 MergeBar 合并需要看到全部候选
     prisma.event.findMany({
       where: {
-        userId,
+        ledgerId,
         ...NOT_DELETED,
         parentId: null,
         status: { in: ['published', 'predicted', 'announced'] },
@@ -39,7 +44,7 @@ async function loadTaoyuan(userId: string) {
     }),
     // 已到账归档：只取第一页，其余靠 /api/events/paid 翻页
     prisma.event.findMany({
-      where: { userId, ...NOT_DELETED, parentId: null, status: 'paid' },
+      where: { ledgerId, ...NOT_DELETED, parentId: null, status: 'paid' },
       include,
       orderBy: CREATED_DESC_ORDER,
       take: PAID_PAGE_SIZE + 1,
@@ -52,7 +57,7 @@ async function loadTaoyuan(userId: string) {
   const children =
     loadedTop.length > 0
       ? await prisma.event.findMany({
-          where: { userId, ...NOT_DELETED, parentId: { in: loadedTop.map((e) => e.id) } },
+          where: { ledgerId, ...NOT_DELETED, parentId: { in: loadedTop.map((e) => e.id) } },
           include,
         })
       : [];

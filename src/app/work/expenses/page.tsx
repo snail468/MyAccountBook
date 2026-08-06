@@ -8,6 +8,7 @@ import { DEFAULT_PAGE_SIZE, slicePage, TIME_DESC_ORDER } from '@/lib/pagination'
 import ExpenseList from './ExpenseList';
 import { NOT_DELETED } from '@/lib/softDelete';
 import { REFUND_OVERDUE_DAYS, summarizeOverdue } from '@/lib/refundStatus';
+import { resolveOwnLedgerId } from '@/lib/ownership';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,7 +21,10 @@ type CategoryStat = {
 };
 
 async function loadExpenses(userId: string) {
-  const baseWhere = { userId, ...NOT_DELETED, direction: 'expense' as const };
+  // /work/expenses 沿用 /work 口径：只统计"我 owner 的那本工作账本"。
+  // 共享 work 账本走 /l/[id]，不参与出项汇总（简化 Phase 2 UX）。
+  const workLedgerId = await resolveOwnLedgerId(userId, 'work');
+  const baseWhere = { ledgerId: workLedgerId, ...NOT_DELETED, direction: 'expense' as const };
 
   const [overall, refundedOverall, byCategory, refundedByCategory, pendingRows, firstPage] =
     await Promise.all([

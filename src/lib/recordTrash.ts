@@ -3,7 +3,8 @@
 // 与账本级 lib/ledgerTrash.ts 的区别：
 //   * 账本级软删是原来就有的，只覆盖 Ledger 一张表
 //   * 这里覆盖 Entry / GeneralEntry / TripExpense / Event / EventAmount 五张表
-//   * 归属校验也要照做：Entry/Event 直接看 userId，其余通过关联查
+//   * 归属校验统一走 ledger.members —— B7 Phase 2 之后 Entry/Event 都
+//     ledger-scoped。回收站里只有 role >= editor 的成员能恢复/彻底删。
 //
 // 常量与用户面向的过滤在 lib/softDelete.ts；这里只承担"操作数据库"的部分。
 
@@ -30,20 +31,23 @@ export type TrashRecord = {
 
 export async function listTrash(userId: string): Promise<TrashRecord[]> {
   const now = new Date();
+  // Phase 2：五张表统一按 "ledger 上有当前 user 成员身份" 过滤 —— 与写路径口径一致。
+  const memberLedger = { members: { some: { userId } } };
   const [entries, generals, trips, events, amounts] = await Promise.all([
     prisma.entry.findMany({
-      where: { userId, deletedAt: { not: null } },
+      where: { deletedAt: { not: null }, ledger: memberLedger },
       select: {
         id: true,
         category: true,
         amountCents: true,
         yearMonth: true,
         deletedAt: true,
+        ledger: { select: { name: true } },
       },
       orderBy: { deletedAt: 'desc' },
     }),
     prisma.generalEntry.findMany({
-      where: { deletedAt: { not: null }, ledger: { userId } },
+      where: { deletedAt: { not: null }, ledger: memberLedger },
       select: {
         id: true,
         category: true,
@@ -54,7 +58,7 @@ export async function listTrash(userId: string): Promise<TrashRecord[]> {
       orderBy: { deletedAt: 'desc' },
     }),
     prisma.tripExpense.findMany({
-      where: { deletedAt: { not: null }, ledger: { userId } },
+      where: { deletedAt: { not: null }, ledger: memberLedger },
       select: {
         id: true,
         title: true,
@@ -65,16 +69,17 @@ export async function listTrash(userId: string): Promise<TrashRecord[]> {
       orderBy: { deletedAt: 'desc' },
     }),
     prisma.event.findMany({
-      where: { userId, deletedAt: { not: null } },
+      where: { deletedAt: { not: null }, ledger: memberLedger },
       select: {
         id: true,
         title: true,
         deletedAt: true,
+        ledger: { select: { name: true } },
       },
       orderBy: { deletedAt: 'desc' },
     }),
     prisma.eventAmount.findMany({
-      where: { deletedAt: { not: null }, event: { userId } },
+      where: { deletedAt: { not: null }, event: { ledger: memberLedger } },
       select: {
         id: true,
         stage: true,
@@ -96,7 +101,7 @@ export async function listTrash(userId: string): Promise<TrashRecord[]> {
       amountCents: e.amountCents,
       deletedAt: e.deletedAt!.toISOString(),
       daysLeft: daysLeft(e.deletedAt!, now),
-      context: `工作账本 · ${e.yearMonth}`,
+      context: `${e.ledger.name} · ${e.yearMonth}`,
     })),
     ...generals.map((g) => ({
       type: 'generalEntry' as const,
@@ -123,7 +128,7 @@ export async function listTrash(userId: string): Promise<TrashRecord[]> {
       amountCents: null,
       deletedAt: ev.deletedAt!.toISOString(),
       daysLeft: daysLeft(ev.deletedAt!, now),
-      context: '桃源账本',
+      context: ev.ledger.name,
     })),
     ...amounts.map((a) => {
       const desc =
@@ -160,41 +165,46 @@ export async function isOwnedTrash(
   type: TrashType,
   id: string,
 ): Promise<boolean> {
+  // 五张表的归属统一走 ledger.members —— editor+ 才有权恢复/彻底删。
+  // 列表页 (listTrash) 允许 viewer 也看：能看但不能改。
   switch (type) {
     case 'entry': {
       const r = await prisma.entry.findUnique({
         where: { id },
-        select: { userId: true, deletedAt: true },
+        select: { deletedAt: true, ledger: { select: { members: { where: { userId, role: { in: ['owner', 'editor'] } }, select: { role: true }, take: 1 } } } },
       });
-      return !!r && r.userId === userId && r.deletedAt !== null;
+      return !!r && r.deletedAt !== null && r.ledger.members.length > 0;
     }
     case 'generalEntry': {
       const r = await prisma.generalEntry.findUnique({
         where: { id },
-        select: { deletedAt: true, ledger: { select: { userId: true } } },
+        select: { deletedAt: true, ledger: { select: { members: { where: { userId, role: { in: ['owner', 'editor'] } }, select: { role: true }, take: 1 } } } },
       });
-      return !!r && r.ledger.userId === userId && r.deletedAt !== null;
+      return !!r && r.deletedAt !== null && r.ledger.members.length > 0;
     }
     case 'tripExpense': {
       const r = await prisma.tripExpense.findUnique({
         where: { id },
-        select: { deletedAt: true, ledger: { select: { userId: true } } },
+        select: { deletedAt: true, ledger: { select: { members: { where: { userId, role: { in: ['owner', 'editor'] } }, select: { role: true }, take: 1 } } } },
       });
-      return !!r && r.ledger.userId === userId && r.deletedAt !== null;
+      return !!r && r.deletedAt !== null && r.ledger.members.length > 0;
     }
     case 'event': {
       const r = await prisma.event.findUnique({
         where: { id },
-        select: { userId: true, deletedAt: true },
+        select: { deletedAt: true, ledger: { select: { members: { where: { userId, role: { in: ['owner', 'editor'] } }, select: { role: true }, take: 1 } } } },
       });
-      return !!r && r.userId === userId && r.deletedAt !== null;
+      return !!r && r.deletedAt !== null && r.ledger.members.length > 0;
     }
     case 'eventAmount': {
       const r = await prisma.eventAmount.findUnique({
         where: { id },
-        select: { deletedAt: true, event: { select: { userId: true } } },
+        select: {
+          deletedAt: true,
+          event: { select: { ledger: { select: { members: { where: { userId, role: { in: ['owner', 'editor'] } }, select: { role: true }, take: 1 } } } } },
+        },
       });
-      return !!r && r.event.userId === userId && r.deletedAt !== null;
+      return !!r && r.deletedAt !== null && r.event.ledger.members.length > 0;
     }
   }
 }
