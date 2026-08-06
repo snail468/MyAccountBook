@@ -4,10 +4,16 @@
 //
 // 安全相关的界面约定：
 //   * 列表只显示打码尾号，**永远不自动解密** —— 页面停在那里被人看到也不泄露
-//   * 查看完整卡号要二次输入登录密码，拿到后 60 秒自动隐藏
+//   * 进入 /cards 前已由 CardsUnlockGate 验过一次登录密码（页面级解锁）；
+//     单卡"查看"直接命中 /api/cards/<id>/reveal，接口只查 session.cardsUnlockedAt
+//   * 明文最多在屏幕上停 60 秒，然后自动收起 —— 页面解锁 TTL 是 10 分钟，
+//     这层是"看完了不主动收回"的兜底
+//   * 解锁 TTL 过期后 reveal 返回 401 / code=locked，前端 router.refresh()
+//     回到解锁门
 //   * 解密结果只放在组件 state 里，不写 localStorage、不进 URL
 
 import { useCallback, useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAlert, useConfirm } from '@/components/ui/Dialog';
 import { maskCardNumber } from '@/lib/cardFormat';
 
@@ -27,13 +33,13 @@ const inputCls =
 const REVEAL_TTL_MS = 60_000;
 
 export default function CardsClient() {
+  const router = useRouter();
   const confirm = useConfirm();
   const alert = useAlert();
 
   const [cards, setCards] = useState<Card[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [disabled, setDisabled] = useState('');
 
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState({
@@ -45,11 +51,10 @@ export default function CardsClient() {
     note: '',
   });
 
-  const [revealing, setRevealing] = useState<string | null>(null);
-  const [password, setPassword] = useState('');
   const [revealed, setRevealed] = useState<{ id: string; number: string; note: string | null } | null>(
     null,
   );
+  const [copied, setCopied] = useState<'' | 'number' | 'full'>('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -57,10 +62,6 @@ export default function CardsClient() {
     try {
       const res = await fetch('/api/cards', { cache: 'no-store' });
       const data = await res.json();
-      if (res.status === 503) {
-        setDisabled(data.error);
-        return;
-      }
       if (!res.ok) throw new Error(data.error || '加载失败');
       setCards(data.cards);
     } catch (e) {
@@ -80,6 +81,13 @@ export default function CardsClient() {
     const t = setTimeout(() => setRevealed(null), REVEAL_TTL_MS);
     return () => clearTimeout(t);
   }, [revealed]);
+
+  // 复制反馈短暂显示
+  useEffect(() => {
+    if (!copied) return;
+    const t = setTimeout(() => setCopied(''), 1500);
+    return () => clearTimeout(t);
+  }, [copied]);
 
   async function submitNew() {
     setError('');
@@ -109,19 +117,46 @@ export default function CardsClient() {
   async function doReveal(id: string) {
     setError('');
     try {
-      const res = await fetch(`/api/cards/${id}/reveal`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || '验证失败');
+      const res = await fetch(`/api/cards/${id}/reveal`, { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 401 && data.code === 'locked') {
+        // 解锁过期 —— 回到 gate 页
+        router.refresh();
+        return;
+      }
+      if (!res.ok) throw new Error(data.error || '获取失败');
       setRevealed({ id, number: data.number, note: data.note });
-      setRevealing(null);
-      setPassword('');
     } catch (e) {
-      setError(e instanceof Error ? e.message : '验证失败');
+      setError(e instanceof Error ? e.message : '获取失败');
     }
+  }
+
+  async function writeClipboard(text: string, kind: 'number' | 'full') {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(kind);
+    } catch {
+      // clipboard 权限被拒时降级：用 prompt 让用户手动复制
+      window.prompt('复制以下内容：', text);
+    }
+  }
+
+  function copyNumber() {
+    if (!revealed) return;
+    void writeClipboard(revealed.number.replace(/\s+/g, ''), 'number');
+  }
+
+  function copyFull(c: Card) {
+    if (!revealed || revealed.id !== c.id) return;
+    const lines = [
+      `银行：${c.bankName}`,
+      c.alias ? `别名：${c.alias}` : null,
+      `类型：${c.cardType === 'credit' ? '信用卡' : '储蓄卡'}`,
+      c.holder ? `持卡人：${c.holder}` : null,
+      `卡号：${revealed.number.replace(/\s+/g, '')}`,
+      revealed.note ? `备注：${revealed.note}` : null,
+    ].filter(Boolean);
+    void writeClipboard(lines.join('\n'), 'full');
   }
 
   async function remove(c: Card) {
@@ -141,27 +176,29 @@ export default function CardsClient() {
     await load();
   }
 
-  if (disabled) {
-    return (
-      <div className="px-4 py-10">
-        <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
-          <div className="font-medium text-sm mb-1">功能未启用</div>
-          <p className="text-xs text-ink-500">{disabled}</p>
-          <p className="text-xs text-ink-500 mt-2">
-            生成密钥：<code className="text-[11px]">openssl rand -base64 32</code>
-          </p>
-        </div>
-      </div>
-    );
+  async function lockNow() {
+    setRevealed(null);
+    try {
+      await fetch('/api/cards/unlock', { method: 'DELETE' });
+    } catch {
+      // 主动上锁失败无所谓，router.refresh 后服务端读的是当前 session
+    }
+    router.refresh();
   }
 
   return (
     <div className="px-4 pb-24 space-y-3">
-      <div className="p-3 rounded-2xl bg-ink-50 dark:bg-ink-800 border border-ink-200 dark:border-ink-700">
-        <p className="text-[11px] text-ink-500 leading-relaxed">
+      <div className="p-3 rounded-2xl bg-ink-50 dark:bg-ink-800 border border-ink-200 dark:border-ink-700 flex items-start justify-between gap-3">
+        <p className="text-[11px] text-ink-500 leading-relaxed flex-1">
           卡号与备注以 AES-256-GCM 加密存储，数据库文件泄露也读不出。
           <strong>本应用不存 CVV 和取款密码</strong>，也请不要写进备注。
         </p>
+        <button
+          onClick={() => void lockNow()}
+          className="text-[11px] text-ink-500 underline shrink-0"
+        >
+          立即上锁
+        </button>
       </div>
 
       {loading && <p className="text-ink-400 text-sm py-6 text-center">加载中…</p>}
@@ -198,47 +235,21 @@ export default function CardsClient() {
           )}
 
           {revealed?.id === c.id ? (
-            <div className="flex items-center gap-3 mt-2">
+            <div className="flex flex-wrap items-center gap-3 mt-2">
+              <button onClick={copyNumber} className="text-xs text-indigo-600 underline">
+                {copied === 'number' ? '已复制 ✓' : '复制卡号'}
+              </button>
+              <button onClick={() => copyFull(c)} className="text-xs text-indigo-600 underline">
+                {copied === 'full' ? '已复制 ✓' : '复制完整信息'}
+              </button>
               <button onClick={() => setRevealed(null)} className="text-xs text-ink-500 underline">
                 立即隐藏
               </button>
               <span className="text-[11px] text-ink-400">60 秒后自动隐藏</span>
             </div>
-          ) : revealing === c.id ? (
-            <div className="mt-3 space-y-2">
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="输入登录密码以查看"
-                className={inputCls}
-                autoFocus
-              />
-              <div className="flex gap-2">
-                <button
-                  onClick={() => void doReveal(c.id)}
-                  className="flex-1 py-2 rounded-xl bg-ink-900 dark:bg-ink-100 text-white dark:text-ink-900 text-sm"
-                >
-                  确认
-                </button>
-                <button
-                  onClick={() => {
-                    setRevealing(null);
-                    setPassword('');
-                  }}
-                  className="px-4 py-2 rounded-xl bg-ink-100 dark:bg-ink-700 text-sm"
-                >
-                  取消
-                </button>
-              </div>
-            </div>
           ) : (
             <button
-              onClick={() => {
-                setRevealing(c.id);
-                setPassword('');
-                setError('');
-              }}
+              onClick={() => void doReveal(c.id)}
               className="text-xs text-ink-500 underline mt-2"
             >
               查看完整卡号

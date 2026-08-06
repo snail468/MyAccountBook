@@ -15,6 +15,9 @@ services:
       DATABASE_URL: "file:/data/app.db"
       # HTTPS 上线后再改成 true；HTTP 部署保持 false，否则登录 cookie 被浏览器拒收
       COOKIE_SECURE: "${COOKIE_SECURE:-false}"
+      # 银行卡备份的加密密钥。至少 32 字符（openssl rand -base64 32）。
+      # 缺失或过短时"银行卡备份"整个功能自动禁用，其它功能不受影响
+      CARD_SECRET: "${CARD_SECRET:-}"
       NODE_ENV: production
     volumes:
       - ./data:/data

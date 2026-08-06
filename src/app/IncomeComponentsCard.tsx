@@ -89,23 +89,6 @@ export default function IncomeComponentsCard({
         </div>
       )}
 
-      {/* 被用户关掉的来源折叠展示，方便"啊我关了什么" —— 但金额压低不喧宾夺主 */}
-      {components.some((c) => !c.enabled) && (
-        <div className="mt-4 pt-3 border-t border-ink-100 dark:border-ink-700">
-          <div className="text-[11px] text-ink-500 mb-1">已排除（不计入 A）</div>
-          <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-ink-400 num">
-            {components
-              .filter((c) => !c.enabled)
-              .map((c) => (
-                <span key={c.key} className="line-through">
-                  {c.name} {c.sign === -1 && '−'}
-                  <Money cents={c.cents} />
-                </span>
-              ))}
-          </div>
-        </div>
-      )}
-
       {(otherReward.length > 0 || countReward.length > 0 || textReward.length > 0) && (
         <div className="mt-4 pt-3 border-t border-ink-100 dark:border-ink-700">
           <div className="text-[11px] text-ink-500 mb-1">以下奖励不计入 A，仅存档展示</div>

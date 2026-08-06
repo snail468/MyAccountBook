@@ -20,6 +20,8 @@ type Invite = {
   role: string;
   createdAt: string;
   expiresAt: string | null;
+  acceptedAt: string | null;
+  acceptedByUsername: string | null;
 };
 
 const roleLabel = (r: string) =>
@@ -50,6 +52,9 @@ export default function CollaboratorsPanel({
   // Phase 2 之后所有 kind 都能共享
   const shareBlocked = false;
   void ledgerKind;
+
+  const pendingInvites = initialInvites.filter((i) => !i.acceptedAt);
+  const acceptedInvites = initialInvites.filter((i) => !!i.acceptedAt);
 
   async function reload() {
     startTransition(() => router.refresh());
@@ -247,9 +252,9 @@ export default function CollaboratorsPanel({
             </p>
           </div>
 
-          {initialInvites.length > 0 && (
+          {pendingInvites.length > 0 && (
             <ul className="divide-y divide-ink-100 rounded-xl border border-ink-100 bg-white dark:divide-ink-800 dark:border-ink-800 dark:bg-ink-950">
-              {initialInvites.map((inv) => (
+              {pendingInvites.map((inv) => (
                 <li key={inv.id} className="flex flex-wrap items-center gap-3 px-4 py-3">
                   <span className="flex-1 truncate text-sm">
                     <span className="text-ink-500">邀请为 {roleLabel(inv.role)} ·</span>{' '}
@@ -278,6 +283,29 @@ export default function CollaboratorsPanel({
                 </li>
               ))}
             </ul>
+          )}
+
+          {acceptedInvites.length > 0 && (
+            <div className="mt-4">
+              <div className="text-[11px] text-ink-500 mb-1 px-1">已使用的邀请</div>
+              <ul className="divide-y divide-ink-100 rounded-xl border border-ink-100 bg-white dark:divide-ink-800 dark:border-ink-800 dark:bg-ink-950">
+                {acceptedInvites.map((inv) => (
+                  <li key={inv.id} className="flex flex-wrap items-center gap-3 px-4 py-3">
+                    <span className="flex-1 truncate text-sm">
+                      <span className="text-ink-500">邀请为 {roleLabel(inv.role)} ·</span>{' '}
+                      <span className="text-ink-800 dark:text-ink-200 font-medium">
+                        {inv.acceptedByUsername ?? '未知用户'}
+                      </span>{' '}
+                      <span className="text-ink-400">
+                        {inv.acceptedAt
+                          ? `于 ${new Date(inv.acceptedAt).toLocaleDateString()} 接受`
+                          : '已接受'}
+                      </span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
         </section>
       )}

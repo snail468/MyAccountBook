@@ -23,12 +23,6 @@ export default async function InviteAcceptPage({
 }) {
   const { token } = await params;
 
-  const user = await requireUser();
-  if (!user) {
-    // 登录后回到这里。login 页支持 ?next= 就用它，暂时先直接 redirect
-    redirect(`/login?next=${encodeURIComponent(`/invite/${token}`)}`);
-  }
-
   const invite =
     token.length >= 20 && token.length <= 200
       ? await prisma.ledgerInvite.findUnique({
@@ -54,6 +48,16 @@ export default async function InviteAcceptPage({
   const expired = invite?.expiresAt && invite.expiresAt < new Date();
   const inactive = invite?.ledger.deletedAt || invite?.ledger.archived;
   const invalid = !invite || expired || inactive;
+
+  const user = await requireUser();
+  if (!user) {
+    // 邀请有效且未使用 —— 直接把访客送到自助注册页（一次性 register 通道）。
+    // 已使用 / 过期 / 无效 —— 走登录路径（防止用邀请码枚举来触达注册页）。
+    if (invite && !invite.acceptedByUserId && !invalid) {
+      redirect(`/register?invite=${encodeURIComponent(token)}`);
+    }
+    redirect(`/login?next=${encodeURIComponent(`/invite/${token}`)}`);
+  }
 
   if (invalid) {
     return (

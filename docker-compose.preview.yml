@@ -33,6 +33,8 @@ services:
       DATABASE_URL: "file:/data/app.db"
       # 通过 http://IP:3001 访问时必须是 false，否则浏览器拒收登录 cookie
       COOKIE_SECURE: "${COOKIE_SECURE:-false}"
+      # 银行卡备份的加密密钥。缺失或不足 32 字符时该功能自动禁用
+      CARD_SECRET: "${CARD_SECRET:-}"
       NODE_ENV: production
     volumes:
       # 独立数据目录 —— 与生产的 ./data 完全隔离

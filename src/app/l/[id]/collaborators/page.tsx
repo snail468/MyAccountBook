@@ -34,7 +34,6 @@ export default async function CollaboratorsPage({
         },
       },
       invites: {
-        where: { acceptedByUserId: null },
         orderBy: { createdAt: 'desc' },
         select: {
           id: true,
@@ -42,6 +41,8 @@ export default async function CollaboratorsPage({
           role: true,
           createdAt: true,
           expiresAt: true,
+          acceptedAt: true,
+          acceptedBy: { select: { username: true } },
         },
       },
     },
@@ -93,6 +94,8 @@ export default async function CollaboratorsPage({
                 role: v.role,
                 createdAt: v.createdAt.toISOString(),
                 expiresAt: v.expiresAt?.toISOString() ?? null,
+                acceptedAt: v.acceptedAt?.toISOString() ?? null,
+                acceptedByUsername: v.acceptedBy?.username ?? null,
               }))
             : []
         }

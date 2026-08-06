@@ -8,7 +8,20 @@ export type SessionData = {
   username?: string;
   // 签发时用户的 sessionVersion。与数据库当前值不符 → 会话作废。
   sv?: number;
+  // 银行卡功能的"页面级"解锁时间戳（毫秒）。
+  // /api/cards/unlock 验证登录密码后写入；/api/cards/[id]/reveal 只查这个时间戳
+  // 是否在 CARDS_UNLOCK_TTL_MS 内，不再要求每卡二次输密。
+  cardsUnlockedAt?: number;
 };
+
+/** 银行卡"进入解锁"的有效期。10 分钟 —— 够翻几张卡，又不至于长时间敞着 */
+export const CARDS_UNLOCK_TTL_MS = 10 * 60 * 1000;
+
+export function isCardsUnlocked(session: Pick<SessionData, 'cardsUnlockedAt'>): boolean {
+  const t = session.cardsUnlockedAt;
+  if (!t) return false;
+  return Date.now() - t < CARDS_UNLOCK_TTL_MS;
+}
 
 const cookieSecure = process.env.COOKIE_SECURE === 'true';
 

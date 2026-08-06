@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 
-export default function RegisterForm() {
+export default function RegisterForm({ inviteToken }: { inviteToken?: string }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -17,11 +17,18 @@ export default function RegisterForm() {
       const res = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({
+          username,
+          password,
+          ...(inviteToken ? { inviteToken } : {}),
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || '注册失败');
-      window.location.href = '/';
+      // 邀请路径：注册成功服务端已签发 session，回到 /invite/<token> 让用户点接受
+      // 首次 bootstrap：也已签发 session，直接进首页
+      // 其它（admin 开号，一般不会走这个前端表单）也回首页
+      window.location.href = inviteToken ? `/invite/${inviteToken}` : '/';
     } catch (err) {
       setError(err instanceof Error ? err.message : '注册失败');
     } finally {
@@ -62,7 +69,10 @@ export default function RegisterForm() {
       </form>
       <p className="mt-6 text-sm text-ink-500 text-center">
         已有账号？{' '}
-        <Link href="/login" className="text-ink-900 dark:text-ink-100 underline">
+        <Link
+          href={inviteToken ? `/login?next=${encodeURIComponent(`/invite/${inviteToken}`)}` : '/login'}
+          className="text-ink-900 dark:text-ink-100 underline"
+        >
           登录
         </Link>
       </p>
