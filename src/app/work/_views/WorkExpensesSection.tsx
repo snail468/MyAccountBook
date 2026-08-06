@@ -1,13 +1,30 @@
 import Link from 'next/link';
 import { prisma } from '@/lib/db';
 import Money from '@/components/ui/Money';
-import { DEFAULT_PAGE_SIZE, slicePage, TIME_DESC_ORDER } from '@/lib/pagination';
+import { DEFAULT_PAGE_SIZE, encodeCursor } from '@/lib/pagination';
 import ExpenseList from '../expenses/ExpenseList';
 import { NOT_DELETED } from '@/lib/softDelete';
-import { REFUND_OVERDUE_DAYS, summarizeOverdue } from '@/lib/refundStatus';
+import { REFUND_OVERDUE_DAYS, refundStatus } from '@/lib/refundStatus';
 
 // 工作账本"出项汇总"section。同 WorkMonthsSection：/work/expenses 与
 // /l/[id]/expenses 共用同一段渲染逻辑。
+//
+// **重要设计约束**：所有汇总（total / refunded / byCategory / overdue）与
+// 首屏列表**必须从同一次 SQL 查询里派生**。历史上这里发过 5 条独立 SQL：
+//   1. aggregate(所有出项)      -> total
+//   2. aggregate(已回款)        -> refundedTotal
+//   3. groupBy(category)        -> byCategory
+//   4. groupBy(refunded, category) -> refundedByCategory
+//   5. findMany(refundedAt=null) -> pendingRows → summarizeOverdue
+//   6. findMany(take=51)        -> firstPage
+// 每条 SQL 单独看都对，但只要其中任何一条与另一条对**同一批行的观察角度**
+// 存在细微差别（Prisma 版本差、SQLite TEXT 比较边界、软删/直删 race、
+// 老数据 refundedAt 格式怪、bootstrap 期间 ledger 迁移余温……），
+// 就会出现"页面顶部说 8 笔，列表里明明能看到 12 条红条"这类漂移。
+//
+// 换成一次 findMany 拿全，所有派生量在 JS 里 reduce ——
+// 派生量之间的一致性变成算术恒等式，不依赖任何 SQL 层的假设。个人账本
+// 量级下（几千行）内存/耗时都可以接受，且避免了原来 5 次 round-trip。
 
 type CategoryStat = {
   category: string;
@@ -20,71 +37,85 @@ type CategoryStat = {
 async function loadExpenses(ledgerId: string) {
   const baseWhere = { ledgerId, ...NOT_DELETED, direction: 'expense' as const };
 
-  const [overall, refundedOverall, byCategory, refundedByCategory, pendingRows, firstPage] =
-    await Promise.all([
-      prisma.entry.aggregate({
-        where: baseWhere,
-        _sum: { amountCents: true },
-        _count: true,
-      }),
-      prisma.entry.aggregate({
-        where: { ...baseWhere, refundedAt: { not: null } },
-        _sum: { amountCents: true },
-        _count: true,
-      }),
-      prisma.entry.groupBy({
-        by: ['category'],
-        where: baseWhere,
-        _sum: { amountCents: true },
-        _count: true,
-        orderBy: { _sum: { amountCents: 'desc' } },
-      }),
-      prisma.entry.groupBy({
-        by: ['category'],
-        where: { ...baseWhere, refundedAt: { not: null } },
-        _sum: { amountCents: true },
-      }),
-      // 全部未回款：见 refundStatus.ts 的"SQL 与 UI 判定必须同源"注释
-      prisma.entry.findMany({
-        where: { ...baseWhere, refundedAt: null },
-        select: { amountCents: true, occurredAt: true, refundedAt: true },
-      }),
-      prisma.entry.findMany({
-        where: baseWhere,
-        orderBy: TIME_DESC_ORDER,
-        take: DEFAULT_PAGE_SIZE + 1,
-      }),
-    ]);
-  const overdue = summarizeOverdue(pendingRows);
-
-  const refundedMap = new Map(
-    refundedByCategory.map((r) => [r.category, r._sum.amountCents ?? 0]),
-  );
-
-  const categoryStats: CategoryStat[] = byCategory.map((r) => {
-    const totalCents = r._sum.amountCents ?? 0;
-    const refundedCents = refundedMap.get(r.category) ?? 0;
-    return {
-      category: r.category,
-      totalCents,
-      count: r._count,
-      refundedCents,
-      pendingCents: totalCents - refundedCents,
-    };
+  // 一次拉全部：TIME_DESC_ORDER 让 items[0..49] 自然就是首屏，无需二次查询
+  const all = await prisma.entry.findMany({
+    where: baseWhere,
+    orderBy: [{ occurredAt: 'desc' }, { id: 'desc' }],
   });
 
-  const { items, nextCursor } = slicePage(firstPage, DEFAULT_PAGE_SIZE);
+  // 单次遍历同时算：total / refunded / byCategory / overdue。所有派生量
+  // 都出自 all，任何两组数字之间的关系永远算术等价。
+  const now = new Date();
+  let total = 0;
+  let refundedTotal = 0;
+  let refundedCount = 0;
+  let overdueCount = 0;
+  let overdueTotalCents = 0;
+  let overdueOldestDays = 0;
+  const catMap = new Map<
+    string,
+    { totalCents: number; count: number; refundedCents: number }
+  >();
+  for (const e of all) {
+    total += e.amountCents;
+    const isRefunded = e.refundedAt !== null;
+    if (isRefunded) {
+      refundedTotal += e.amountCents;
+      refundedCount += 1;
+    } else {
+      // 与客户端 ExpenseList 里的 refundStatus() 用完全同一个函数，行为对齐
+      const status = refundStatus(
+        { occurredAt: e.occurredAt, refundedAt: e.refundedAt },
+        now,
+      );
+      if (status === 'overdue') {
+        overdueCount += 1;
+        overdueTotalCents += e.amountCents;
+        const ageDays = Math.max(
+          0,
+          Math.floor((now.getTime() - e.occurredAt.getTime()) / 86400000),
+        );
+        if (ageDays > overdueOldestDays) overdueOldestDays = ageDays;
+      }
+    }
+    const c = catMap.get(e.category) ?? { totalCents: 0, count: 0, refundedCents: 0 };
+    c.totalCents += e.amountCents;
+    c.count += 1;
+    if (isRefunded) c.refundedCents += e.amountCents;
+    catMap.set(e.category, c);
+  }
 
-  const total = overall._sum.amountCents ?? 0;
-  const refundedTotal = refundedOverall._sum.amountCents ?? 0;
+  const categoryStats: CategoryStat[] = [...catMap.entries()]
+    .map(([category, c]) => ({
+      category,
+      totalCents: c.totalCents,
+      count: c.count,
+      refundedCents: c.refundedCents,
+      pendingCents: c.totalCents - c.refundedCents,
+    }))
+    .sort((a, b) => b.totalCents - a.totalCents);
+
+  // 首屏切片：拿 all 的前 DEFAULT_PAGE_SIZE 条；有更多就给游标供客户端加载
+  const items = all.slice(0, DEFAULT_PAGE_SIZE);
+  const nextCursor =
+    all.length > DEFAULT_PAGE_SIZE && items.length > 0
+      ? encodeCursor({
+          occurredAt: items[items.length - 1].occurredAt,
+          id: items[items.length - 1].id,
+        })
+      : null;
 
   return {
     total,
     refundedTotal,
     pending: total - refundedTotal,
-    count: overall._count,
-    refundedCount: refundedOverall._count,
-    overdue,
+    count: all.length,
+    refundedCount,
+    overdue: {
+      count: overdueCount,
+      totalCents: overdueTotalCents,
+      oldestDays: overdueOldestDays,
+    },
     categoryStats,
     entries: items.map((e) => ({
       id: e.id,
