@@ -31,6 +31,10 @@ export type GeneralPayload = {
 };
 
 export type WorkPayload = {
+  // Phase 3：明确要写到哪个 work 账本（共享账本时不能靠服务端默认 resolve）。
+  // 老队列条目（B8 起）没有此字段，normalize() 里按 "缺省 = owner 的 work" 兼容
+  // ——POST 不带 ledgerId 时后端会 resolve 到请求方 owner 的 work，与老行为一致。
+  ledgerId?: string;
   yearMonth: string; // "YYYY-MM"
   category: string;
   direction: 'income' | 'expense';
@@ -40,6 +44,8 @@ export type WorkPayload = {
 };
 
 export type TaoyuanPayload = {
+  // Phase 3；同 WorkPayload
+  ledgerId?: string;
   title: string;
   participate: boolean;
   startAt: string | null;
@@ -271,6 +277,9 @@ function requestFor(item: QueuedItem): { url: string; body: object } {
     return {
       url: '/api/entries',
       body: {
+        // 显式带 ledgerId 才能把离线的条目重放到正确的（可能是共享的）work 账本；
+        // 缺省时后端 resolve 到请求方 owner 的 work —— 与 B8 老队列的兼容路径。
+        ...(p.ledgerId ? { ledgerId: p.ledgerId } : {}),
         yearMonth: p.yearMonth,
         category: p.category,
         direction: p.direction,
@@ -286,6 +295,7 @@ function requestFor(item: QueuedItem): { url: string; body: object } {
     return {
       url: '/api/events',
       body: {
+        ...(p.ledgerId ? { ledgerId: p.ledgerId } : {}),
         title: p.title,
         participate: p.participate,
         startAt: p.startAt,

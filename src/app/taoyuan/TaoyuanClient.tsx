@@ -10,10 +10,15 @@ import MergeBar from './MergeBar';
 export default function TaoyuanClient({
   initialEvents,
   initialPaidCursor,
+  ledgerId,
 }: {
   initialEvents: ClientEvent[];
   /** 只有"已到账"归档需要翻页；活跃项已全量加载 */
   initialPaidCursor: string | null;
+  /**
+   * Phase 3：加载更多分页 / 新建活动都要按此账本走；缺省 = 请求方 owner 的桃源。
+   */
+  ledgerId?: string;
 }) {
   const [selecting, setSelecting] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
@@ -41,10 +46,9 @@ export default function TaoyuanClient({
     setLoadingMore(true);
     setLoadError('');
     try {
-      const res = await fetch(
-        `/api/events/paid?cursor=${encodeURIComponent(paidCursor)}`,
-        { cache: 'no-store' },
-      );
+      const qs = new URLSearchParams({ cursor: paidCursor });
+      if (ledgerId) qs.set('ledgerId', ledgerId);
+      const res = await fetch(`/api/events/paid?${qs.toString()}`, { cache: 'no-store' });
       const j = await res.json();
       if (!res.ok) throw new Error(j.error || '加载失败');
       setExtraPaid((prev) => [...prev, ...(j.events as ClientEvent[])]);
@@ -99,7 +103,7 @@ export default function TaoyuanClient({
         )}
       </div>
 
-      {!selecting && <NewEventButton />}
+      {!selecting && <NewEventButton ledgerId={ledgerId} />}
 
       <div className="mt-6 space-y-6">
         {STATUS_ORDER.map((s) => {

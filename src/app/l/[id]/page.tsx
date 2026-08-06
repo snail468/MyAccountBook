@@ -321,19 +321,30 @@ export default async function LedgerPage({ params }: { params: Promise<{ id: str
     );
   }
 
-  // work/taoyuan Phase 2 之后也可能被点开：owner 跳回熟悉的 /work / /taoyuan
-  // 主视图（那里 SQL 聚合都是按 owner 视角优化过的）；共享成员就地渲染一个
-  // 只读的精简视图 —— 全套 UI (记账/月份/回款/合并/金额分阶段) 迁到共享上下文
-  // 是独立的一大轮工作，Phase 2 只做 "能看能记账" 的最小可行。
-  if (ledger.kind === 'work' || ledger.kind === 'taoyuan') {
-    if (ledger.userId === user.id) {
-      redirect(ledger.kind === 'work' ? '/work' : '/taoyuan');
-    }
-    const { default: SharedBuiltinView } = await import('./SharedBuiltinView');
+  // work/taoyuan Phase 3：可以就地渲染完整的 UI。
+  // owner 本人仍重定向到 /work、/taoyuan —— 那两个 URL 是他们已经习惯的入口，
+  // 且组件相同，行为一致，只是入口稳定。
+  if (ledger.kind === 'work') {
+    if (ledger.userId === user.id) redirect('/work');
+    const { default: WorkMonthsSection } = await import(
+      '@/app/work/_views/WorkMonthsSection'
+    );
     return (
-      <div className="px-6 pt-14 pb-24">
-        <SharedBuiltinView ledgerId={ledger.id} ledgerName={ledger.name} ledgerKind={ledger.kind} />
-      </div>
+      <WorkMonthsSection
+        ledgerId={ledger.id}
+        ledgerName={`💼 ${ledger.name}`}
+        backHref="/"
+        monthHrefPrefix={`/l/${ledger.id}/month`}
+      />
+    );
+  }
+  if (ledger.kind === 'taoyuan') {
+    if (ledger.userId === user.id) redirect('/taoyuan');
+    const { default: TaoyuanSection } = await import(
+      '@/app/taoyuan/_views/TaoyuanSection'
+    );
+    return (
+      <TaoyuanSection ledgerId={ledger.id} ledgerName={`🌸 ${ledger.name}`} backHref="/" />
     );
   }
 

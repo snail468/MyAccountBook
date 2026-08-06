@@ -9,7 +9,7 @@ import { enqueue } from '@/lib/offlineQueue';
 import { useToast } from '@/components/ui/Dialog';
 import ImageUploader from './ImageUploader';
 
-export default function NewEventButton() {
+export default function NewEventButton({ ledgerId }: { ledgerId?: string } = {}) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [open, setOpen] = useState(false);
@@ -85,7 +85,11 @@ export default function NewEventButton() {
       const res = await fetch('/api/events', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...payload, clientId }),
+        body: JSON.stringify({
+          ...(ledgerId ? { ledgerId } : {}),
+          ...payload,
+          clientId,
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -104,8 +108,8 @@ export default function NewEventButton() {
         try {
           await enqueue({
             kind: 'taoyuan',
-            ledgerId: 'taoyuan',
-            payload,
+            ledgerId: ledgerId ?? 'taoyuan',
+            payload: ledgerId ? { ...payload, ledgerId } : payload,
           });
           toast({ message: '已存到本地，联网后自动同步', kind: 'info' });
           reset();

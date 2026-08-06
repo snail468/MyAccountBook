@@ -11,7 +11,17 @@ import { useToast } from '@/components/ui/Dialog';
 
 type Step = 'closed' | 'category' | 'amount';
 
-export default function NewEntryFlow({ yearMonth }: { yearMonth: string }) {
+export default function NewEntryFlow({
+  yearMonth,
+  ledgerId,
+}: {
+  yearMonth: string;
+  /**
+   * Phase 3：显式指定要写到哪个 work 账本。
+   * 缺省时后端 resolve 到请求方 owner 的 work（保 /work 老行为）。
+   */
+  ledgerId?: string;
+}) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [step, setStep] = useState<Step>('closed');
@@ -70,6 +80,7 @@ export default function NewEntryFlow({ yearMonth }: { yearMonth: string }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          ...(ledgerId ? { ledgerId } : {}),
           yearMonth,
           category,
           direction,
@@ -97,8 +108,12 @@ export default function NewEntryFlow({ yearMonth }: { yearMonth: string }) {
         try {
           await enqueue({
             kind: 'work',
-            ledgerId: 'work',
+            // 显式带 ledgerId：PendingBadge 与联网重放都能定位到具体账本。
+            // 缺 ledgerId 时用 'work' 占位（与 B8 老行为一致 —— 只影响 badge 过滤，
+            // 联网重放走服务端默认解析）。
+            ledgerId: ledgerId ?? 'work',
             payload: {
+              ...(ledgerId ? { ledgerId } : {}),
               yearMonth,
               category,
               direction,

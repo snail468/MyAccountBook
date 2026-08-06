@@ -21,9 +21,12 @@ export type WorkExpense = {
 export default function ExpenseList({
   initialEntries,
   initialCursor,
+  ledgerId,
 }: {
   initialEntries: WorkExpense[];
   initialCursor: string | null;
+  /** Phase 3：翻页 API 用它锁定跨账本的 work（缺省 = 请求方 owner 的 work） */
+  ledgerId?: string;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -116,10 +119,9 @@ export default function ExpenseList({
     setLoading(true);
     setError('');
     try {
-      const res = await fetch(
-        `/api/entries?direction=expense&cursor=${encodeURIComponent(cursor)}`,
-        { cache: 'no-store' },
-      );
+      const qs = new URLSearchParams({ direction: 'expense', cursor });
+      if (ledgerId) qs.set('ledgerId', ledgerId);
+      const res = await fetch(`/api/entries?${qs.toString()}`, { cache: 'no-store' });
       const j = await res.json();
       if (!res.ok) throw new Error(j.error || '加载失败');
       setExtra((prev) => [...prev, ...(j.entries as WorkExpense[])]);
