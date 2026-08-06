@@ -23,6 +23,7 @@ export default async function CollaboratorsPage({
       name: true,
       kind: true,
       icon: true,
+      userId: true,
       members: {
         orderBy: { createdAt: 'asc' },
         select: {
@@ -51,9 +52,16 @@ export default async function CollaboratorsPage({
   if (!me) notFound();
   const myRole = isLedgerRole(me.role) ? me.role : 'viewer';
 
-  // 顶部导航链接：账本详情页
-  const backHref =
-    ledger.kind === 'work' ? '/work' : ledger.kind === 'taoyuan' ? '/taoyuan' : `/l/${ledger.id}`;
+  // 顶部返回按钮：owner 回自己熟悉的 /work、/taoyuan；共享成员回 /l/[id]
+  // （回 /work 会跳到他们自己的 work，不是刚才那本共享的）。general/travel
+  // 都统一走 /l/[id]，那里就是账本详情页
+  const isBuiltin = ledger.kind === 'work' || ledger.kind === 'taoyuan';
+  const isOwnerOfBuiltin = isBuiltin && ledger.userId === user.id;
+  const backHref = isOwnerOfBuiltin
+    ? ledger.kind === 'work'
+      ? '/work'
+      : '/taoyuan'
+    : `/l/${ledger.id}`;
 
   return (
     <div className="px-6 pt-14 pb-24">

@@ -83,6 +83,14 @@ export default async function WorkMonthsSection({
       <div className="flex items-center gap-3 mb-6">
         <Link href={backHref} className="text-ink-500 text-sm">‹ 返回</Link>
         <h1 className="text-2xl font-semibold flex-1">{ledgerName}</h1>
+        <Link
+          href={`/l/${ledgerId}/collaborators`}
+          className="text-ink-400 text-sm"
+          aria-label="协作成员"
+          title="协作成员"
+        >
+          👥
+        </Link>
       </div>
 
       <div className="space-y-3">
