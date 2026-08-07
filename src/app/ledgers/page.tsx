@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { requireUser } from '@/lib/session';
 import { prisma } from '@/lib/db';
+import { displaySharedLedgerName } from '@/lib/ledgerRole';
 import Prefetcher from '@/components/ui/Prefetcher';
 import LedgerManage from './LedgerManage';
 
@@ -16,20 +17,32 @@ export default async function LedgersPage() {
   const all = await prisma.ledger.findMany({
     where: { members: { some: { userId: user.id } } },
     orderBy: [{ deletedAt: 'asc' }, { order: 'asc' }, { createdAt: 'asc' }],
+    // owner username 用来给共享账本加前缀，参见 displaySharedLedgerName
+    include: { user: { select: { username: true } } },
+  });
+  const viewerId = user.id;
+  const withDisplayName = <T extends { name: string; userId: string; user: { username: string } | null }>(l: T) => ({
+    ...l,
+    name: displaySharedLedgerName(l.name, l.userId, viewerId, l.user?.username),
+    // 判断在 UI 里禁用 "删除" 按钮 —— 只有 owner 才能软删账本；共享账本
+    // 非 owner 侧目前无从退出（后续可加"退出协作"，暂时至少别显示删除按钮）
+    isOwn: l.userId === viewerId,
   });
 
   const active = all
     .filter((l) => !l.deletedAt && !l.archived)
+    .map(withDisplayName)
     .map(serialize);
   const trashed = all
     .filter((l) => !!l.deletedAt)
+    .map(withDisplayName)
     .map((l) => ({
       ...serialize(l),
       deletedAt: l.deletedAt!.toISOString(),
     }));
 
-  const hasWork = active.some((l) => l.kind === 'work');
-  const hasTaoyuan = active.some((l) => l.kind === 'taoyuan');
+  const hasWork = active.some((l) => l.kind === 'work' && l.isOwn);
+  const hasTaoyuan = active.some((l) => l.kind === 'taoyuan' && l.isOwn);
 
   return (
     <div className="px-6 pt-14 pb-20">
@@ -54,6 +67,7 @@ function serialize(l: {
   name: string;
   icon: string | null;
   color: string | null;
+  isOwn: boolean;
 }) {
   return {
     id: l.id,
@@ -61,5 +75,6 @@ function serialize(l: {
     name: l.name,
     icon: l.icon,
     color: l.color,
+    isOwn: l.isOwn,
   };
 }

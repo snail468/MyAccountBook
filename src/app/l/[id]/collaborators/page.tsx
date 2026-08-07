@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { requireUser } from '@/lib/session';
 import { prisma } from '@/lib/db';
-import { isLedgerRole } from '@/lib/ledgerRole';
+import { displaySharedLedgerName, isLedgerRole } from '@/lib/ledgerRole';
 import CollaboratorsPanel from './CollaboratorsPanel';
 
 export const dynamic = 'force-dynamic';
@@ -24,6 +24,8 @@ export default async function CollaboratorsPage({
       kind: true,
       icon: true,
       userId: true,
+      // owner 的 username 用来给共享账本加前缀
+      user: { select: { username: true } },
       members: {
         orderBy: { createdAt: 'asc' },
         select: {
@@ -71,7 +73,9 @@ export default async function CollaboratorsPage({
           ‹ 返回
         </Link>
         <h1 className="text-2xl font-semibold flex-1">
-          {ledger.icon ?? ''} {ledger.name} · 协作成员
+          {ledger.icon ?? ''}{' '}
+          {displaySharedLedgerName(ledger.name, ledger.userId, user.id, ledger.user?.username)} ·
+          协作成员
         </h1>
       </div>
 

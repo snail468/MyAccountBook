@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { requireUser } from '@/lib/session';
 import { prisma } from '@/lib/db';
+import { displaySharedLedgerName } from '@/lib/ledgerRole';
 import Prefetcher from '@/components/ui/Prefetcher';
 import { parseImageUrls } from '@/lib/imageCleanup';
 import { DEFAULT_PAGE_SIZE, slicePage, TIME_DESC_ORDER } from '@/lib/pagination';
@@ -253,12 +254,20 @@ export default async function LedgerPage({ params }: { params: Promise<{ id: str
     where: { id },
     include: {
       members: { where: { userId: user.id }, select: { role: true }, take: 1 },
+      // owner username 用于给共享账本加前缀（区分 "自己那本" vs "别人共享的同类账本"）
+      user: { select: { username: true } },
     },
   });
   if (!ledger || ledger.members.length === 0) notFound();
   // 角色暂时只在服务器端做拦截；UI 上的"隐藏写按钮"要等成员管理面板一并做。
   // 拿出来只是为了往下游 view 组件传（当前签名还没接，先留 void）。
   void ledger.members[0]!.role;
+  const displayName = displaySharedLedgerName(
+    ledger.name,
+    ledger.userId,
+    user.id,
+    ledger.user?.username,
+  );
 
   if (ledger.kind === 'general') {
     const data = await loadGeneral(id, ledger.customCategories);
@@ -268,7 +277,7 @@ export default async function LedgerPage({ params }: { params: Promise<{ id: str
         <GeneralView
           ledger={{
             id: ledger.id,
-            name: ledger.name,
+            name: displayName,
             icon: ledger.icon,
             budgetCents: ledger.budgetCents,
             customCategories: ledger.customCategories,
@@ -300,7 +309,7 @@ export default async function LedgerPage({ params }: { params: Promise<{ id: str
         <TravelView
           ledger={{
             id: ledger.id,
-            name: ledger.name,
+            name: displayName,
             icon: ledger.icon,
             baseCurrency: ledger.baseCurrency ?? 'CNY',
             startDate: ledger.startDate?.toISOString() ?? null,
@@ -332,7 +341,7 @@ export default async function LedgerPage({ params }: { params: Promise<{ id: str
     return (
       <WorkMonthsSection
         ledgerId={ledger.id}
-        ledgerName={`💼 ${ledger.name}`}
+        ledgerName={`💼 ${displayName}`}
         backHref="/"
         monthHrefPrefix={`/l/${ledger.id}/month`}
       />
@@ -344,7 +353,7 @@ export default async function LedgerPage({ params }: { params: Promise<{ id: str
       '@/app/taoyuan/_views/TaoyuanSection'
     );
     return (
-      <TaoyuanSection ledgerId={ledger.id} ledgerName={`🌸 ${ledger.name}`} backHref="/" />
+      <TaoyuanSection ledgerId={ledger.id} ledgerName={`🌸 ${displayName}`} backHref="/" />
     );
   }
 

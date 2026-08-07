@@ -10,6 +10,9 @@ type Active = {
   kind: string;
   name: string;
   icon: string | null;
+  // 是否是本人 owner 的账本。共享账本 (isOwn=false) 上不显示"删除"按钮 ——
+  // 目前非 owner 无法解除自己与账本的关系，UI 里再放个"删除"按钮只会误导。
+  isOwn: boolean;
 };
 
 type Trashed = Active & { deletedAt: string };
@@ -153,14 +156,21 @@ export default function LedgerManage({
                 <span className="text-xl">{iconFor(l.kind, l.icon)}</span>
                 <div className="flex-1 min-w-0">
                   <div className="text-base font-medium truncate">{l.name}</div>
-                  <div className="text-xs text-ink-500 mt-0.5">{kindLabel(l.kind)}</div>
+                  <div className="text-xs text-ink-500 mt-0.5">
+                    {kindLabel(l.kind)}
+                    {!l.isOwn && <span className="ml-1 text-ink-400">· 共享</span>}
+                  </div>
                 </div>
-                <button
-                  onClick={() => del(l)}
-                  className="text-xs px-3 py-1.5 rounded-lg bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400"
-                >
-                  删除
-                </button>
+                {l.isOwn ? (
+                  <button
+                    onClick={() => del(l)}
+                    className="text-xs px-3 py-1.5 rounded-lg bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400"
+                  >
+                    删除
+                  </button>
+                ) : (
+                  <span className="text-[11px] text-ink-400">受邀协作</span>
+                )}
               </div>
             ))}
           </div>

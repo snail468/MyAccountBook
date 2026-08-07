@@ -23,3 +23,23 @@ export function isLedgerRole(x: unknown): x is LedgerRole {
 export function roleAtLeast(actualRole: LedgerRole, minRole: LedgerRole): boolean {
   return RANK[actualRole] >= RANK[minRole];
 }
+
+/**
+ * 受邀者视角下，共享账本的显示名加上 owner 前缀，用来区分
+ * "自己那本" 和 "别人分享给自己的同类型账本"。
+ * A 把自己的"家庭账本"分给 B，B 侧就会看到 "A · 家庭账本"，
+ * 和 B 自己那本"家庭账本"并排也不会混淆。
+ *
+ * 本人 owner 的账本不加前缀（首页/编辑等入口保持原样）。
+ * ownerUsername 缺失时也不加 —— 避免出现 "· xxx" 这种断腿字符串。
+ */
+export function displaySharedLedgerName(
+  name: string,
+  ownerId: string,
+  viewerId: string,
+  ownerUsername: string | null | undefined,
+): string {
+  if (ownerId === viewerId) return name;
+  if (!ownerUsername) return name;
+  return `${ownerUsername} · ${name}`;
+}

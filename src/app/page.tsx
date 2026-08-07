@@ -14,6 +14,7 @@ import {
   parsePrefs,
   type IncomeComponentKey,
 } from '@/lib/userPrefs';
+import { displaySharedLedgerName } from '@/lib/ledgerRole';
 import LogoutButton from '@/components/LogoutButton';
 import ExportButton from '@/components/ExportButton';
 import ImportButton from '@/components/ImportButton';
@@ -57,6 +58,9 @@ async function loadDashboard(userId: string) {
         members: { some: { userId } },
       },
       orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
+      // 需要 owner 的 username 用来给共享账本加前缀
+      // "张三 · 家庭账本"，跟自己那本"家庭账本"并排显示才不会混。
+      include: { user: { select: { username: true } } },
     }),
     // 用户偏好 —— 用来过滤"总收入 A"里启用的组件
     prisma.user.findUnique({ where: { id: userId }, select: { preferences: true } }),
@@ -169,7 +173,8 @@ async function loadDashboard(userId: string) {
       const c = parseCustom(l.customCategories);
       return {
         id: l.id,
-        name: l.name,
+        // 超支列表要显示共享账本 owner 前缀 —— 与下面 ledgerCards 口径一致
+        name: displaySharedLedgerName(l.name, l.userId, userId, l.user?.username),
         monthBudgets: c.budgets ?? {},
         weekBudgets: c.budgetsWeekly ?? {},
       };
@@ -283,6 +288,43 @@ async function loadDashboard(userId: string) {
   const travelMembersOf = (ledgerId: string) =>
     travelMemberCounts.find((r) => r.ledgerId === ledgerId)?._count._all ?? 0;
 
+  // 共享的 work/taoyuan 也要作为独立卡片显示在首页 —— 否则被邀请者接受邀请
+  // 后回到首页什么都看不到，只能靠链接猜路径。owner 的 work/taoyuan 走上面
+  // 的固定入口（/work、/taoyuan），共享的走 /l/[id]。
+  const sharedWorkLedgers = ledgers.filter((l) => l.kind === 'work' && l.userId !== userId);
+  const sharedTaoyuanLedgers = ledgers.filter(
+    (l) => l.kind === 'taoyuan' && l.userId !== userId,
+  );
+  const sharedWorkIds = sharedWorkLedgers.map((l) => l.id);
+  const sharedTaoyuanIds = sharedTaoyuanLedgers.map((l) => l.id);
+
+  // 共享账本卡片上的简讯 —— 与 own work/taoyuan 展示口径接近，但只 count 不
+  // 求和，避免在首页多做汇总。想看金额详情走进去 /l/[id] 页面。
+  const [sharedWorkEntryCounts, sharedTaoyuanPendingCounts] = await Promise.all([
+    sharedWorkIds.length > 0
+      ? prisma.entry.groupBy({
+          by: ['ledgerId'],
+          where: { ledgerId: { in: sharedWorkIds }, ...NOT_DELETED },
+          _count: { _all: true },
+        })
+      : Promise.resolve([]),
+    sharedTaoyuanIds.length > 0
+      ? prisma.event.groupBy({
+          by: ['ledgerId'],
+          where: {
+            ledgerId: { in: sharedTaoyuanIds },
+            ...NOT_DELETED,
+            status: { in: ['published', 'predicted', 'announced'] },
+          },
+          _count: { _all: true },
+        })
+      : Promise.resolve([]),
+  ]);
+  const sharedWorkCountOf = (ledgerId: string) =>
+    sharedWorkEntryCounts.find((r) => r.ledgerId === ledgerId)?._count._all ?? 0;
+  const sharedTaoyuanPendingOf = (ledgerId: string) =>
+    sharedTaoyuanPendingCounts.find((r) => r.ledgerId === ledgerId)?._count._all ?? 0;
+
   const otherLedgers = ledgers.filter((l) => l.kind === 'general' || l.kind === 'travel');
   const ledgerCards: {
     id: string;
@@ -308,9 +350,34 @@ async function loadDashboard(userId: string) {
     ledgerCards.push({
       id: l.id,
       kind: l.kind,
-      name: l.name,
+      // 共享账本前缀 owner 名 —— 与自己那本同类型账本区分
+      name: displaySharedLedgerName(l.name, l.userId, userId, l.user?.username),
       icon: l.icon,
       summary,
+      accent: null,
+    });
+  }
+  // 共享 work / taoyuan 卡片。放在 general/travel 卡片之后、周期记账之前 ——
+  // 视觉上和其它"次要账本"聚在一起，不冲淡自己的 own work/taoyuan 主入口。
+  for (const l of sharedWorkLedgers) {
+    const n = sharedWorkCountOf(l.id);
+    ledgerCards.push({
+      id: l.id,
+      kind: 'work',
+      name: displaySharedLedgerName(l.name, l.userId, userId, l.user?.username),
+      icon: l.icon ?? '💼',
+      summary: `共享账本 · ${n} 条记录`,
+      accent: null,
+    });
+  }
+  for (const l of sharedTaoyuanLedgers) {
+    const n = sharedTaoyuanPendingOf(l.id);
+    ledgerCards.push({
+      id: l.id,
+      kind: 'taoyuan',
+      name: displaySharedLedgerName(l.name, l.userId, userId, l.user?.username),
+      icon: l.icon ?? '🌸',
+      summary: n > 0 ? `共享账本 · ${n} 个待处理活动` : '共享账本',
       accent: null,
     });
   }
@@ -348,13 +415,15 @@ async function loadDashboard(userId: string) {
     generalCumulativeSums.find((r) => r.ledgerId === ledgerId && r.direction === dir)?._sum
       .amountCents ?? 0;
   for (const l of generalLedgers) {
-    push(`general:${l.id}` as IncomeComponentKey, `${l.name} · 进项`, generalCumOf(l.id, 'income'), 1);
+    const dn = displaySharedLedgerName(l.name, l.userId, userId, l.user?.username);
+    push(`general:${l.id}` as IncomeComponentKey, `${dn} · 进项`, generalCumOf(l.id, 'income'), 1);
   }
   // 出项减项（工作/桃源不在这里 —— 工作出项是垫款迟早回款，桃源没出项概念）
   for (const l of generalLedgers) {
+    const dn = displaySharedLedgerName(l.name, l.userId, userId, l.user?.username);
     push(
       `general-expense:${l.id}` as IncomeComponentKey,
-      `${l.name} · 出项`,
+      `${dn} · 出项`,
       generalCumOf(l.id, 'expense'),
       -1,
     );
@@ -363,9 +432,10 @@ async function loadDashboard(userId: string) {
   const travelCumOf = (ledgerId: string) =>
     travelSums.find((r) => r.ledgerId === ledgerId)?._sum.amountBaseCents ?? 0;
   for (const l of travelLedgers) {
+    const dn = displaySharedLedgerName(l.name, l.userId, userId, l.user?.username);
     push(
       `travel-expense:${l.id}` as IncomeComponentKey,
-      `${l.name} · 出项`,
+      `${dn} · 出项`,
       travelCumOf(l.id),
       -1,
     );
@@ -520,7 +590,16 @@ export default async function HomePage() {
               className="flex items-center justify-between p-5 rounded-2xl bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 active:scale-[0.98] transition"
             >
               <div className="flex items-center gap-3 min-w-0">
-                <span className="text-xl">{c.icon ?? (c.kind === 'travel' ? '✈️' : '📒')}</span>
+                <span className="text-xl">
+                  {c.icon ??
+                    (c.kind === 'travel'
+                      ? '✈️'
+                      : c.kind === 'work'
+                        ? '💼'
+                        : c.kind === 'taoyuan'
+                          ? '🌸'
+                          : '📒')}
+                </span>
                 <div className="min-w-0">
                   <div className="text-lg font-medium truncate flex items-center gap-2">
                     <span className="truncate">{c.name}</span>
