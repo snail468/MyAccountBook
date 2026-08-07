@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
+import '../api/api_client.dart';
 import '../api/event_api.dart';
 import '../data/local/event_dao.dart';
 import '../data/models/taoyuan_event.dart';

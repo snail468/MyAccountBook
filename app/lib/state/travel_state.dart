@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
+import '../api/api_client.dart';
 import '../api/trip_api.dart';
 import '../data/local/trip_dao.dart';
 import '../data/models/ledger.dart';
@@ -182,7 +183,7 @@ class TravelState extends ChangeNotifier {
     }
     for (final e in _expenses) {
       if (e.deletedAt != null) continue;
-      for (final s in _splitsByExpense[e.id] ?? const []) {
+      for (final TripSplit s in _splitsByExpense[e.id] ?? const <TripSplit>[]) {
         owed[s.memberId] = (owed[s.memberId] ?? 0) + s.shareCents;
       }
     }
@@ -199,7 +200,7 @@ class TravelState extends ChangeNotifier {
     }
     for (final e in _expenses) {
       if (e.deletedAt != null) continue;
-      for (final s in _splitsByExpense[e.id] ?? const []) {
+      for (final TripSplit s in _splitsByExpense[e.id] ?? const <TripSplit>[]) {
         owed[s.memberId] = (owed[s.memberId] ?? 0) + s.shareCents;
       }
     }

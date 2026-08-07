@@ -1,3 +1,4 @@
+import 'package:sqflite/sqflite.dart';
 import '../db/database.dart';
 import '../models/general_entry.dart';
 
