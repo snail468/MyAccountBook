@@ -1,1 +1,8 @@
-[{"relation": ["delegate_permission/common.handle_all_urls"], "target": {"namespace": "android_app", "package_name": "com.myaccountbook.twa", "sha256_cert_fingerprints": ["05:73:1C:0F:95:36:FA:74:2C:9C:32:0D:FA:A2:90:3C:A7:A8:C1:A5:AB:79:79:1F:16:4F:20:B0:31:C7:5A:D4"]}}]
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "com.myaccountbook.twa",
+    "sha256_cert_fingerprints": ["sha256 Fingerprint=05:73:1C:0F:95:36:FA:74:2C:9C:32:0D:FA:A2:90:3C:A7:A8:C1:A5:AB:79:79:1F:16:4F:20:B0:31:C7:5A:D4"]
+  }
+}]
