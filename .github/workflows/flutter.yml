@@ -33,9 +33,27 @@ jobs:
 
       - name: Scaffold Android platform
         # 本地无法跑 Flutter，由 CI 用 flutter create 生成正确的 android/ 工程
-        # （含 gradle wrapper / AndroidManifest / build.gradle），不会覆盖 lib/。
+        # （含 gradle wrapper / AndroidManifest / build.gradle）。
+        # 注意：lib/main.dart 已随仓库提交（且会被 GitHub 检出），flutter create
+        # 对已存在的源文件**不会**覆盖，因此这里绝不会变成默认计数器模板。
         working-directory: app
         run: flutter create --org com.myaccountbook --platforms=android .
+
+      - name: Verify lib/main.dart is our real app (not scaffold default)
+        # 兜底断言：如果未来 flutter 行为变化导致 lib/main.dart 被覆盖，立即失败。
+        working-directory: app
+        run: |
+          if grep -q "Flutter Demo Home Page" lib/main.dart; then
+            echo "::error::lib/main.dart was overwritten by flutter create scaffold! Reverting to scaffold default counter app."
+            exit 1
+          fi
+          echo "OK: lib/main.dart is our real app entry."
+
+      - name: Set app name (label) to 心愿便利贴
+        # 覆盖 flutter create 生成的 AndroidManifest 默认 android:label="myaccountbook"。
+        run: |
+          sed -i 's#android:label="[^"]*"#android:label="心愿便利贴"#' \
+            app/android/app/src/main/AndroidManifest.xml
 
       - name: Ensure INTERNET permission (release build needs it)
         run: |

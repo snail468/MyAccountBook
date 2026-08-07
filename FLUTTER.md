@@ -67,7 +67,23 @@ flutter build apk      # 出 release apk
 
 - `flutter create` 在 CI 动态生成 `android/` 原生工程（本地无需提交该目录，`.gitignore` 已忽略）。
 - 自动补 `android.permission.INTERNET`（release 构建联网需要）。
+- 自动把 `AndroidManifest.xml` 的 `android:label` 改成「心愿便利贴」（`flutter create` 默认会用 pubspec 的 `name`，即 `myaccountbook`）。
 - 产物 `app-release.apk` 作为 artifact 上传。
+
+### ⚠️ 关键：`app/lib/main.dart` 必须入库
+
+Flutter 应用入口默认在 `lib/main.dart`。如果该文件**不存在**，CI 的 `flutter create`
+会"贴心"地补一个**默认的计数器模板**（标题 "Flutter Demo Home Page"、加号按钮自增），
+最终 APK 装上跑的就是这个示例 App，而不是我们的心愿便利贴。
+
+**修复要点**：
+- `app/lib/main.dart` 必须随仓库提交（项目里目前已放在 `lib/`，不是 `lib/ui/`）。
+- `flutter create` 对已存在的源文件**不会**覆盖，所以入库的 `main.dart` 不会被干掉。
+- 工作流额外加了断言：scaffold 之后 grep `lib/main.dart` 含 "Flutter Demo Home Page" 就
+  立即失败，避免 CI 行为变化导致悄悄变回默认模板。
+
+参考资料：第一次部署时（v2.0.1）漏了 `lib/main.dart` 入库，APK 装上跑的是默认计数器，
+正是这次发现的根因。
 
 ## 目录结构
 
