@@ -49,6 +49,9 @@ android {
 }
 
 dependencies {
+    // AppCompat is required for Theme.AppCompat.* (used by Theme.TwaSplash) and
+    // because androidbrowserhelper's LauncherActivity extends AppCompatActivity.
+    implementation 'androidx.appcompat:appcompat:1.6.1'
     // Pinned to 1.4.0 on purpose: androidbrowserhelper 2.5.0 is compiled against
     // this exact browser version, so there is no version conflict and it stays
     // compatible with compileSdk 34 / AGP 8.5.2. (2.6.0 pulls androidx.browser
