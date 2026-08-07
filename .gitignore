@@ -37,3 +37,11 @@ Thumbs.db
 
 # Docker
 docker-data/
+
+# Android / TWA build artifacts (生成的，不入库；android/ 源码本身要入库)
+android/local.properties
+android/app/build/
+android/gradle-*/
+android/gradle.zip
+android/release.keystore
+android/twa-cert.der

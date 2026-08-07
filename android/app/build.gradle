@@ -1,0 +1,54 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.myaccountbook.twa'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'com.myaccountbook.twa'
+        minSdk 21
+        targetSdk 34
+        versionCode 1
+        versionName '1.0.0'
+
+        // host + theme colors are injected at build time so the same committed
+        // project can target any deployed PWA instance.
+        manifestPlaceholders = [
+            defaultUrl: (System.getenv('TWA_HOST') ?: 'https://example.com') + '/',
+        ]
+    }
+
+    signingConfigs {
+        release {
+            def ksFile = System.getenv('TWA_KEYSTORE_FILE') ?: 'release.keystore'
+            storeFile file(ksFile)
+            storePassword System.getenv('TWA_KS_PASS')
+            keyAlias System.getenv('TWA_KS_ALIAS') ?: 'twa'
+            keyPassword System.getenv('TWA_KS_PASS')
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfig signingConfigs.release
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    buildFeatures {
+        buildConfig false
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation 'androidx.browser:browser:1.8.0'
+    implementation 'com.google.androidbrowserhelper:androidbrowserhelper:2.6.0'
+}

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">心愿便利贴</string>
+    <!-- Empty Digital Asset Links statement; fill in (or deploy assetlinks.json)
+         only if you want to hide the address bar in the TWA. -->
+    <string name="asset_statements"></string>
+</resources>

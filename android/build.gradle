@@ -1,0 +1,6 @@
+// Root build file for the TWA (Trusted Web Activity) wrapper app.
+// This project simply wraps the already-hosted PWA (see TWA_HOST) as a
+// installable Android app. It contains no app logic of its own.
+plugins {
+    id 'com.android.application' version '8.5.2' apply false
+}

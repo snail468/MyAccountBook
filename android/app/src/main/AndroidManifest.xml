@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <application
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.TwaSplash">
+
+        <activity
+            android:name="com.google.androidbrowserhelper.trusted.LauncherActivity"
+            android:exported="true"
+            android:launchMode="singleInstance"
+            android:alwaysRetainTaskState="true"
+            android:theme="@style/Theme.TwaSplash">
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!-- The URL the TWA opens. Injected from TWA_HOST at build time. -->
+            <meta-data
+                android:name="android.support.customtabs.trusted.DEFAULT_URL"
+                android:value="${defaultUrl}" />
+
+            <meta-data
+                android:name="android.support.customtabs.trusted.STATUS_BAR_COLOR"
+                android:resource="@color/status_bar_color" />
+
+            <meta-data
+                android:name="android.support.customtabs.trusted.NAVIGATION_BAR_COLOR"
+                android:resource="@color/navigation_bar_color" />
+
+            <meta-data
+                android:name="android.support.customtabs.trusted.SPLASH_SCREEN_COLOR"
+                android:resource="@color/splash_color" />
+
+            <meta-data
+                android:name="android.support.customtabs.trusted.SPLASH_SCREEN_THEME"
+                android:resource="@style/Theme.TwaSplash" />
+
+            <!-- Optional Digital Asset Links statement (hides the URL bar once
+                 assetlinks.json is deployed). Leave empty to skip verification. -->
+            <meta-data
+                android:name="asset_statements"
+                android:resource="@string/asset_statements" />
+        </activity>
+    </application>
+</manifest>
