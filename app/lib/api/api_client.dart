@@ -98,6 +98,8 @@ class ApiClient {
       request('POST', path, data: data);
   Future<dynamic> put(String path, dynamic data) =>
       request('PUT', path, data: data);
+  Future<dynamic> patch(String path, dynamic data) =>
+      request('PATCH', path, data: data);
   Future<dynamic> delete(String path, {Map<String, dynamic>? query}) =>
       request('DELETE', path, query: query);
 

@@ -1,0 +1,217 @@
+import 'package:sqflite/sqflite.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+
+/// 本地 SQLite（sqflite）。App 的"真相源"：所有读都走这里，断网也能用。
+///
+/// 金额一律用分（cents，整数）；时间用 epoch 毫秒（int）；软删用 deleted_at 非 NULL。
+/// 每张业务表都有 `server_id`（服务端 cuid）和 `synced`（0/1）两列，
+/// 用于离线写入后联网把本地行对上服务端、并标记已同步。
+class AppDatabase {
+  AppDatabase._internal();
+  static final AppDatabase instance = AppDatabase._internal();
+
+  static const int _version = 1;
+  Database? _db;
+
+  Future<Database> get database async {
+    if (_db != null) return _db!;
+    final dir = await getApplicationSupportDirectory();
+    final path = p.join(dir.path, 'myaccountbook.db');
+    _db = await openDatabase(
+      path,
+      version: _version,
+      onCreate: _onCreate,
+    );
+    return _db!;
+  }
+
+  Future<void> _onCreate(Database db, int version) async {
+    await db.execute('''
+      CREATE TABLE users (
+        id TEXT PRIMARY KEY,
+        username TEXT NOT NULL,
+        session_version INTEGER NOT NULL DEFAULT 0
+      );
+    ''');
+    await db.execute('''
+      CREATE TABLE ledgers (
+        id TEXT PRIMARY KEY,
+        server_id TEXT,
+        kind TEXT NOT NULL,
+        name TEXT NOT NULL,
+        icon TEXT,
+        color TEXT,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        archived INTEGER NOT NULL DEFAULT 0,
+        deleted_at INTEGER,
+        budget_cents INTEGER,
+        custom_categories TEXT,
+        base_currency TEXT,
+        start_date INTEGER,
+        end_date INTEGER,
+        trip_budget TEXT,
+        synced INTEGER NOT NULL DEFAULT 1
+      );
+    ''');
+    await db.execute('''
+      CREATE TABLE general_entries (
+        id TEXT PRIMARY KEY,
+        ledger_id TEXT NOT NULL,
+        server_id TEXT,
+        direction TEXT NOT NULL,
+        category TEXT NOT NULL,
+        amount_cents INTEGER NOT NULL,
+        tags TEXT,
+        note TEXT,
+        image_urls TEXT,
+        occurred_at INTEGER NOT NULL,
+        deleted_at INTEGER,
+        synced INTEGER NOT NULL DEFAULT 0,
+        client_id TEXT
+      );
+    ''');
+    await db.execute('''
+      CREATE TABLE work_entries (
+        id TEXT PRIMARY KEY,
+        ledger_id TEXT NOT NULL,
+        server_id TEXT,
+        year_month TEXT NOT NULL,
+        category TEXT NOT NULL,
+        direction TEXT NOT NULL,
+        amount_cents INTEGER NOT NULL,
+        note TEXT,
+        occurred_at INTEGER NOT NULL,
+        refunded_at INTEGER,
+        deleted_at INTEGER,
+        synced INTEGER NOT NULL DEFAULT 0,
+        client_id TEXT
+      );
+    ''');
+    await db.execute('''
+      CREATE TABLE taoyuan_events (
+        id TEXT PRIMARY KEY,
+        ledger_id TEXT NOT NULL,
+        server_id TEXT,
+        title TEXT NOT NULL,
+        start_at INTEGER,
+        content TEXT,
+        reward_method TEXT,
+        reward_methods TEXT,
+        reward TEXT,
+        topic_tag TEXT,
+        content_images TEXT,
+        published_at INTEGER NOT NULL,
+        participate INTEGER NOT NULL DEFAULT 1,
+        deadline INTEGER,
+        predicted_cents INTEGER,
+        announced_cents INTEGER,
+        paid_cents INTEGER,
+        predicted_at INTEGER,
+        announced_at INTEGER,
+        paid_at INTEGER,
+        status TEXT NOT NULL DEFAULT 'published',
+        note TEXT,
+        parent_id TEXT,
+        deleted_at INTEGER,
+        synced INTEGER NOT NULL DEFAULT 0,
+        client_id TEXT
+      );
+    ''');
+    await db.execute('''
+      CREATE TABLE event_amounts (
+        id TEXT PRIMARY KEY,
+        event_id TEXT NOT NULL,
+        server_id TEXT,
+        stage TEXT NOT NULL,
+        cents INTEGER NOT NULL DEFAULT 0,
+        quantity INTEGER,
+        item_desc TEXT,
+        note TEXT,
+        reward_method TEXT,
+        occurred_at INTEGER NOT NULL,
+        deleted_at INTEGER,
+        synced INTEGER NOT NULL DEFAULT 0
+      );
+    ''');
+    await db.execute('''
+      CREATE TABLE trip_members (
+        id TEXT PRIMARY KEY,
+        ledger_id TEXT NOT NULL,
+        server_id TEXT,
+        user_id TEXT,
+        display_name TEXT NOT NULL,
+        settled INTEGER NOT NULL DEFAULT 0,
+        synced INTEGER NOT NULL DEFAULT 0
+      );
+    ''');
+    await db.execute('''
+      CREATE TABLE trip_expenses (
+        id TEXT PRIMARY KEY,
+        ledger_id TEXT NOT NULL,
+        server_id TEXT,
+        payer_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        category TEXT NOT NULL,
+        phase TEXT NOT NULL,
+        currency TEXT NOT NULL,
+        amount_foreign_cents INTEGER NOT NULL,
+        rate REAL NOT NULL DEFAULT 1,
+        amount_base_cents INTEGER NOT NULL,
+        note TEXT,
+        image_urls TEXT,
+        occurred_at INTEGER NOT NULL,
+        deleted_at INTEGER,
+        synced INTEGER NOT NULL DEFAULT 0,
+        client_id TEXT
+      );
+    ''');
+    await db.execute('''
+      CREATE TABLE trip_splits (
+        id TEXT PRIMARY KEY,
+        expense_id TEXT NOT NULL,
+        server_id TEXT,
+        member_id TEXT NOT NULL,
+        share_cents INTEGER NOT NULL,
+        synced INTEGER NOT NULL DEFAULT 0
+      );
+    ''');
+    await db.execute('''
+      CREATE TABLE pending_ops (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        op_uuid TEXT UNIQUE NOT NULL,
+        method TEXT NOT NULL,
+        path TEXT NOT NULL,
+        body TEXT,
+        client_id TEXT,
+        entity TEXT,
+        entity_local_id TEXT,
+        created_at INTEGER NOT NULL,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'pending'
+      );
+    ''');
+
+    // 索引（性能）
+    await db.execute('CREATE INDEX idx_ledgers_kind ON ledgers(kind, deleted_at);');
+    await db.execute('CREATE INDEX idx_general_ledger ON general_entries(ledger_id, occurred_at, deleted_at);');
+    await db.execute('CREATE INDEX idx_work_ledger ON work_entries(ledger_id, year_month, deleted_at);');
+    await db.execute('CREATE INDEX idx_event_ledger ON taoyuan_events(ledger_id, status, deleted_at);');
+    await db.execute('CREATE INDEX idx_trip_exp_ledger ON trip_expenses(ledger_id, phase, deleted_at);');
+    await db.execute('CREATE INDEX idx_trip_split_exp ON trip_splits(expense_id);');
+    await db.execute('CREATE INDEX idx_pending_status ON pending_ops(status, created_at);');
+  }
+
+  /// 清空所有本地数据（退出登录或重装场景）。
+  Future<void> clearAll() async {
+    final db = await database;
+    final tables = [
+      'pending_ops', 'trip_splits', 'trip_expenses', 'trip_members',
+      'event_amounts', 'taoyuan_events', 'work_entries', 'general_entries',
+      'ledgers', 'users',
+    ];
+    for (final t in tables) {
+      await db.delete(t);
+    }
+  }
+}
