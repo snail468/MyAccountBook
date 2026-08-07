@@ -33,6 +33,12 @@ class ApiClient {
       connectTimeout: const Duration(seconds: 15),
       receiveTimeout: const Duration(seconds: 15),
       contentType: Headers.jsonContentType,
+      // 服务端 middleware.ts 对写操作（POST/PUT/PATCH/DELETE）校验 Origin
+      // 头防 CSRF。浏览器自动带 Origin，但 Dio（原生 App）默认不带 →
+      // 被判"跨站请求被拒绝"403。这里手动设成服务端地址，让中间件认为同源。
+      headers: {
+        'Origin': AppConfig.apiBaseUrl,
+      },
     ));
     dio.interceptors.add(CookieManager(cookieJar));
     dio.interceptors.add(InterceptorsWrapper(
