@@ -171,6 +171,11 @@ model Ledger {
   baseCurrency String?
   startDate    DateTime?
   endDate      DateTime?
+  // 旅游账本：多币种预算（JSON）。
+  //   { totalBaseCents: number|null, perCurrency: Record<币种, 该币种原币分> }
+  // 用 JSON 而非多列，是因为币种集合随支出动态变化，列数不固定；
+  // 且与 User.preferences / Ledger.customCategories 的"塞 JSON 避免加列"思路一致。
+  tripBudget   String?
 
   entries      GeneralEntry[]
   tripMembers  TripMember[]
@@ -284,6 +289,9 @@ model TripMember {
   userId      String?  // 应用内用户；null 表示纯名字占位
   user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
   displayName String
+  // C11 旅游打磨：成员"已结清"标记。AA 结算后，手动把已把钱转清的人标上，
+  // 结算面板据此弱化其待办、给出"已结清"徽标。纯 UI 状态，不影响净额/转账计算。
+  settled     Boolean @default(false)
   createdAt   DateTime @default(now())
 
   paidExpenses TripExpense[]

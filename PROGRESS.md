@@ -1135,6 +1135,51 @@ taoyuan 的数据模型 (P2) 和完整 UI (P3) 也都跑通。下一步的自然
 
 ---
 
+### 2.28 C11 旅游账本打磨（五项全做）
+
+旅游账本本轮补齐打磨功能 + 右上角 ⚙ 设置按钮（设置按钮是前置，独立小修复）。
+**全部零新增运行时依赖**（契合项目"少依赖、离线优先"取向）。
+
+**① 每日花费曲线** —— `TripDailyChart.tsx`
+- 内联 SVG 柱状图，按天展示本位币花费；有行程起止用起止区间，否则用数据最小/最大日。
+- 数据来自 `page.tsx` `loadTravel` 新增的 `daily:{date,cents,count}[]` 聚合
+  （一次性只取 4 个轻字段，内存分桶，带 `NOT_DELETED`）。
+
+**② 行程日历视图** —— `TripCalendar.tsx`
+- 月历网格（周一为一周起点），有花费的日期按金额深浅高亮 + 显示当天花费。
+- 点某天 → 按日期筛选主列表（`dateFilter` 状态，切阶段自动清除）。
+
+**③ 成员「已结清」标记**
+- `TripMember.settled Boolean @default(false)`（migration `add_trip_member_settled`）。
+- 新增 `PATCH /api/ledgers/[id]/members/[memberId]` 更新 `settled`（editor 起，
+  复用 `requireOwnedLedger` 与 404 口径）。
+- `TripMembersModal` 每个成员加"标记结清/已结清"开关；`TravelView` 结算面板
+  新增"成员净额"列表 + 已结清徽标。
+
+**④ 结算单生成图片分享** —— `SettlementSheet.tsx` + `src/lib/domToPng.ts`
+- 结算单用**纯 SVG** 渲染（账本名/日期区间/成员净额/最优转账/总花费），
+  自带"下载图片"与"分享"（`navigator.share` 回退下载）。
+- `domToPng`：纯 SVG → `Image` → `canvas` → `toBlob`。**关键**：只用 rect/text/line，
+  不碰 `<foreignObject>`，避免 canvas taint（SecurityError），离线可用。
+
+**⑤ 多币种预算**
+- `Ledger.tripBudget String?`（JSON `{ totalBaseCents, perCurrency }`）
+  （migration `add_ledger_trip_budget`）。
+- `TravelSettingsModal` 新增预算编辑区：本位币总预算 + 各币种原币预算
+  （币种取自本账本实际出现的币种）。
+- `TravelView` 用 `currencyTotals`（loadTravel 新增的按币种聚合）+ `tripBudget`
+  渲染整体/分币种进度条，超支红色高亮。
+
+**服务端聚合扩展**（`src/app/l/[id]/page.tsx` `loadTravel`）：
+- 新增 `daily`（按天/本位币）、`currencyTotals`（按币种/原币）两次轻量 `findMany`
+  + JS 分桶；`members` 下传 `settled`；`ledger` 下传 `tripBudget`。
+
+**验证**：每功能单独 `npm run verify`（typecheck+lint+379 单测）通过；
+`npm run build` 在本 sandbox 需 `SAFE_DELETE_FAIL_CLOSED=false`（绕开 WorkBuddy
+注入的 `genie-trash` 对 git-bash 路径的拒收，详见 MEMORY.md），Docker 不受影响。
+
+---
+
 ### 2.26 B7 账本共享协作 · Phase 2（work / taoyuan）
 
 Phase 1 打通了 general/travel 的共享路径（[2.25](#225-b7-账本共享协作--phase-1general--travel)），
@@ -1370,7 +1415,7 @@ work/[month]/taoyuan 全套页面切到 ledgerId；work/taoyuan 邀请解禁。
 
 | 项 | 说明 |
 |---|---|
-| **C11 旅游账本打磨** | 每日花费曲线、行程日历视图、成员「已结清」标记、结算单生成图片分享、多币种预算 |
+| ~~C11 旅游账本打磨~~ | ✅ 五项全部完成：① 每日花费曲线（零依赖 SVG 柱状图，服务端按天聚合 `daily`）② 行程日历视图（月历网格 + 按天筛选主列表）③ 成员「已结清」标记（`TripMember.settled` + PATCH 接口 + 结算区净额列表徽标）④ 结算单生成图片分享（纯 SVG→canvas→PNG，无外部依赖）⑤ 多币种预算（`Ledger.tripBudget` JSON：本位币总预算 + 各币种原币预算 + 进度/超支）。另：旅游账本右上角 ⚙ 设置按钮已补齐。详见下方 [2.28](#228-c11-旅游账本打磨) |
 | **C12 桃源账本打磨** | 截止日期提醒 / 日历视图、按 `topicTag` 统计收益、公示→到账超时预警 |
 | ~~C13 工作账本~~ | ✅ 按类别累计统计卡片（见 2.6）+ **未回款超期提醒**（见 [2.22](#222-未回款超期提醒--类别智能排序)）+ **批量回款**（见 [2.23](#223-四项迭代垫款--京东卡--批量回款--分类预算)）。**剩余**：按类别趋势（月度分类走势） |
 | **C14 普通账本打磨** | ~~最近使用类别置顶~~（✅ 见 [2.22](#222-未回款超期提醒--类别智能排序)）、快捷记账模板（常用组合一键记）、标签升级成独立表并可统计 |

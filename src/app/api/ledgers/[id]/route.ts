@@ -15,6 +15,16 @@ const patchSchema = z.object({
   baseCurrency: z.string().length(3).nullable().optional(),
   startDate: z.string().datetime().nullable().optional(),
   endDate: z.string().datetime().nullable().optional(),
+  // 旅游账本多币种预算（C11）。结构见 Ledger.tripBudget 注释。
+  tripBudget: z
+    .object({
+      totalBaseCents: z.number().int().nonnegative().max(1_000_000_00).nullable(),
+      perCurrency: z
+        .record(z.number().int().nonnegative().max(1_000_000_00))
+        .optional(),
+    })
+    .nullable()
+    .optional(),
   customCategories: z
     .object({
       added: z
@@ -60,6 +70,9 @@ export async function PATCH(
   if (p.baseCurrency !== undefined) data.baseCurrency = p.baseCurrency;
   if (p.startDate !== undefined) data.startDate = p.startDate ? new Date(p.startDate) : null;
   if (p.endDate !== undefined) data.endDate = p.endDate ? new Date(p.endDate) : null;
+  if (p.tripBudget !== undefined) {
+    data.tripBudget = p.tripBudget ? JSON.stringify(p.tripBudget) : null;
+  }
   if (p.customCategories !== undefined) {
     data.customCategories = p.customCategories ? JSON.stringify(p.customCategories) : null;
   }

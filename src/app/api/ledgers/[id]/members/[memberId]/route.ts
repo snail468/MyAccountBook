@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { requireOwnedLedger } from '@/lib/ownership';
 import { badRequest, notFound } from '@/lib/apiError';
@@ -31,3 +32,35 @@ export async function DELETE(
   await prisma.tripMember.delete({ where: { id: memberId } });
   return NextResponse.json({ ok: true });
 }
+
+const patchSchema = z.object({ settled: z.boolean() });
+
+// 切换成员"已结清"标记（C11 旅游打磨）。editor 起，复用同一套权限/404 口径。
+export async function PATCH(
+  req: Request,
+  { params }: { params: Promise<{ id: string; memberId: string }> },
+) {
+  const { id, memberId } = await params;
+  const ctx = await requireOwnedLedger(id, {
+    kind: 'travel',
+    kindMessage: '仅旅游账本可用',
+    minRole: 'editor',
+  });
+  if (ctx instanceof Response) return ctx;
+
+  const member = await prisma.tripMember.findUnique({
+    where: { id: memberId },
+    select: { ledgerId: true },
+  });
+  if (!member || member.ledgerId !== id) return notFound();
+
+  const body = await req.json().catch(() => null);
+  const parsed = patchSchema.safeParse(body);
+  if (!parsed.success) return badRequest();
+  await prisma.tripMember.update({
+    where: { id: memberId },
+    data: { settled: parsed.data.settled },
+  });
+  return NextResponse.json({ ok: true, settled: parsed.data.settled });
+}
+

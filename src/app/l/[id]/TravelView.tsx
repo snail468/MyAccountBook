@@ -10,6 +10,9 @@ import PendingBadge from '@/components/ui/PendingBadge';
 import { formatShort } from '@/lib/datetime';
 import type { NetBalance, Transfer } from '@/lib/settlement';
 import { useConfirm } from '@/components/ui/Dialog';
+import TripDailyChart from './TripDailyChart';
+import TripCalendar from './TripCalendar';
+import SettlementSheet from './SettlementSheet';
 
 // 三个弹窗按需加载。它们加起来 860 行，全是 `{open && <Modal/>}` 条件渲染 ——
 // 静态 import 会让「只是看一眼账单」的用户也把整套表单、成员管理和趣味报告下下来。
@@ -22,12 +25,14 @@ import { useConfirm } from '@/components/ui/Dialog';
 const TripExpenseModal = dynamic(() => import('./TripExpenseModal'), { ssr: false });
 const TripMembersModal = dynamic(() => import('./TripMembersModal'), { ssr: false });
 const TripFunReport = dynamic(() => import('./TripFunReport'), { ssr: false });
+const TravelSettingsModal = dynamic(() => import('./TravelSettingsModal'), { ssr: false });
 
 function warmTripModalChunks() {
   const run = () => {
     void import('./TripExpenseModal');
     void import('./TripMembersModal');
     void import('./TripFunReport');
+    void import('./TravelSettingsModal');
   };
   if (typeof window === 'undefined') return;
   if ('requestIdleCallback' in window) {
@@ -39,7 +44,16 @@ function warmTripModalChunks() {
   }
 }
 
-export type Member = { id: string; userId: string | null; displayName: string };
+export type Member = {
+  id: string;
+  userId: string | null;
+  displayName: string;
+  settled: boolean;
+};
+
+export type DailyPoint = { date: string; cents: number; count: number };
+
+export type CurrencyTotal = { currency: string; foreignCents: number };
 
 export type Expense = {
   id: string;
@@ -65,6 +79,12 @@ type LedgerMeta = {
   baseCurrency: string;
   startDate: string | null;
   endDate: string | null;
+  tripBudget: string | null;
+};
+
+type TripBudget = {
+  totalBaseCents: number | null;
+  perCurrency?: Record<string, number>;
 };
 
 export default function TravelView({
@@ -79,6 +99,8 @@ export default function TravelView({
   preCursor,
   duringExpenses,
   duringCursor,
+  daily,
+  currencyTotals,
 }: {
   ledger: LedgerMeta;
   members: Member[];
@@ -94,6 +116,8 @@ export default function TravelView({
   preCursor: string | null;
   duringExpenses: Expense[];
   duringCursor: string | null;
+  daily: DailyPoint[];
+  currencyTotals: CurrencyTotal[];
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -102,7 +126,12 @@ export default function TravelView({
   const [editing, setEditing] = useState<Expense | null>(null);
   const [showMembers, setShowMembers] = useState(false);
   const [showReport, setShowReport] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [showSheet, setShowSheet] = useState(false);
   const [zoomImg, setZoomImg] = useState<string | null>(null);
+  // C11 行程日历：展开开关 + 当前按天筛选的日期
+  const [showCalendar, setShowCalendar] = useState(false);
+  const [dateFilter, setDateFilter] = useState<string | null>(null);
   const confirm = useConfirm();
 
   // —— 每个阶段各自一套分页状态 ——
@@ -132,12 +161,42 @@ export default function TravelView({
   }, []);
 
   const phaseList = useMemo(
-    () =>
-      phase === 'pre'
-        ? [...preExpenses, ...extra.pre]
-        : [...duringExpenses, ...extra.during],
-    [phase, preExpenses, duringExpenses, extra],
+    () => {
+      const base =
+        phase === 'pre' ? [...preExpenses, ...extra.pre] : [...duringExpenses, ...extra.during];
+      if (!dateFilter) return base;
+      return base.filter((e) => e.occurredAt.slice(0, 10) === dateFilter);
+    },
+    [phase, preExpenses, duringExpenses, extra, dateFilter],
   );
+
+  function pickPhase(p: 'pre' | 'during') {
+    // 切阶段时清掉按天筛选，避免某天只在一个阶段有记录时列表被筛空
+    setDateFilter(null);
+    setPhase(p);
+  }
+
+  function pickDay(date: string) {
+    setDateFilter((d) => (d === date ? null : date));
+  }
+
+  // 多币种预算（C11）：解析 ledger.tripBudget JSON，得出总预算与各币种预算。
+  const budget = useMemo<TripBudget | null>(() => {
+    if (!ledger.tripBudget) return null;
+    try {
+      const p = JSON.parse(ledger.tripBudget) as TripBudget;
+      if (typeof p !== 'object' || p === null) return null;
+      return { totalBaseCents: p.totalBaseCents ?? null, perCurrency: p.perCurrency ?? {} };
+    } catch {
+      return null;
+    }
+  }, [ledger.tripBudget]);
+
+  const spentBase = preTotal + duringTotal;
+  const hasBudget =
+    budget != null &&
+    (budget.totalBaseCents != null ||
+      (budget.perCurrency && Object.keys(budget.perCurrency).length > 0));
 
   async function loadMore() {
     const cursor = cursors[phase];
@@ -216,6 +275,14 @@ export default function TravelView({
           👥
         </Link>
         <button
+          onClick={() => setShowSettings(true)}
+          className="text-ink-400 text-sm"
+          aria-label="设置"
+          title="设置"
+        >
+          ⚙
+        </button>
+        <button
           onClick={() => setShowMembers(true)}
           className="text-ink-500 text-sm underline"
         >
@@ -253,9 +320,42 @@ export default function TravelView({
         </div>
       </div>
 
+      <div className="mt-4 rounded-3xl bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 p-4">
+        <TripDailyChart
+          daily={daily}
+          baseCurrency={ledger.baseCurrency}
+          startDate={ledger.startDate}
+          endDate={ledger.endDate}
+        />
+      </div>
+
+      {hasBudget && (
+        <div className="mt-4 rounded-3xl bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 p-4">
+          <div className="text-xs text-ink-500 mb-2">预算</div>
+          {budget!.totalBaseCents != null && (
+            <BudgetBar
+              label={`总预算（${ledger.baseCurrency}）`}
+              currency={ledger.baseCurrency}
+              spent={spentBase}
+              limit={budget!.totalBaseCents}
+            />
+          )}
+          {budget!.perCurrency &&
+            Object.entries(budget!.perCurrency).map(([cur, lim]) => (
+              <BudgetBar
+                key={cur}
+                label={`${cur} 预算`}
+                currency={cur}
+                spent={currencyTotals.find((c) => c.currency === cur)?.foreignCents ?? 0}
+                limit={lim}
+              />
+            ))}
+        </div>
+      )}
+
       <div className="mt-4 flex gap-2">
         <button
-          onClick={() => setPhase('pre')}
+          onClick={() => pickPhase('pre')}
           className={`flex-1 py-2.5 rounded-2xl text-sm ${
             phase === 'pre'
               ? 'bg-ink-900 dark:bg-ink-100 text-white dark:text-ink-900'
@@ -265,7 +365,7 @@ export default function TravelView({
           行前 · <Money cents={preTotal} />
         </button>
         <button
-          onClick={() => setPhase('during')}
+          onClick={() => pickPhase('during')}
           className={`flex-1 py-2.5 rounded-2xl text-sm ${
             phase === 'during'
               ? 'bg-ink-900 dark:bg-ink-100 text-white dark:text-ink-900'
@@ -275,6 +375,33 @@ export default function TravelView({
           行中 · <Money cents={duringTotal} />
         </button>
       </div>
+
+      <button
+        onClick={() => setShowCalendar((v) => !v)}
+        className="mt-2 w-full py-2.5 rounded-2xl bg-ink-50 dark:bg-ink-800 border border-ink-200 dark:border-ink-700 text-sm text-ink-500"
+      >
+        {showCalendar ? '收起行程日历' : '📅 行程日历'}
+      </button>
+      {showCalendar && (
+        <div className="mt-2 rounded-3xl bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 p-4">
+          <TripCalendar
+            daily={daily}
+            startDate={ledger.startDate}
+            endDate={ledger.endDate}
+            baseCurrency={ledger.baseCurrency}
+            activeDate={dateFilter}
+            onPickDay={pickDay}
+          />
+        </div>
+      )}
+      {dateFilter && (
+        <button
+          onClick={() => setDateFilter(null)}
+          className="mt-2 w-full py-2 rounded-2xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 text-sm text-emerald-700 dark:text-emerald-300"
+        >
+          筛选中：{dateFilter} · 点此清除
+        </button>
+      )}
 
       <button
         onClick={() => canRecord && setShowAdd(true)}
@@ -334,6 +461,35 @@ export default function TravelView({
           <div className="text-xs text-emerald-800 dark:text-emerald-300 font-medium mb-2">
             最优结算（{transfers.length} 笔转账）
           </div>
+          <div className="mb-3 space-y-1 text-xs">
+            {balances.map((b) => {
+              const settled = members.find((m) => m.id === b.memberId)?.settled;
+              const label = b.netCents > 0 ? '应收' : b.netCents < 0 ? '应付' : '已平';
+              return (
+                <div key={b.memberId} className="flex items-center justify-between">
+                  <span className="flex items-center gap-1.5 truncate">
+                    <span className="truncate">{b.name}</span>
+                    {settled && (
+                      <span className="text-[10px] px-1 rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300">
+                        已结清
+                      </span>
+                    )}
+                  </span>
+                  <span
+                    className={`num ${
+                      b.netCents > 0
+                        ? 'text-emerald-700 dark:text-emerald-300'
+                        : b.netCents < 0
+                          ? 'text-ink-600 dark:text-ink-300'
+                          : 'text-ink-400'
+                    }`}
+                  >
+                    {label} <Money cents={Math.abs(b.netCents)} /> {ledger.baseCurrency}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
           <div className="space-y-1.5 text-sm">
             {transfers.map((t, i) => (
               <div key={i} className="flex items-baseline justify-between">
@@ -354,6 +510,12 @@ export default function TravelView({
             className="mt-3 w-full py-2.5 rounded-xl bg-emerald-600 dark:bg-emerald-500 text-white text-sm font-medium disabled:opacity-60"
           >
             {reportLoading ? '生成中…' : '生成趣味报告'}
+          </button>
+          <button
+            onClick={() => setShowSheet(true)}
+            className="mt-2 w-full py-2.5 rounded-xl bg-ink-900 dark:bg-ink-100 text-white dark:text-ink-900 text-sm font-medium"
+          >
+            生成结算单（图片分享）
           </button>
         </div>
       )}
@@ -410,6 +572,18 @@ export default function TravelView({
         />
       )}
 
+      {showSettings && (
+        <TravelSettingsModal
+          ledger={ledger}
+          currencyTotals={currencyTotals}
+          onClose={() => setShowSettings(false)}
+          onSaved={() => {
+            setShowSettings(false);
+            startTransition(() => router.refresh());
+          }}
+        />
+      )}
+
       {showReport && reportExpenses && (
         <TripFunReport
           ledger={ledger}
@@ -421,8 +595,64 @@ export default function TravelView({
         />
       )}
 
+      {showSheet && (
+        <SettlementSheet
+          ledger={{
+            name: ledger.name,
+            icon: ledger.icon,
+            baseCurrency: ledger.baseCurrency,
+            startDate: ledger.startDate,
+            endDate: ledger.endDate,
+          }}
+          members={members}
+          balances={balances}
+          transfers={transfers}
+          settlementError={settlementError}
+          totalSpentCents={preTotal + duringTotal}
+          onClose={() => setShowSheet(false)}
+        />
+      )}
+
       {zoomImg && <Lightbox src={zoomImg} onClose={() => setZoomImg(null)} />}
     </>
+  );
+}
+
+function BudgetBar({
+  label,
+  currency,
+  spent,
+  limit,
+}: {
+  label: string;
+  currency: string;
+  spent: number;
+  limit: number;
+}) {
+  const ratio = limit > 0 ? Math.min(1, spent / limit) : 0;
+  const over = spent > limit;
+  const fmtN = (c: number) =>
+    (c / 100).toLocaleString('zh-CN', { maximumFractionDigits: 2 });
+  return (
+    <div className="mb-2.5 last:mb-0">
+      <div className="flex items-baseline justify-between text-xs">
+        <span className="text-ink-500">{label}</span>
+        <span className={`num ${over ? 'text-red-500' : 'text-ink-600 dark:text-ink-300'}`}>
+          {fmtN(spent)} / {fmtN(limit)} {currency}
+        </span>
+      </div>
+      <div className="mt-1 h-2 rounded-full bg-ink-100 dark:bg-ink-700 overflow-hidden">
+        <div
+          className={`h-full rounded-full ${over ? 'bg-red-500' : 'bg-emerald-500'}`}
+          style={{ width: `${(ratio * 100).toFixed(0)}%` }}
+        />
+      </div>
+      {over && (
+        <div className="text-[10px] text-red-500 mt-0.5">
+          已超支 {fmtN(spent - limit)} {currency}
+        </div>
+      )}
+    </div>
   );
 }
 

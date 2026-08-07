@@ -66,6 +66,20 @@ export default function TripMembersModal({
     }
   }
 
+  async function toggleSettled(m: Member) {
+    const res = await fetch(`/api/ledgers/${ledgerId}/members/${m.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ settled: !m.settled }),
+    });
+    if (res.ok) {
+      onChanged();
+    } else {
+      const data = await res.json().catch(() => ({}));
+      await alert({ title: '操作失败', body: data.error || '未知错误', danger: true });
+    }
+  }
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40"
@@ -133,19 +147,39 @@ export default function TripMembersModal({
               key={m.id}
               className="flex items-center justify-between p-3 rounded-2xl bg-ink-50 dark:bg-ink-800"
             >
-              <div>
-                <div className="text-sm font-medium">{m.displayName}</div>
+              <div className="min-w-0">
+                <div className="text-sm font-medium flex items-center gap-1.5">
+                  <span className="truncate">{m.displayName}</span>
+                  {m.settled && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300">
+                      已结清
+                    </span>
+                  )}
+                </div>
                 <div className="text-[11px] text-ink-500">
                   {m.userId ? '注册用户' : '纯名字'}
                 </div>
               </div>
-              <button
-                onClick={() => del(m.id, m.displayName)}
-                className="text-ink-400 hover:text-red-500 text-xs px-2"
-                aria-label="删除"
-              >
-                ✕
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => toggleSettled(m)}
+                  className={`text-xs px-2 py-1 rounded-xl ${
+                    m.settled
+                      ? 'bg-emerald-600 text-white'
+                      : 'bg-ink-200 dark:bg-ink-700 text-ink-600 dark:text-ink-300'
+                  }`}
+                  title={m.settled ? '取消已结清' : '标记已结清'}
+                >
+                  {m.settled ? '✓ 已结清' : '标记结清'}
+                </button>
+                <button
+                  onClick={() => del(m.id, m.displayName)}
+                  className="text-ink-400 hover:text-red-500 text-xs px-2"
+                  aria-label="删除"
+                >
+                  ✕
+                </button>
+              </div>
             </div>
           ))}
         </div>
