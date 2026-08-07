@@ -1,0 +1,191 @@
+name: Android APK (TWA)
+
+# 用 TWA (Trusted Web Activity) 把已托管的 PWA 打包成可侧载的安卓 APK。
+# 触发方式（刻意不挂到每次 push，避免浪费构建时长）：
+#   - 打 v*.*.* 标签时自动构建
+#   - 在 Actions 页面手动 dispatch（可填 host 覆盖变量）
+#
+# 前置（先在仓库 Settings → Secrets and variables → Actions 配置）：
+#   - Variables.TWA_HOST：PWA 公网地址，含 https://、不含末尾斜杠，例如 https://book.example.com
+#   - Secrets.TWA_KEYSTORE_BASE64：签名密钥库 base64（首次构建会自动生成并打印，复制存进来即可长期稳定）
+#   - Secrets.TWA_KEYSTORE_PASSWORD：密钥库密码（与下面 KS_PASS 默认一致；若用自举密钥请同步）
+#
+# 跨设备同步说明：本应用数据存服务端 SQLite（你已有的 Docker 部署），
+# 多设备用同一账号登录该地址即天然同步，离线记账的 offlineQueue 已做幂等。
+# APK 仅是加载该 PWA 的壳，不另存数据。
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      host:
+        description: 'PWA 公网地址 (https:// 开头，不含末尾斜杠)，覆盖 TWA_HOST 变量'
+        required: false
+
+permissions:
+  contents: read
+
+env:
+  PACKAGE_ID: com.myaccountbook.twa
+  KS_ALIAS: twa
+  KS_PASS: twa12345
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up Java (Bubblewrap / bundletool 需要)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: 确定 TWA host
+        id: host
+        run: |
+          HOST="${{ github.event.inputs.host || vars.TWA_HOST }}"
+          if [ -z "$HOST" ]; then
+            echo "::error::未设置 TWA host。请到仓库 Settings → Variables 设置 TWA_HOST，或在手动触发时填写 host 输入。"
+            exit 1
+          fi
+          echo "host=$HOST" >> "$GITHUB_OUTPUT"
+
+      - name: 准备签名密钥库（优先用 secret，缺失则自举生成）
+        id: keystore
+        env:
+          KS_B64: ${{ secrets.TWA_KEYSTORE_BASE64 }}
+          SECRET_KS_PASS: ${{ secrets.TWA_KEYSTORE_PASSWORD }}
+        run: |
+          mkdir -p twa-build
+          PASS="${SECRET_KS_PASS:-${{ env.KS_PASS }}}"
+          if [ -n "$KS_B64" ]; then
+            echo "$KS_B64" | base64 -d > twa-build/release.keystore
+            echo "from_secret=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::未设置 TWA_KEYSTORE_BASE64，本次自举生成密钥库。构建完成后请把下方打印的 base64 存为 secret，否则下次密钥变化会导致已装 APK 无法覆盖更新。"
+            keytool -genkeypair -v \
+              -keystore twa-build/release.keystore \
+              -alias "${{ env.KS_ALIAS }}" \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass "$PASS" -keypass "$PASS" \
+              -dname "CN=MyAccountBook, O=MyAccountBook, C=CN"
+            echo "from_secret=false" >> "$GITHUB_OUTPUT"
+            B64=$(base64 -w0 twa-build/release.keystore)
+            {
+              echo "keystore_b64<<EOF"
+              echo "$B64"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+          fi
+          echo "ks_pass=$PASS" >> "$GITHUB_OUTPUT"
+
+      - name: 安装 Bubblewrap
+        run: npm install -g @bubblewrap/cli@1.20.0
+
+      - name: Bubblewrap init（非交互，按 manifest 生成 TWA 工程）
+        env:
+          BUBBLEWRAP_KEYSTORE_PATH: ${{ github.workspace }}/twa-build/release.keystore
+          BUBBLEWRAP_KEYSTORE_PASSWORD: ${{ steps.keystore.outputs.ks_pass }}
+          BUBBLEWRAP_KEY_PASSWORD: ${{ steps.keystore.outputs.ks_pass }}
+        run: |
+          npx @bubblewrap/cli init \
+            --manifest "${{ steps.host.outputs.host }}/manifest.json" \
+            --packageId "${{ env.PACKAGE_ID }}" \
+            --appName "心愿便利贴" \
+            --launcherName "便利贴" \
+            --display "standalone" \
+            --themeColor "#c8a2d8" \
+            --navigationColor "#c8a2d8" \
+            --navigationDividerColor "#c8a2d8" \
+            --backgroundColor "#f5efff" \
+            --startUrl "/" \
+            --iconUrl "/icon-512.png" \
+            --webManifestUrl "${{ steps.host.outputs.host }}/manifest.json" \
+            --fallbackType "customtabs" \
+            --enableNotifications false \
+            --host "${{ steps.host.outputs.host }}" \
+            --minSdkVersion 21 \
+            --skipVersionCheck
+
+      - name: Bubblewrap build（AAB）
+        env:
+          BUBBLEWRAP_KEYSTORE_PATH: ${{ github.workspace }}/twa-build/release.keystore
+          BUBBLEWRAP_KEYSTORE_PASSWORD: ${{ steps.keystore.outputs.ks_pass }}
+          BUBBLEWRAP_KEY_PASSWORD: ${{ steps.keystore.outputs.ks_pass }}
+        run: npx @bubblewrap/cli build --skipVersionCheck
+
+      - name: 转 universal APK（bundletool）
+        run: |
+          BT=v1.15.6
+          curl -sSL -o bundletool.jar "https://github.com/google/bundletool/releases/download/$BT/bundletool-all-$BT.jar"
+          AAB=$(find . -name 'app-release-bundle.aab' | head -n1)
+          if [ -z "$AAB" ]; then echo "::error::未找到 app-release-bundle.aab"; exit 1; fi
+          java -jar bundletool.jar build-apks \
+            --bundle="$AAB" \
+            --output=app.apks \
+            --mode=universal \
+            --ks=twa-build/release.keystore \
+            --ks-pass=pass:${{ steps.keystore.outputs.ks_pass }} \
+            --ks-key-alias=${{ env.KS_ALIAS }} \
+            --key-pass=pass:${{ steps.keystore.outputs.ks_pass }}
+          rm -rf apks-out && unzip -o app.apks -d apks-out >/dev/null
+          APK=$(find apks-out -name 'universal.apk' | head -n1)
+          if [ -z "$APK" ]; then echo "::error::未找到 universal.apk"; exit 1; fi
+          cp "$APK" "myaccountbook-${{ env.PACKAGE_ID }}.apk"
+          echo "apk=myaccountbook-${{ env.PACKAGE_ID }}.apk" >> "$GITHUB_OUTPUT"
+
+      - name: 计算 assetlinks 指纹（用于可选的数字资产校验）
+        id: fp
+        run: |
+          keytool -exportcert -alias "${{ env.KS_ALIAS }}" \
+            -keystore twa-build/release.keystore \
+            -storepass "${{ steps.keystore.outputs.ks_pass }}" \
+            -keypass "${{ steps.keystore.outputs.ks_pass }}" \
+            -file twa-cert.der
+          B64FP=$(openssl dgst -sha256 -binary twa-cert.der | openssl base64 | tr -d '\n')
+          echo "b64fp=$B64FP" >> "$GITHUB_OUTPUT"
+
+      - name: 输出配置摘要（密钥 base64 + assetlinks）
+        run: |
+          {
+            echo "## TWA APK 构建完成"
+            echo
+            echo "包名：\`${{ env.PACKAGE_ID }}\`"
+            echo
+            echo "### 1) 若本次为自举密钥，请把下面这段 base64 存为仓库 Secret \`TWA_KEYSTORE_BASE64\`（并在 Secrets 设 \`TWA_KEYSTORE_PASSWORD\` = \`${{ steps.keystore.outputs.ks_pass }}\`）"
+            echo
+            echo '```'
+            echo "${{ steps.keystore.outputs.keystore_b64 }}"
+            echo '```'
+            echo
+            echo "### 2) 可选：隐藏地址栏（TWA 数字资产校验）"
+            echo "把下面内容保存为你的部署根目录 \`/.well-known/assetlinks.json\`（本项目 public/ 下，Docker 部署会自动托管），使其可通过 \`${{ steps.host.outputs.host }}/.well-known/assetlinks.json\` 访问："
+            echo
+            echo '```json'
+            echo "[{"
+            echo "  \"relation\": [\"delegate_permission/common.handle_all_urls\"],"
+            echo "  \"target\": {"
+            echo "    \"namespace\": \"android_app\","
+            echo "    \"package_name\": \"${{ env.PACKAGE_ID }}\","
+            echo "    \"sha256_cert_fingerprints\": [\"${{ steps.fp.outputs.b64fp }}\"]"
+            echo "  }"
+            echo "}]"
+            echo '```'
+            echo
+            echo "未配置 assetlinks 时 APK 仍可正常安装使用，仅可能多一条地址栏。"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 上传 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: myaccountbook-apk
+          path: "myaccountbook-${{ env.PACKAGE_ID }}.apk"
+          if-no-files-found: error
