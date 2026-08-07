@@ -10,6 +10,40 @@ const bodySchema = z.object({
   displayName: z.string().trim().min(1).max(32).optional(),
 });
 
+// GET /api/ledgers/<id>/members —— 旅游账本成员列表。原生 App 拉取用。
+export async function GET(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id } = await params;
+  const ctx = await requireOwnedLedger(id, {
+    kind: 'travel',
+    kindMessage: '仅旅游账本可用',
+    minRole: 'viewer',
+  });
+  if (ctx instanceof Response) return ctx;
+
+  const members = await prisma.tripMember.findMany({
+    where: { ledgerId: id },
+    select: {
+      id: true,
+      displayName: true,
+      settled: true,
+      userId: true,
+    },
+    orderBy: { displayName: 'asc' },
+  });
+
+  return NextResponse.json({
+    members: members.map((m) => ({
+      id: m.id,
+      displayName: m.displayName,
+      settled: m.settled,
+      userId: m.userId,
+    })),
+  });
+}
+
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   // 增删旅游成员（TripMember，即"付款人 / 分摊人"占位）—— editor 起

@@ -2,8 +2,64 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { requireOwnedEvent } from '@/lib/ownership';
-import { badRequest } from '@/lib/apiError';
+import { badRequest, notFound } from '@/lib/apiError';
 import { stringifyRewardMethods } from '@/lib/rewardMethod';
+
+// GET /api/events/<id> —— 活动详情（含各阶段金额）。原生 App 拉取用。
+export async function GET(
+  _req: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id } = await params;
+  const ctx = await requireOwnedEvent(id);
+  if (ctx instanceof Response) return ctx;
+
+  const event = await prisma.event.findUnique({
+    where: { id },
+    include: {
+      amounts: { where: { deletedAt: null }, orderBy: { occurredAt: 'asc' } },
+    },
+  });
+  if (!event) return notFound('活动不存在');
+
+  const iso = (d: Date | null) => d?.toISOString() ?? null;
+
+  return NextResponse.json({
+    id: event.id,
+    ledgerId: event.ledgerId,
+    title: event.title,
+    startAt: iso(event.startAt),
+    content: event.content,
+    rewardMethod: event.rewardMethod,
+    rewardMethods: event.rewardMethods,
+    reward: event.reward,
+    topicTag: event.topicTag,
+    contentImages: event.contentImages,
+    publishedAt: iso(event.publishedAt),
+    participate: event.participate,
+    deadline: iso(event.deadline),
+    predictedCents: event.predictedCents,
+    announcedCents: event.announcedCents,
+    paidCents: event.paidCents,
+    predictedAt: iso(event.predictedAt),
+    announcedAt: iso(event.announcedAt),
+    paidAt: iso(event.paidAt),
+    status: event.status,
+    note: event.note,
+    parentId: event.parentId,
+    deletedAt: iso(event.deletedAt),
+    amounts: event.amounts.map((a) => ({
+      id: a.id,
+      stage: a.stage,
+      cents: a.cents,
+      quantity: a.quantity,
+      itemDesc: a.itemDesc,
+      note: a.note,
+      rewardMethod: a.rewardMethod,
+      occurredAt: iso(a.occurredAt),
+    })),
+  });
+}
 
 const patchSchema = z.object({
   action: z.literal('meta'),

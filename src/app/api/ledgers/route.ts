@@ -15,6 +15,65 @@ const bodySchema = z.object({
   endDate: z.string().datetime().optional().nullable(),
 });
 
+// GET /api/ledgers —— 返回当前用户作为成员的全部（未删除）账本。
+// 原生 App 本地优先架构的首屏数据拉取用。
+export async function GET(req: Request) {
+  const user = await requireSessionUser();
+  if (user instanceof Response) return user;
+
+  const ledgers = await prisma.ledger.findMany({
+    where: { members: { some: { userId: user.id } }, deletedAt: null },
+    orderBy: { order: 'asc' },
+    select: {
+      id: true,
+      kind: true,
+      name: true,
+      icon: true,
+      color: true,
+      order: true,
+      archived: true,
+      budgetCents: true,
+      customCategories: true,
+      baseCurrency: true,
+      startDate: true,
+      endDate: true,
+      tripBudget: true,
+    },
+  });
+
+  const serialize = (l: {
+    id: string;
+    kind: string;
+    name: string;
+    icon: string | null;
+    color: string | null;
+    order: number;
+    archived: boolean;
+    budgetCents: number | null;
+    customCategories: string | null;
+    baseCurrency: string | null;
+    startDate: Date | null;
+    endDate: Date | null;
+    tripBudget: string | null;
+  }) => ({
+    id: l.id,
+    kind: l.kind,
+    name: l.name,
+    icon: l.icon,
+    color: l.color,
+    order: l.order,
+    archived: l.archived,
+    budgetCents: l.budgetCents,
+    customCategories: l.customCategories,
+    baseCurrency: l.baseCurrency,
+    startDate: l.startDate?.toISOString() ?? null,
+    endDate: l.endDate?.toISOString() ?? null,
+    tripBudget: l.tripBudget,
+  });
+
+  return NextResponse.json({ ledgers: ledgers.map(serialize) });
+}
+
 export async function POST(req: Request) {
   const user = await requireSessionUser();
   if (user instanceof Response) return user;

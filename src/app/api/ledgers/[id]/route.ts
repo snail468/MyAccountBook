@@ -47,6 +47,52 @@ const patchSchema = z.object({
     .optional(),
 });
 
+// GET /api/ledgers/<id> —— 单个账本详情。原生 App 拉取单账本用。
+export async function GET(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id } = await params;
+  const ctx = await requireOwnedLedger(id, { minRole: 'viewer' });
+  if (ctx instanceof Response) return ctx;
+
+  const l = await prisma.ledger.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      kind: true,
+      name: true,
+      icon: true,
+      color: true,
+      order: true,
+      archived: true,
+      budgetCents: true,
+      customCategories: true,
+      baseCurrency: true,
+      startDate: true,
+      endDate: true,
+      tripBudget: true,
+    },
+  });
+  if (!l) return notFound('账本不存在');
+
+  return NextResponse.json({
+    id: l.id,
+    kind: l.kind,
+    name: l.name,
+    icon: l.icon,
+    color: l.color,
+    order: l.order,
+    archived: l.archived,
+    budgetCents: l.budgetCents,
+    customCategories: l.customCategories,
+    baseCurrency: l.baseCurrency,
+    startDate: l.startDate?.toISOString() ?? null,
+    endDate: l.endDate?.toISOString() ?? null,
+    tripBudget: l.tripBudget,
+  });
+}
+
 export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> },

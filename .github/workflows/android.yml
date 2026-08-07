@@ -162,6 +162,14 @@ jobs:
             fi
           fi
 
+      - name: 上传 assetlinks.json（兜底，便于手动部署或排错）
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: assetlinks-json
+          path: public/.well-known/assetlinks.json
+          if-no-files-found: warn
+
       - name: 输出配置摘要
         run: |
           {

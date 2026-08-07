@@ -25,6 +25,54 @@ const bodySchema = z.object({
   ledgerId: z.string().min(1).optional().nullable(),
 });
 
+// GET /api/events?ledgerId=<id> —— 桃源账本活动列表。原生 App 拉取用。
+export async function GET(req: Request) {
+  const user = await requireSessionUser();
+  if (user instanceof Response) return user;
+
+  const url = new URL(req.url);
+  const ledgerId = await resolveTaoyuanLedger(
+    user.id,
+    url.searchParams.get('ledgerId'),
+  );
+  if (ledgerId instanceof Response) return ledgerId;
+
+  const events = await prisma.event.findMany({
+    where: { ledgerId, deletedAt: null },
+    orderBy: { publishedAt: 'desc' },
+  });
+
+  const iso = (d: Date | null) => d?.toISOString() ?? null;
+
+  return NextResponse.json({
+    events: events.map((e) => ({
+      id: e.id,
+      ledgerId: e.ledgerId,
+      title: e.title,
+      startAt: iso(e.startAt),
+      content: e.content,
+      rewardMethod: e.rewardMethod,
+      rewardMethods: e.rewardMethods,
+      reward: e.reward,
+      topicTag: e.topicTag,
+      contentImages: e.contentImages,
+      publishedAt: iso(e.publishedAt),
+      participate: e.participate,
+      deadline: iso(e.deadline),
+      predictedCents: e.predictedCents,
+      announcedCents: e.announcedCents,
+      paidCents: e.paidCents,
+      predictedAt: iso(e.predictedAt),
+      announcedAt: iso(e.announcedAt),
+      paidAt: iso(e.paidAt),
+      status: e.status,
+      note: e.note,
+      parentId: e.parentId,
+      deletedAt: iso(e.deletedAt),
+    })),
+  });
+}
+
 export async function POST(req: Request) {
   const user = await requireSessionUser();
   if (user instanceof Response) return user;
