@@ -1,6 +1,11 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { getSession, isCardsUnlocked, requireUserWithRole } from '@/lib/session';
+import {
+  CARDS_UNLOCK_TTL_MS,
+  getSession,
+  isCardsUnlocked,
+  requireUserWithRole,
+} from '@/lib/session';
 import { cardEncryptionAvailable } from '@/lib/cardCrypto';
 import CardsClient from './CardsClient';
 import CardsUnlockGate from './CardsUnlockGate';
@@ -37,7 +42,13 @@ export default async function CardsPage() {
           </div>
         </div>
       ) : unlocked ? (
-        <CardsClient />
+        // 解锁到点的绝对时刻交给客户端 —— 页面开着不动时它负责清掉明文并
+        // 回到解锁门，否则 10 分钟 TTL 对"一直停在这页"的人形同虚设
+        <CardsClient
+          lockAtMs={
+            session.cardsUnlockedAt ? session.cardsUnlockedAt + CARDS_UNLOCK_TTL_MS : null
+          }
+        />
       ) : (
         <CardsUnlockGate />
       )}

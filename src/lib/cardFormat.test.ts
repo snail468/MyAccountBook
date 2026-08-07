@@ -1,10 +1,68 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildCardShareText,
+  groupCardNumber,
   isPlausibleCardNumber,
   last4Of,
   maskCardNumber,
   normalizeCardNumber,
 } from '@/lib/cardFormat';
+
+describe('buildCardShareText', () => {
+  const card = {
+    bankName: '招商银行',
+    alias: '工资卡',
+    holder: '张三',
+    number: '6222 0212 3456 7890',
+    note: '房贷还款用',
+  };
+
+  it('只有银行名、持卡人、完整卡号三行', () => {
+    expect(buildCardShareText(card)).toBe('银行：招商银行\n持卡人：张三\n卡号：6222021234567890');
+  });
+
+  // 这段是发给别人收款用的：别名和备注是自己看的私事，卡种对方也不需要
+  it('不带别名 / 卡种 / 备注', () => {
+    const text = buildCardShareText(card);
+    expect(text).not.toContain('工资卡');
+    expect(text).not.toContain('房贷还款用');
+    expect(text).not.toContain('储蓄卡');
+    expect(text.split('\n')).toHaveLength(3);
+  });
+
+  it('持卡人为空时不占一行', () => {
+    expect(buildCardShareText({ ...card, holder: null })).toBe(
+      '银行：招商银行\n卡号：6222021234567890',
+    );
+    expect(buildCardShareText({ ...card, holder: '   ' }).split('\n')).toHaveLength(2);
+  });
+
+  it('卡号是未分组的纯数字 —— 对方要直接粘进网银', () => {
+    expect(buildCardShareText(card)).toContain('卡号：6222021234567890');
+    expect(buildCardShareText(card)).not.toContain('6222 0212');
+  });
+});
+
+describe('groupCardNumber', () => {
+  it('每 4 位一空格，方便照着念', () => {
+    expect(groupCardNumber('6222021234567890')).toBe('6222 0212 3456 7890');
+  });
+
+  it('长度不是 4 的倍数时不留尾随空格', () => {
+    expect(groupCardNumber('622202123456789')).toBe('6222 0212 3456 789');
+    expect(groupCardNumber('62220212345')).toBe('6222 0212 345');
+  });
+
+  it('空串不炸 —— 解密失败时会传空进来', () => {
+    expect(groupCardNumber('')).toBe('');
+  });
+
+  // 分组只是显示层的事，复制必须回到纯数字
+  it('normalizeCardNumber 能把它还原回去（复制路径的往返不变量）', () => {
+    const raw = '6222021234567890';
+    expect(normalizeCardNumber(groupCardNumber(raw))).toBe(raw);
+  });
+});
 
 describe('normalizeCardNumber', () => {
   it('去掉空格与连字符 —— 用户抄卡号时习惯四位一组', () => {

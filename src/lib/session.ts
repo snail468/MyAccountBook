@@ -9,8 +9,8 @@ export type SessionData = {
   // 签发时用户的 sessionVersion。与数据库当前值不符 → 会话作废。
   sv?: number;
   // 银行卡功能的"页面级"解锁时间戳（毫秒）。
-  // /api/cards/unlock 验证登录密码后写入；/api/cards/[id]/reveal 只查这个时间戳
-  // 是否在 CARDS_UNLOCK_TTL_MS 内，不再要求每卡二次输密。
+  // /api/cards/unlock 验证登录密码后写入；GET /api/cards 只查这个时间戳是否在
+  // CARDS_UNLOCK_TTL_MS 内 —— 新鲜就直接连明文卡号一起返回，不再要求每卡二次输密。
   cardsUnlockedAt?: number;
 };
 

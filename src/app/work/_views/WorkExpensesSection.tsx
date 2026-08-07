@@ -4,7 +4,7 @@ import Money from '@/components/ui/Money';
 import { DEFAULT_PAGE_SIZE, encodeCursor } from '@/lib/pagination';
 import ExpenseList from '../expenses/ExpenseList';
 import { NOT_DELETED } from '@/lib/softDelete';
-import { REFUND_OVERDUE_DAYS, refundStatus } from '@/lib/refundStatus';
+import { REFUND_OVERDUE_DAYS, daysSincePending, refundStatus } from '@/lib/refundStatus';
 
 // 工作账本"出项汇总"section。同 WorkMonthsSection：/work/expenses 与
 // /l/[id]/expenses 共用同一段渲染逻辑。
@@ -25,6 +25,15 @@ import { REFUND_OVERDUE_DAYS, refundStatus } from '@/lib/refundStatus';
 // 换成一次 findMany 拿全，所有派生量在 JS 里 reduce ——
 // 派生量之间的一致性变成算术恒等式，不依赖任何 SQL 层的假设。个人账本
 // 量级下（几千行）内存/耗时都可以接受，且避免了原来 5 次 round-trip。
+//
+// **但那还不是漏计的根因**。真正的根因在 lib/refundStatus.ts 的 advanceDate()：
+// 补录进旧月份的垫款，occurredAt 是"补录那天"，按它算根本不到 30 天，
+// 于是顶部不计、列表不标红，人却能在页面最底下的旧月份里看见它。
+// 聚合口径改多少遍都修不好一个错的基准日期。现在基准日期统一走 advanceDate()。
+//
+// 另一条不变量：`now` 由这里取一次，连同数据一起传给 ExpenseList，
+// 客户端不再自己 new Date()。顶部汇总与每一行的红标因此是**同一时刻**的
+// 同一份判定 —— 页面开着放几个小时也不会出现"顶部说 8 笔、列表 9 条红"。
 
 type CategoryStat = {
   category: string;
@@ -63,18 +72,18 @@ async function loadExpenses(ledgerId: string) {
       refundedTotal += e.amountCents;
       refundedCount += 1;
     } else {
-      // 与客户端 ExpenseList 里的 refundStatus() 用完全同一个函数，行为对齐
-      const status = refundStatus(
-        { occurredAt: e.occurredAt, refundedAt: e.refundedAt },
-        now,
-      );
-      if (status === 'overdue') {
+      // 与客户端 ExpenseList 里的 refundStatus() 用完全同一个函数、同一个 now
+      const input = {
+        occurredAt: e.occurredAt,
+        refundedAt: e.refundedAt,
+        yearMonth: e.yearMonth,
+      };
+      if (refundStatus(input, now) === 'overdue') {
         overdueCount += 1;
         overdueTotalCents += e.amountCents;
-        const ageDays = Math.max(
-          0,
-          Math.floor((now.getTime() - e.occurredAt.getTime()) / 86400000),
-        );
+        // 天数也必须走 daysSincePending —— 自己写 now - occurredAt 就又把
+        // advanceDate() 的月末夹绕过去了，"最久 N 天"会跟着一起少算
+        const ageDays = daysSincePending(input, now);
         if (ageDays > overdueOldestDays) overdueOldestDays = ageDays;
       }
     }
@@ -127,6 +136,8 @@ async function loadExpenses(ledgerId: string) {
       refundedAt: e.refundedAt?.toISOString() ?? null,
     })),
     nextCursor,
+    // 客户端拿它当"现在"，保证红标与上面的 overdue 汇总同一时刻同一口径
+    asOf: now.toISOString(),
   };
 }
 
@@ -259,6 +270,7 @@ export default async function WorkExpensesSection({
           initialEntries={s.entries}
           initialCursor={s.nextCursor}
           ledgerId={ledgerId}
+          asOf={s.asOf}
         />
       </section>
     </div>

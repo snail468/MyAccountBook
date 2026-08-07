@@ -4,7 +4,7 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { PRESET_CATEGORIES, type Direction } from '@/lib/categories';
 import { yuanToCents } from '@/lib/money';
-import { localInputToISO, toLocalInput } from '@/lib/datetime';
+import { defaultOccurredAtFor, localInputToISO, toLocalInput } from '@/lib/datetime';
 import { friendlyFetchError, isNetworkError } from '@/lib/netError';
 import { enqueue } from '@/lib/offlineQueue';
 import { useToast } from '@/components/ui/Dialog';
@@ -31,7 +31,11 @@ export default function NewEntryFlow({
   const [customName, setCustomName] = useState('');
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
-  const [occurredAt, setOccurredAt] = useState<string>(() => toLocalInput(new Date()));
+  // 默认落在**你正在看的这个月**里，而不是"打开表单的此刻" —— 见
+  // defaultOccurredAtFor() 的注释：无脑 new Date() 正是补录垫款漏计的源头
+  const [occurredAt, setOccurredAt] = useState<string>(() =>
+    toLocalInput(defaultOccurredAtFor(yearMonth)),
+  );
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const toast = useToast();
@@ -43,7 +47,7 @@ export default function NewEntryFlow({
     setCustomName('');
     setAmount('');
     setNote('');
-    setOccurredAt(toLocalInput(new Date()));
+    setOccurredAt(toLocalInput(defaultOccurredAtFor(yearMonth)));
     setError('');
   }
 

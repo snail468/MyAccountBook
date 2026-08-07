@@ -10,6 +10,35 @@ export function maskCardNumber(last4: string): string {
   return `**** **** **** ${last4}`;
 }
 
+/**
+ * 完整卡号分组显示：每 4 位一空格。**只用于显示** ——
+ * 复制走的是未分组的纯数字，别把这里的空格带进剪贴板。
+ */
+export function groupCardNumber(normalized: string): string {
+  return normalized.replace(/(.{4})/g, '$1 ').trim();
+}
+
+/**
+ * 「复制完整信息」的正文：**只有银行名、持卡人、完整卡号**三项。
+ *
+ * 刻意不含别名/卡种/备注 —— 这段是拿去发给别人收款的，别名（"工资卡"）和备注
+ * 是自己看的私事，多一行就多泄露一点。持卡人没填就不占行。
+ * 卡号用未分组的纯数字，对方粘进网银就能用。
+ */
+export function buildCardShareText(card: {
+  bankName: string;
+  holder?: string | null;
+  number: string;
+}): string {
+  return [
+    `银行：${card.bankName}`,
+    card.holder?.trim() ? `持卡人：${card.holder.trim()}` : null,
+    `卡号：${normalizeCardNumber(card.number)}`,
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
 /** 规整用户输入的卡号：去掉空格和连字符 */
 export function normalizeCardNumber(raw: string): string {
   return raw.replace(/[\s-]/g, '');

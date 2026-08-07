@@ -2,19 +2,30 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { requireSessionUser } from '@/lib/ownership';
-import { badRequest, apiError, ErrorCode } from '@/lib/apiError';
+import { getSession, isCardsUnlocked, requireVerifiedUser } from '@/lib/session';
+import { badRequest, apiError, ErrorCode, unauthorized } from '@/lib/apiError';
 import {
   cardEncryptionAvailable,
+  decryptField,
   encryptField,
   isPlausibleCardNumber,
   last4Of,
   normalizeCardNumber,
 } from '@/lib/cardCrypto';
+import { createLogger } from '@/lib/logger';
 
-// GET  /api/cards —— 列出卡片。**只返回明文字段与尾号，不解密卡号**。
+const log = createLogger('cards');
+
+// GET  /api/cards —— 列出卡片。
 // POST /api/cards —— 新增，卡号与备注加密落库。
 //
-// 完整卡号只能通过 POST /api/cards/<id>/reveal 拿，且要二次验证登录密码。
+// 卡号可见性的唯一闸门是**页面级解锁**（POST /api/cards/unlock 验一次登录密码，
+// session.cardsUnlockedAt 有 10 分钟 TTL）：
+//   * 已解锁 → 这里连同解密后的完整卡号与备注一起返回，页面直接显示、直接编辑
+//   * 未解锁 → 只给明文字段与尾号，连密文都不从库里捞出来
+// 早先还有个 per-card 的 /api/cards/<id>/reveal，是"列表打码 + 单卡点开"那套
+// 交互的产物。既然验密已经统一到进页面那一次，解锁后再让用户逐张点"查看"
+// 只是徒增点击，那个路由已随之删除 —— 解密口径收敛到这一处。
 
 const bodySchema = z.object({
   bankName: z.string().trim().min(1).max(40),
@@ -34,28 +45,69 @@ function notConfigured() {
   );
 }
 
+/** 任何情况下都能返回的字段 —— 不含密文 */
+const BASE_SELECT = {
+  id: true,
+  bankName: true,
+  alias: true,
+  cardType: true,
+  holder: true,
+  last4: true,
+  order: true,
+  createdAt: true,
+} as const;
+
+const LIST_ORDER = [{ order: 'asc' as const }, { createdAt: 'asc' as const }];
+
 export async function GET() {
-  const user = await requireSessionUser();
-  if (user instanceof Response) return user;
+  // 要返回明文就得用 requireVerifiedUser（查库校验 sessionVersion）——
+  // 管理员刚重置过密码 / 用户刚在别处改过密码时，这个会话必须立刻失效。
+  const current = await requireVerifiedUser();
+  if (!current) return unauthorized();
   if (!cardEncryptionAvailable()) return notConfigured();
 
-  const cards = await prisma.bankCard.findMany({
-    where: { userId: user.id },
-    orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
-    // 刻意不 select numberEnc / noteEnc —— 列表根本不需要它们，
+  const session = await getSession();
+  if (!isCardsUnlocked(session)) {
+    // 未解锁：刻意不 select numberEnc / noteEnc —— 用不上它们，
     // 少一次从数据库到进程的搬运就少一分泄露面
-    select: {
-      id: true,
-      bankName: true,
-      alias: true,
-      cardType: true,
-      holder: true,
-      last4: true,
-      order: true,
-      createdAt: true,
-    },
+    const cards = await prisma.bankCard.findMany({
+      where: { userId: current.id },
+      orderBy: LIST_ORDER,
+      select: BASE_SELECT,
+    });
+    return NextResponse.json({ unlocked: false, cards });
+  }
+
+  const rows = await prisma.bankCard.findMany({
+    where: { userId: current.id },
+    orderBy: LIST_ORDER,
+    select: { ...BASE_SELECT, numberEnc: true, noteEnc: true },
   });
-  return NextResponse.json({ cards });
+
+  const cards = await Promise.all(
+    rows.map(async ({ numberEnc, noteEnc, ...rest }) => {
+      try {
+        return {
+          ...rest,
+          number: await decryptField(numberEnc),
+          note: noteEnc ? await decryptField(noteEnc) : null,
+          decryptFailed: false,
+        };
+      } catch (err) {
+        // 逐张兜住：一张卡解不开不该让整页打不开。几乎只有一个原因是
+        // CARD_SECRET 变了 —— 文案要说清楚，否则用户会以为数据丢了而删卡重录
+        log.error('卡号解密失败', err, { userId: current.id, cardId: rest.id });
+        return { ...rest, number: null, note: null, decryptFailed: true };
+      }
+    }),
+  );
+
+  log.info('页面级解锁下读取了全部卡号', { userId: current.id, count: cards.length });
+  return NextResponse.json(
+    { unlocked: true, cards },
+    // 卡号绝不能进任何缓存
+    { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } },
+  );
 }
 
 export async function POST(req: Request) {

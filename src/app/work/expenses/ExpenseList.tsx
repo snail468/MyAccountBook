@@ -22,11 +22,19 @@ export default function ExpenseList({
   initialEntries,
   initialCursor,
   ledgerId,
+  asOf,
 }: {
   initialEntries: WorkExpense[];
   initialCursor: string | null;
   /** Phase 3：翻页 API 用它锁定跨账本的 work（缺省 = 请求方 owner 的 work） */
   ledgerId?: string;
+  /**
+   * 服务端渲染顶部超期汇总时用的那个"现在"（ISO）。红标一律按它算，
+   * 客户端不自己 new Date() —— 否则页面开着放几小时，有的行会越过 30 天
+   * 阈值变红，而顶部的数字还停在服务端那一刻，又变成"页面自己跟自己不一致"。
+   * router.refresh() 后两边一起更新。
+   */
+  asOf: string;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -55,6 +63,7 @@ export default function ExpenseList({
   }, [firstPageSig, initialCursor]);
 
   const entries = useMemo(() => [...initialEntries, ...extra], [initialEntries, extra]);
+  const now = useMemo(() => new Date(asOf), [asOf]);
 
   // 按月份分组展示（只对已加载的部分分组）
   const byMonth = useMemo(() => {
@@ -188,18 +197,17 @@ export default function ExpenseList({
             </Link>
             <div className="space-y-2">
               {list.map((e) => {
-                const status = refundStatus({
+                // 与顶部黄色汇总同一个函数、同一个 now、同一份输入
+                // （yearMonth 不能漏 —— 它决定 advanceDate() 的月末夹取）
+                const input = {
                   occurredAt: new Date(e.occurredAt),
                   refundedAt: e.refundedAt ? new Date(e.refundedAt) : null,
-                });
+                  yearMonth: e.yearMonth,
+                };
+                const status = refundStatus(input, now);
                 const refunded = status === 'refunded';
                 const overdue = status === 'overdue';
-                const overdueDays = overdue
-                  ? daysSincePending({
-                      occurredAt: new Date(e.occurredAt),
-                      refundedAt: null,
-                    })
-                  : 0;
+                const overdueDays = overdue ? daysSincePending(input, now) : 0;
                 // 选中态：只有未回款才允许勾选
                 const selectable = selecting && !refunded;
                 const selected = selectedIds.has(e.id);

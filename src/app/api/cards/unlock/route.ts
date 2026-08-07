@@ -14,8 +14,8 @@ const log = createLogger('cards');
 // 用户诉求：不要每张卡都验密，进"银行卡"页面时验一次即可，之后短期内
 // 直接看/复制。10 分钟 TTL 后接口自动失效，回到解锁页。
 //
-// 与原来 per-card /reveal 需要 body.password 的区别：现在 reveal 只查
-// session.cardsUnlockedAt 是否新鲜；这里是唯一还处理密码的入口。
+// 与原来 per-card /reveal 需要 body.password 的区别：现在 GET /api/cards 只查
+// session.cardsUnlockedAt 是否新鲜，新鲜就直接给明文；这里是唯一处理密码的入口。
 
 const schema = z.object({
   password: z.string().min(1).max(128),

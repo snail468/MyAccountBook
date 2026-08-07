@@ -3,9 +3,10 @@
 // 银行卡页面级验密门。
 //
 // 未解锁前用户在 /cards 上只看到这个组件；输入登录密码 → POST /api/cards/unlock
-// → 服务端写 session.cardsUnlockedAt → router.refresh() → 页面切到 CardsClient。
-// 10 分钟 TTL 由 session 层控制，前端不用关心倒计时——过期时 reveal 接口
-// 会返回 401，CardsClient 自行 refresh 回到本组件。
+// → 服务端写 session.cardsUnlockedAt → router.refresh() → 页面切到 CardsClient，
+// 卡号自此直接可见、可编辑，不再逐张验密。
+// 10 分钟 TTL 由 session 层控制；到点时 CardsClient 会清掉明文并 refresh 回本组件
+// （GET /api/cards 那边也会因为解锁过期只回尾号，双保险）。
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
