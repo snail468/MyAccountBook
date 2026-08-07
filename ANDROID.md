@@ -70,14 +70,20 @@ CI 流程：`setup-java 17` → `android-actions/setup-android`（装 SDK + 接�
 - 在任务 **Summary** 里会打印两段内容：
   1. 若本次是"自举密钥"，会给出密钥库 base64 → 存为 `TWA_KEYSTORE_BASE64` Secret，
      并设 `TWA_KEYSTORE_PASSWORD`。**务必存**，否则下次密钥变化会导致已装 APK 无法覆盖更新。
-  2. 可选的 `assetlinks.json` 片段（见下）。
+  2. 隐藏地址栏用的 `assetlinks.json` 已由构建流程**自动生成并提交到 main**（见下），无需手动保存。
 
-## 可选：隐藏地址栏（数字资产校验）
+## 隐藏地址栏（数字资产校验，已自动化）
 
-不配置也能正常安装使用，仅可能多一条地址栏。要全屏无栏，把 Summary 里打印的
-`assetlinks.json` 内容保存到项目 `public/.well-known/assetlinks.json`
-（Docker 部署会自动托管到 `https://你的域名/.well-known/assetlinks.json` 即可）。
-该指纹必须与签名密钥一致——所以请**先完成上面"存密钥库 secret"再配置此处**。
+不配置也能正常安装使用，仅可能多一条地址栏。要全屏无栏，需要 `assetlinks.json`
+声明。这部分**已全自动**：
+
+每次 Android 构建时，CI 会直接从当前签名密钥库算出 SHA256 指纹（十六进制冒号分隔格式，
+Android 要求的正确格式），写入 `public/.well-known/assetlinks.json` 并**自动提交回 main**。
+由于本仓库的 `ci.yml` 在 push 到 main 时会重建并推送 Docker 镜像，该文件会随下次部署
+自动托管到 `https://你的域名/.well-known/assetlinks.json`，无需任何手动操作。
+
+前提：必须先完成"存密钥库 secret"（第①步），指纹才稳定；否则每次自举密钥都会变，
+自动提交的 assetlinks 指纹也会随之更新（同样可用，只是密钥不固定、无法覆盖升级旧 APK）。
 
 ## 排错
 

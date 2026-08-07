@@ -28,7 +28,7 @@ on:
         required: false
 
 permissions:
-  contents: read
+  contents: write
 
 env:
   PACKAGE_ID: com.myaccountbook.twa
@@ -129,8 +129,38 @@ jobs:
             -storepass "${{ steps.keystore.outputs.ks_pass }}" \
             -keypass "${{ steps.keystore.outputs.ks_pass }}" \
             -file twa-cert.der
-          B64FP=$(openssl dgst -sha256 -binary twa-cert.der | openssl base64 | tr -d '\n')
-          echo "b64fp=$B64FP" >> "$GITHUB_OUTPUT"
+          # assetlinks.json 要求十六进制冒号分隔格式（非 base64），
+          # 否则 Chrome 校验不通过、地址栏无法隐藏。
+          FP=$(openssl x509 -in twa-cert.der -inform DER -noout -fingerprint -sha256 | sed 's/^SHA256 Fingerprint=//')
+          echo "fp=$FP" >> "$GITHUB_OUTPUT"
+
+      - name: 生成并自动提交 assetlinks.json（隐藏地址栏）
+        env:
+          FP: ${{ steps.fp.outputs.fp }}
+          PKG: ${{ env.PACKAGE_ID }}
+        run: |
+          set -euo pipefail
+          mkdir -p public/.well-known
+          # 直接用当前密钥库指纹生成，确保与生产中 APK 的签名一致
+          printf '[{\n  "relation": ["delegate_permission/common.handle_all_urls"],\n  "target": {\n    "namespace": "android_app",\n    "package_name": "%s",\n    "sha256_cert_fingerprints": ["%s"]\n  }\n}]\n' "$PKG" "$FP" > public/.well-known/assetlinks.json
+          # 仅在内容变化时提交回 main；push 到 main 会触发 ci.yml 重建 Docker 镜像并托管该文件
+          if git diff --quiet -- public/.well-known/assetlinks.json 2>/dev/null; then
+            echo "assetlinks.json 无变化，跳过提交"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add public/.well-known/assetlinks.json
+            git commit -m "ci(android): 自动写入 TWA assetlinks.json 指纹
+
+          由 Android APK 构建流程根据当前签名密钥库自动生成，确保指纹与
+          生产密钥一致；变更密钥后重建即自动更新。提交到 main 会触发 CI
+          重新构建 Docker 镜像并托管该文件，无需手动部署。"
+            if git push origin HEAD:main; then
+              echo "已自动提交 assetlinks.json 到 main（将触发 Docker 重新部署）"
+            else
+              echo "::warning::推送到 main 失败（可能 main 已领先于本次标签）。请手动将 public/.well-known/assetlinks.json 合并到 main 以启用隐藏地址栏。"
+            fi
+          fi
 
       - name: 输出配置摘要
         run: |
@@ -145,8 +175,8 @@ jobs:
             echo "${{ steps.keystore.outputs.keystore_b64 }}"
             echo '```'
             echo
-            echo "### 2) 可选：隐藏地址栏（TWA 数字资产校验）"
-            echo "把下面内容保存为部署根目录 \`/.well-known/assetlinks.json\`（本项目 public/ 下，Docker 部署会自动托管），使其可通过 \`${{ steps.host.outputs.host }}/.well-known/assetlinks.json\` 访问："
+            echo "### 2) 隐藏地址栏（TWA 数字资产校验，已自动化）"
+            echo "上面的指纹已由构建流程自动写入 \`public/.well-known/assetlinks.json\` 并提交到 main（会触发 Docker 重新部署），使其可通过 \`${{ steps.host.outputs.host }}/.well-known/assetlinks.json\` 访问。无需手动操作。"
             echo
             echo '```json'
             echo "[{"
@@ -154,12 +184,12 @@ jobs:
             echo "  \"target\": {"
             echo "    \"namespace\": \"android_app\","
             echo "    \"package_name\": \"${{ env.PACKAGE_ID }}\","
-            echo "    \"sha256_cert_fingerprints\": [\"${{ steps.fp.outputs.b64fp }}\"]"
+            echo "    \"sha256_cert_fingerprints\": [\"${{ steps.fp.outputs.fp }}\"]"
             echo "  }"
             echo "}]"
             echo '```'
             echo
-            echo "未配置 assetlinks 时 APK 仍可正常安装使用，仅可能多一条地址栏。"
+            echo "该文件已随本提交自动托管到你的部署域名，APK 重装后地址栏即可隐藏。"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: 上传 APK
