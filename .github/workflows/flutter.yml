@@ -57,15 +57,19 @@ jobs:
 
       - name: Generate app icon from project original (icon-512.png)
         # 用项目原有图标（public/icon-512.png）替换 flutter create 的默认 Flutter logo。
-        # ImageMagick convert 在 ubuntu-latest 上预装。
+        # ubuntu-latest 预装 Python3，Pillow 现装（ImageMagick convert 不在 PATH）。
         run: |
-          for spec in mdpi:48 hdpi:72 xhdpi:96 xxhdpi:144 xxxhdpi:192; do
-            density="${spec%%:*}"
-            size="${spec##*:}"
-            dir="app/android/app/src/main/res/mipmap-${density}"
-            convert public/icon-512.png -resize ${size}x${size} "${dir}/ic_launcher.png"
-            cp "${dir}/ic_launcher.png" "${dir}/ic_launcher_round.png"
-          done
+          python3 -m pip install --quiet --user Pillow
+          python3 -c "
+          from PIL import Image
+          img = Image.open('public/icon-512.png')
+          for density, size in {'mdpi':48,'hdpi':72,'xhdpi':96,'xxhdpi':144,'xxxhdpi':192}.items():
+              d = f'app/android/app/src/main/res/mipmap-{density}'
+              r = img.resize((size, size), Image.LANCZOS)
+              r.save(f'{d}/ic_launcher.png')
+              r.save(f'{d}/ic_launcher_round.png')
+          print('App icons generated from public/icon-512.png')
+          "
 
       - name: Ensure INTERNET permission (release build needs it)
         run: |
