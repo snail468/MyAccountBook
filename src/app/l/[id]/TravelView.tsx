@@ -9,7 +9,7 @@ import Lightbox from '@/components/ui/Lightbox';
 import PendingBadge from '@/components/ui/PendingBadge';
 import { formatShort } from '@/lib/datetime';
 import type { NetBalance, Transfer } from '@/lib/settlement';
-import { useConfirm } from '@/components/ui/Dialog';
+import { useAlert, useConfirm } from '@/components/ui/Dialog';
 import TripDailyChart from './TripDailyChart';
 import TripCalendar from './TripCalendar';
 import SettlementSheet from './SettlementSheet';
@@ -128,11 +128,29 @@ export default function TravelView({
   const [showReport, setShowReport] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showSheet, setShowSheet] = useState(false);
+  const [sheetExpenses, setSheetExpenses] = useState<Expense[] | null>(null);
+  const [sheetLoading, setSheetLoading] = useState(false);
   const [zoomImg, setZoomImg] = useState<string | null>(null);
   // C11 行程日历：展开开关 + 当前按天筛选的日期
   const [showCalendar, setShowCalendar] = useState(false);
   const [dateFilter, setDateFilter] = useState<string | null>(null);
   const confirm = useConfirm();
+  const alert = useAlert();
+
+  // 成员「已结清」就地切换：结算面板里就能标记，不必再钻进成员弹窗。
+  async function toggleSettled(memberId: string, next: boolean) {
+    const res = await fetch(`/api/ledgers/${ledger.id}/members/${memberId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ settled: next }),
+    });
+    if (res.ok) {
+      startTransition(() => router.refresh());
+    } else {
+      const data = await res.json().catch(() => ({}));
+      await alert({ title: '操作失败', body: data.error || '未知错误', danger: true });
+    }
+  }
 
   // —— 每个阶段各自一套分页状态 ——
   const [extra, setExtra] = useState<Record<'pre' | 'during', Expense[]>>({
@@ -239,6 +257,25 @@ export default function TravelView({
       setLoadError(e instanceof Error ? e.message : '报告生成失败');
     } finally {
       setReportLoading(false);
+    }
+  }
+
+  // 结算单要列每一笔账目，需全量（分页后客户端手里只有片段）——打开时按需拉全量。
+  async function openSheet() {
+    setSheetLoading(true);
+    setLoadError('');
+    try {
+      const res = await fetch(`/api/ledgers/${ledger.id}/expenses?all=1`, {
+        cache: 'no-store',
+      });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error || '加载失败');
+      setSheetExpenses(j.expenses as Expense[]);
+      setShowSheet(true);
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : '结算单生成失败');
+    } finally {
+      setSheetLoading(false);
     }
   }
 
@@ -461,22 +498,23 @@ export default function TravelView({
           <div className="text-xs text-emerald-800 dark:text-emerald-300 font-medium mb-2">
             最优结算（{transfers.length} 笔转账）
           </div>
-          <div className="mb-3 space-y-1 text-xs">
+          <div className="mb-3 space-y-1.5 text-xs">
             {balances.map((b) => {
-              const settled = members.find((m) => m.id === b.memberId)?.settled;
+              const m = members.find((x) => x.id === b.memberId);
+              const settled = m?.settled;
               const label = b.netCents > 0 ? '应收' : b.netCents < 0 ? '应付' : '已平';
               return (
-                <div key={b.memberId} className="flex items-center justify-between">
-                  <span className="flex items-center gap-1.5 truncate">
+                <div key={b.memberId} className="flex items-center gap-2">
+                  <span className="flex items-center gap-1.5 truncate min-w-0 flex-1">
                     <span className="truncate">{b.name}</span>
                     {settled && (
-                      <span className="text-[10px] px-1 rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300">
+                      <span className="text-[10px] px-1 rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 shrink-0">
                         已结清
                       </span>
                     )}
                   </span>
                   <span
-                    className={`num ${
+                    className={`num whitespace-nowrap ${
                       b.netCents > 0
                         ? 'text-emerald-700 dark:text-emerald-300'
                         : b.netCents < 0
@@ -486,6 +524,17 @@ export default function TravelView({
                   >
                     {label} <Money cents={Math.abs(b.netCents)} /> {ledger.baseCurrency}
                   </span>
+                  <button
+                    onClick={() => m && toggleSettled(m.id, !settled)}
+                    className={`text-[11px] px-2 py-1 rounded-lg whitespace-nowrap shrink-0 ${
+                      settled
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-ink-200 dark:bg-ink-700 text-ink-600 dark:text-ink-300'
+                    }`}
+                    title={settled ? '取消已结清' : '标记已结清'}
+                  >
+                    {settled ? '✓ 已结清' : '标记结清'}
+                  </button>
                 </div>
               );
             })}
@@ -512,10 +561,11 @@ export default function TravelView({
             {reportLoading ? '生成中…' : '生成趣味报告'}
           </button>
           <button
-            onClick={() => setShowSheet(true)}
-            className="mt-2 w-full py-2.5 rounded-xl bg-ink-900 dark:bg-ink-100 text-white dark:text-ink-900 text-sm font-medium"
+            onClick={openSheet}
+            disabled={sheetLoading}
+            className="mt-2 w-full py-2.5 rounded-xl bg-ink-900 dark:bg-ink-100 text-white dark:text-ink-900 text-sm font-medium disabled:opacity-60"
           >
-            生成结算单（图片分享）
+            {sheetLoading ? '生成中…' : '生成结算单（图片分享）'}
           </button>
         </div>
       )}
@@ -595,7 +645,7 @@ export default function TravelView({
         />
       )}
 
-      {showSheet && (
+      {showSheet && sheetExpenses && (
         <SettlementSheet
           ledger={{
             name: ledger.name,
@@ -605,10 +655,10 @@ export default function TravelView({
             endDate: ledger.endDate,
           }}
           members={members}
+          expenses={sheetExpenses}
           balances={balances}
           transfers={transfers}
           settlementError={settlementError}
-          totalSpentCents={preTotal + duringTotal}
           onClose={() => setShowSheet(false)}
         />
       )}

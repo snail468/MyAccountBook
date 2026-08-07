@@ -74,6 +74,7 @@ export default function TravelSettingsModal({
   const init = parseInitialTripBudget(ledger.tripBudget);
   const [totalBaseYuan, setTotalBaseYuan] = useState(init.totalBaseYuan);
   const [perCur, setPerCur] = useState<Record<string, string>>(init.perCur);
+  const [addCur, setAddCur] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -202,27 +203,93 @@ export default function TravelSettingsModal({
           placeholder="不限制"
           className={inputCls}
         />
-        {currencyTotals.length > 0 && (
-          <div className="mt-3 space-y-2">
-            <div className="text-[11px] text-ink-500">各币种预算（按原币，留空=不限制）</div>
-            {currencyTotals.map((c) => (
-              <div key={c.currency} className="flex items-center gap-2">
-                <span className="text-xs w-16 text-ink-600 dark:text-ink-300">{c.currency}</span>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={perCur[c.currency] ?? ''}
-                  onChange={(e) =>
-                    setPerCur((p) => ({ ...p, [c.currency]: e.target.value }))
-                  }
-                  placeholder="不限制"
-                  className={inputCls}
-                />
-              </div>
-            ))}
+        <div className="mt-3 space-y-2">
+          <div className="text-[11px] text-ink-500">
+            各币种预算（按原币，留空=不限制）
           </div>
-        )}
+          {(() => {
+            // 币种列表 = 已有花费的币种 ∪ 已设过预算的币种（保证已存预算不丢、未花费也能提前规划）
+            const curList = Array.from(
+              new Set([...currencyTotals.map((c) => c.currency), ...Object.keys(perCur)]),
+            );
+            const spentByCur = new Map(currencyTotals.map((c) => [c.currency, c.foreignCents]));
+            const availableToAdd = COMMON_CURRENCIES.filter(
+              (c) => c.code !== baseCurrency && !curList.includes(c.code),
+            );
+            return (
+              <>
+                {curList.map((c) => (
+                  <div key={c} className="flex items-center gap-2">
+                    <span className="text-xs w-14 text-ink-600 dark:text-ink-300 shrink-0">
+                      {c}
+                    </span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={perCur[c] ?? ''}
+                      onChange={(e) =>
+                        setPerCur((p) => ({ ...p, [c]: e.target.value }))
+                      }
+                      placeholder="不限制"
+                      className={`${inputCls} flex-1 min-w-0`}
+                    />
+                    {spentByCur.has(c) && (
+                      <span className="text-[10px] text-ink-400 whitespace-nowrap">
+                        {`已花 ${(spentByCur.get(c)! / 100).toLocaleString('zh-CN', {
+                          maximumFractionDigits: 2,
+                        })}`}
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setPerCur((p) => {
+                          const n = { ...p };
+                          delete n[c];
+                          return n;
+                        })
+                      }
+                      className="text-ink-400 hover:text-red-500 text-xs px-1 shrink-0"
+                      aria-label={`移除 ${c} 预算`}
+                      title="移除该币种预算"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+                {availableToAdd.length > 0 && (
+                  <div className="flex items-center gap-2 pt-1">
+                    <select
+                      value={addCur}
+                      onChange={(e) => setAddCur(e.target.value)}
+                      className={`${inputCls} flex-1 min-w-0`}
+                    >
+                      <option value="">＋ 添加币种预算…</option>
+                      {availableToAdd.map((c) => (
+                        <option key={c.code} value={c.code}>
+                          {c.label}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!addCur) return;
+                        setPerCur((p) => ({ ...p, [addCur]: '' }));
+                        setAddCur('');
+                      }}
+                      disabled={!addCur}
+                      className="px-3 py-2 rounded-2xl bg-ink-900 dark:bg-ink-100 text-white dark:text-ink-900 text-sm disabled:opacity-50 shrink-0"
+                    >
+                      添加
+                    </button>
+                  </div>
+                )}
+              </>
+            );
+          })()}
+        </div>
       </div>
 
       {error && <p className="text-red-500 text-sm mt-2">{error}</p>}

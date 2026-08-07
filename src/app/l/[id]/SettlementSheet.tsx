@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useRef, useState } from 'react';
-import type { Member } from './TravelView';
+import type { Expense, Member } from './TravelView';
 import type { NetBalance, Transfer } from '@/lib/settlement';
 import { svgElementToPng, triggerDownload } from '@/lib/domToPng';
 
@@ -22,13 +22,23 @@ function fmt(cents: number) {
   });
 }
 
+function trunc(s: string, n: number) {
+  return s.length > n ? s.slice(0, n) + '…' : s;
+}
+
+const WEEK = ['日', '一', '二', '三', '四', '五', '六'];
+function weekday(d: string) {
+  const dt = new Date(`${d}T00:00:00`);
+  return Number.isNaN(dt.getTime()) ? '' : WEEK[dt.getDay()];
+}
+
 export default function SettlementSheet({
   ledger,
   members,
+  expenses,
   balances,
   transfers,
   settlementError,
-  totalSpentCents,
   onClose,
 }: {
   ledger: {
@@ -39,10 +49,10 @@ export default function SettlementSheet({
     endDate: string | null;
   };
   members: Member[];
+  expenses: Expense[];
   balances: NetBalance[];
   transfers: Transfer[];
   settlementError: string | null;
-  totalSpentCents: number;
   onClose: () => void;
 }) {
   const svgRef = useRef<SVGSVGElement>(null);
@@ -53,7 +63,7 @@ export default function SettlementSheet({
     let y = 0;
 
     // 背景
-    els.push(<rect key="bg" x={0} y={0} width={W} height={2000} fill={BG} />);
+    els.push(<rect key="bg" x={0} y={0} width={W} height={4000} fill={BG} />);
 
     // 标题
     y = 56;
@@ -76,21 +86,153 @@ export default function SettlementSheet({
     y = 104;
     els.push(<line key="ln1" x1={PAD} y1={y} x2={W - PAD} y2={y} stroke={LINE} strokeWidth={1} />);
 
-    // 成员净额
-    y = 136;
+    // —— 账目明细：按日期分组，逐笔记 ——
+    y += 30;
     els.push(
-      <text key="h1" x={PAD} y={y} fontSize={15} fontWeight={700} fill={ACCENT} fontFamily="sans-serif">
+      <text key="h0" x={PAD} y={y} fontSize={15} fontWeight={700} fill={ACCENT} fontFamily="sans-serif">
+        账目明细（{expenses.length} 笔）
+      </text>,
+    );
+    y += 14;
+
+    const byDate = new Map<string, Expense[]>();
+    for (const e of expenses) {
+      const d = e.occurredAt.slice(0, 10);
+      const arr = byDate.get(d) ?? [];
+      arr.push(e);
+      byDate.set(d, arr);
+    }
+    const dates = Array.from(byDate.keys()).sort();
+
+    if (dates.length === 0) {
+      y += 22;
+      els.push(
+        <text key="none" x={PAD} y={y} fontSize={13} fill={SUB} fontFamily="sans-serif">
+          还没有任何记录
+        </text>,
+      );
+      y += 18;
+    }
+
+    for (const d of dates) {
+      y += 26;
+      els.push(
+        <text key={`d-${d}`} x={PAD} y={y} fontSize={13} fontWeight={700} fill={ACCENT} fontFamily="sans-serif">
+          {`${d} 周${weekday(d)}`}
+        </text>,
+      );
+      y += 20;
+      for (const e of byDate.get(d)!) {
+        els.push(
+          <text key={`t-${e.id}`} x={PAD} y={y} fontSize={14} fill={INK} fontFamily="sans-serif">
+            {trunc(e.title, 20)}
+          </text>,
+        );
+        els.push(
+          <text
+            key={`ta-${e.id}`}
+            x={W - PAD}
+            y={y}
+            fontSize={14}
+            textAnchor="end"
+            fill={NEG}
+            fontFamily="sans-serif"
+          >
+            {`${fmt(e.amountBaseCents)} ${ledger.baseCurrency}`}
+          </text>,
+        );
+        y += 18;
+        const foreign =
+          e.currency !== ledger.baseCurrency
+            ? ` · ${fmt(e.amountForeignCents)} ${e.currency}`
+            : '';
+        els.push(
+          <text key={`s-${e.id}`} x={PAD} y={y} fontSize={12} fill={SUB} fontFamily="sans-serif">
+            {`${trunc(e.category, 8)} · ${e.payerName}垫付${foreign}`}
+          </text>,
+        );
+        y += 22;
+      }
+    }
+
+    // —— 总账单 ——
+    y += 14;
+    els.push(<line key="ln2" x1={PAD} y1={y} x2={W - PAD} y2={y} stroke={LINE} strokeWidth={1} />);
+    y += 32;
+    els.push(
+      <text key="h3" x={PAD} y={y} fontSize={15} fontWeight={700} fill={ACCENT} fontFamily="sans-serif">
+        总账单
+      </text>,
+    );
+    y += 28;
+
+    const totalSpent = expenses.reduce((s, e) => s + e.amountBaseCents, 0);
+    els.push(
+      <text key="tot-l" x={PAD} y={y} fontSize={16} fontWeight={700} fill={INK} fontFamily="sans-serif">
+        总花费
+      </text>,
+    );
+    els.push(
+      <text
+        key="tot-v"
+        x={W - PAD}
+        y={y}
+        fontSize={16}
+        fontWeight={700}
+        textAnchor="end"
+        fill={INK}
+        fontFamily="sans-serif"
+      >
+        {`${fmt(totalSpent)} ${ledger.baseCurrency}`}
+      </text>,
+    );
+    y += 24;
+
+    // 按币种合计
+    const curMap = new Map<string, number>();
+    for (const e of expenses) {
+      curMap.set(e.currency, (curMap.get(e.currency) ?? 0) + e.amountForeignCents);
+    }
+    const curEntries = Array.from(curMap.entries()).sort((a, b) => (a[0] < b[0] ? -1 : 1));
+    if (curEntries.length > 1) {
+      for (const [c, v] of curEntries) {
+        els.push(
+          <text key={`cur-${c}`} x={PAD} y={y} fontSize={13} fill={SUB} fontFamily="sans-serif">
+            {`${c} 原币合计`}
+          </text>,
+        );
+        els.push(
+          <text
+            key={`curv-${c}`}
+            x={W - PAD}
+            y={y}
+            fontSize={13}
+            textAnchor="end"
+            fill={SUB}
+            fontFamily="sans-serif"
+          >
+            {`${fmt(v)} ${c}`}
+          </text>,
+        );
+        y += 22;
+      }
+      y += 4;
+    }
+
+    // 成员净额
+    y += 8;
+    els.push(
+      <text key="h1" x={PAD} y={y} fontSize={14} fontWeight={700} fill={ACCENT} fontFamily="sans-serif">
         成员净额
       </text>,
     );
-    y = 164;
+    y += 24;
     for (const b of balances) {
       const settled = members.find((m) => m.id === b.memberId)?.settled;
       const label = b.netCents > 0 ? '应收' : b.netCents < 0 ? '应付' : '已平';
       els.push(
         <text key={`b-${b.memberId}`} x={PAD} y={y} fontSize={14} fill={INK} fontFamily="sans-serif">
-          {b.name}
-          {settled ? '  ✓已结清' : ''}
+          {`${b.name}${settled ? '  ✓已结清' : ''}`}
         </text>,
       );
       els.push(
@@ -106,33 +248,33 @@ export default function SettlementSheet({
           {`${label} ${fmt(Math.abs(b.netCents))} ${ledger.baseCurrency}`}
         </text>,
       );
-      y += 28;
+      y += 24;
     }
 
     // 最优结算
-    y += 12;
-    els.push(<line key="ln2" x1={PAD} y1={y} x2={W - PAD} y2={y} stroke={LINE} strokeWidth={1} />);
-    y += 32;
+    y += 10;
+    els.push(<line key="ln3" x1={PAD} y1={y} x2={W - PAD} y2={y} stroke={LINE} strokeWidth={1} />);
+    y += 30;
     els.push(
-      <text key="h2" x={PAD} y={y} fontSize={15} fontWeight={700} fill={ACCENT} fontFamily="sans-serif">
+      <text key="h2" x={PAD} y={y} fontSize={14} fontWeight={700} fill={ACCENT} fontFamily="sans-serif">
         最优结算
       </text>,
     );
-    y += 28;
+    y += 24;
     if (settlementError) {
       els.push(
         <text key="err" x={PAD} y={y} fontSize={13} fill={SUB} fontFamily="sans-serif">
           部分记录分摊不守恒，暂无法生成转账清单（请在账本内逐笔编辑保存修正）
         </text>,
       );
-      y += 28;
+      y += 24;
     } else if (transfers.length === 0) {
       els.push(
         <text key="flat" x={PAD} y={y} fontSize={13} fill={SUB} fontFamily="sans-serif">
           无需转账，大家已平
         </text>,
       );
-      y += 28;
+      y += 24;
     } else {
       for (const t of transfers) {
         els.push(
@@ -153,27 +295,31 @@ export default function SettlementSheet({
             {`${fmt(t.amountCents)} ${ledger.baseCurrency}`}
           </text>,
         );
-        y += 28;
+        y += 24;
       }
     }
 
-    // 页脚：总花费 + 生成时间
-    y += 16;
-    els.push(<line key="ln3" x1={PAD} y1={y} x2={W - PAD} y2={y} stroke={LINE} strokeWidth={1} />);
-    y += 30;
+    // 页脚：生成时间
+    y += 14;
+    els.push(<line key="ln4" x1={PAD} y1={y} x2={W - PAD} y2={y} stroke={LINE} strokeWidth={1} />);
+    y += 28;
     const now = new Date();
     els.push(
-      <text key="foot" x={PAD} y={y} fontSize={13} fill={INK} fontFamily="sans-serif">
-        {`总花费 ${fmt(totalSpentCents)} ${ledger.baseCurrency} · 生成于 ${now.toISOString().slice(0, 10)}`}
+      <text key="foot" x={PAD} y={y} fontSize={12} fill={SUB} fontFamily="sans-serif">
+        {`生成于 ${now.toISOString().slice(0, 10)}`}
       </text>,
     );
-    y += 36;
+    y += 24;
+
+    const H = y + 8;
+    // 修正背景高度
+    els[0] = <rect key="bg" x={0} y={0} width={W} height={H} fill={BG} />;
 
     return {
       svg: (
         <svg
           ref={svgRef}
-          viewBox={`0 0 ${W} ${y}`}
+          viewBox={`0 0 ${W} ${H}`}
           width="100%"
           style={{ display: 'block', borderRadius: 16, background: BG }}
           role="img"
@@ -183,7 +329,7 @@ export default function SettlementSheet({
         </svg>
       ),
     };
-  }, [ledger, members, balances, transfers, settlementError, totalSpentCents]);
+  }, [ledger, members, expenses, balances, transfers, settlementError]);
 
   async function download() {
     if (!svgRef.current) return;
