@@ -49,6 +49,10 @@ android {
 }
 
 dependencies {
-    implementation 'androidx.browser:browser:1.8.0'
-    implementation 'com.google.androidbrowserhelper:androidbrowserhelper:2.6.0'
+    // Pinned to 1.4.0 on purpose: androidbrowserhelper 2.5.0 is compiled against
+    // this exact browser version, so there is no version conflict and it stays
+    // compatible with compileSdk 34 / AGP 8.5.2. (2.6.0 pulls androidx.browser
+    // 1.9.0-alpha02 which requires compileSdk 36 + AGP 8.9.1+, breaking the build.)
+    implementation 'androidx.browser:browser:1.4.0'
+    implementation 'com.google.androidbrowserhelper:androidbrowserhelper:2.5.0'
 }
