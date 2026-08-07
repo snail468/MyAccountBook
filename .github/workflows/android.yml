@@ -18,9 +18,9 @@ name: Android APK (TWA)
 # 多设备用同一账号登录该地址即天然同步，离线记账的 offlineQueue 已做幂等。
 # APK 仅是加载该 PWA 的壳，不另存数据。
 
+# 注意：本 TWA 工作流已不再随标签自动构建。原生 Flutter App（flutter.yml）接管了
+# 安卓交付，故这里只保留手动 dispatch，避免打标签时两套 APK 重复构建、造成混淆。
 on:
-  push:
-    tags: ['v*.*.*']
   workflow_dispatch:
     inputs:
       host:
