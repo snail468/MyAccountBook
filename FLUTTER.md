@@ -53,7 +53,7 @@ UI (lib/ui)  ──>  State (lib/state, Provider/ChangeNotifier)
 ## 本地开发
 
 ```bash
-cd flutter
+cd mobile
 flutter pub get
 flutter run            # 连真机/模拟器
 flutter build apk      # 出 release apk
@@ -70,14 +70,14 @@ flutter build apk      # 出 release apk
 - 自动把 `AndroidManifest.xml` 的 `android:label` 改成「心愿便利贴」（`flutter create` 默认会用 pubspec 的 `name`，即 `myaccountbook`）。
 - 产物 `app-release.apk` 作为 artifact 上传。
 
-### ⚠️ 关键：`flutter/lib/main.dart` 必须入库
+### ⚠️ 关键：`mobile/lib/main.dart` 必须入库
 
 Flutter 应用入口默认在 `lib/main.dart`。如果该文件**不存在**，CI 的 `flutter create`
 会"贴心"地补一个**默认的计数器模板**（标题 "Flutter Demo Home Page"、加号按钮自增），
 最终 APK 装上跑的就是这个示例 App，而不是我们的心愿便利贴。
 
 **修复要点**：
-- `flutter/lib/main.dart` 必须随仓库提交（项目里目前已放在 `lib/`，不是 `lib/ui/`）。
+- `mobile/lib/main.dart` 必须随仓库提交（项目里目前已放在 `lib/`，不是 `lib/ui/`）。
 - `flutter create` 对已存在的源文件**不会**覆盖，所以入库的 `main.dart` 不会被干掉。
 - 工作流额外加了断言：scaffold 之后 grep `lib/main.dart` 含 "Flutter Demo Home Page" 就
   立即失败，避免 CI 行为变化导致悄悄变回默认模板。
@@ -88,7 +88,7 @@ Flutter 应用入口默认在 `lib/main.dart`。如果该文件**不存在**，C
 ## 目录结构
 
 ```
-flutter/lib/
+mobile/lib/
   api/        服务端接口封装（dio + Cookie 持久化）
   core/       常量、金额工具、异常
   data/       db（建表）、models（实体 + fromApi/toApiBody）、local（DAO）

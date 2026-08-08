@@ -36,12 +36,12 @@ jobs:
         # （含 gradle wrapper / AndroidManifest / build.gradle）。
         # 注意：lib/main.dart 已随仓库提交（且会被 GitHub 检出），flutter create
         # 对已存在的源文件**不会**覆盖，因此这里绝不会变成默认计数器模板。
-        working-directory: flutter
+        working-directory: mobile
         run: flutter create --org com.myaccountbook --platforms=android .
 
       - name: Verify lib/main.dart is our real app (not scaffold default)
         # 兜底断言：如果未来 flutter 行为变化导致 lib/main.dart 被覆盖，立即失败。
-        working-directory: flutter
+        working-directory: mobile
         run: |
           if grep -q "Flutter Demo Home Page" lib/main.dart; then
             echo "::error::lib/main.dart was overwritten by flutter create scaffold! Reverting to scaffold default counter app."
@@ -53,7 +53,7 @@ jobs:
         # 覆盖 flutter create 生成的 AndroidManifest 默认 android:label="myaccountbook"。
         run: |
           sed -i 's#android:label="[^"]*"#android:label="心愿便利贴"#' \
-            flutter/android/app/src/main/AndroidManifest.xml
+            mobile/android/app/src/main/AndroidManifest.xml
 
       - name: Generate app icon from project original (icon-512.png)
         # 用项目原有图标（public/icon-512.png）替换 flutter create 的默认 Flutter logo。
@@ -64,7 +64,7 @@ jobs:
           from PIL import Image
           img = Image.open('public/icon-512.png')
           for density, size in {'mdpi':48,'hdpi':72,'xhdpi':96,'xxhdpi':144,'xxxhdpi':192}.items():
-              d = f'flutter/android/app/src/main/res/mipmap-{density}'
+              d = f'mobile/android/app/src/main/res/mipmap-{density}'
               r = img.resize((size, size), Image.LANCZOS)
               r.save(f'{d}/ic_launcher.png')
               r.save(f'{d}/ic_launcher_round.png')
@@ -77,24 +77,24 @@ jobs:
         run: |
           TAG=${GITHUB_REF_NAME#v}
           sed -i "s/static const String appVersion = '.*'/static const String appVersion = '${TAG}'/" \
-            flutter/lib/core/constants.dart
-          sed -i "s/^version: .*/version: ${TAG}+1/" flutter/pubspec.yaml
+            mobile/lib/core/constants.dart
+          sed -i "s/^version: .*/version: ${TAG}+1/" mobile/pubspec.yaml
 
       - name: Ensure INTERNET permission (release build needs it)
         run: |
           sed -i 's#</manifest>#<uses-permission android:name="android.permission.INTERNET"/>\n</manifest>#' \
-            flutter/android/app/src/main/AndroidManifest.xml
+            mobile/android/app/src/main/AndroidManifest.xml
 
       - name: Pub get
-        working-directory: flutter
+        working-directory: mobile
         run: flutter pub get
 
       - name: Build release APK
-        working-directory: flutter
+        working-directory: mobile
         run: flutter build apk --release
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: myaccountbook-apk
-          path: flutter/build/app/outputs/flutter-apk/app-release.apk
+          path: mobile/build/app/outputs/flutter-apk/app-release.apk

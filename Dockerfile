@@ -4,7 +4,7 @@
 # GitHub Actions 也在下线它。22 是当前 LTS，与 .github/workflows/ci.yml 保持一致。
 #
 # ---------- deps ----------
-FROM node:22-alpine AS deps
+FROM --platform=$BUILDPLATFORM node:22-alpine AS deps
 WORKDIR /app
 RUN apk add --no-cache openssl libc6-compat
 COPY package.json package-lock.json* ./
@@ -18,7 +18,7 @@ RUN --mount=type=cache,target=/root/.npm,sharing=locked \
     if [ -f package-lock.json ]; then npm ci; else npm install; fi
 
 # ---------- builder ----------
-FROM node:22-alpine AS builder
+FROM --platform=$BUILDPLATFORM node:22-alpine AS builder
 WORKDIR /app
 RUN apk add --no-cache openssl libc6-compat
 ENV NEXT_TELEMETRY_DISABLED=1

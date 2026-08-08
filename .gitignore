@@ -14,8 +14,8 @@ dist
 
 # db
 data/
-# Flutter 本地数据层源码（flutter/lib/data）必须入库，勿被上面的 data/ 误伤
-!flutter/lib/data/
+# Flutter 本地数据层源码（mobile/lib/data）必须入库，勿被上面的 data/ 误伤
+!mobile/lib/data/
 prisma/dev.db*
 *.db
 *.db-journal
