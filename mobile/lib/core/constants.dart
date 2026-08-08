@@ -1,12 +1,24 @@
+import 'package:flutter/foundation.dart';
+
 /// 全局常量与配置。
 ///
 /// 本地优先架构：页面与逻辑全部跑在安卓本地（本地 SQLite），
 /// 只有"数据同步"走服务端。因此这里的 baseUrl 仅用于后台同步请求，
 /// 不影响 App 本地使用。
 class AppConfig {
-  /// 服务端 API 基地址。部署在哪就填哪（与 PWA 同域，/api 由 Next.js 提供）。
-  /// 与网页版 TWA_HOST 保持一致即可。
-  static const String apiBaseUrl = 'https://jz.686295.xyz';
+  /// 调试模式下连接的服务端地址（仅 debug 构建生效）。
+  /// 默认指向 Android 模拟器的宿主机回环（10.0.2.2 即运行模拟器的那台电脑）。
+  /// 按你的调试方式只改这一处：
+  ///   - iOS 模拟器：'http://localhost:3000'
+  ///   - 真机同 WiFi：'http://<电脑局域网 IP>:3000'（例如 192.168.1.10:3000）
+  static const String _debugApiBaseUrl = 'http://10.0.2.2:3000';
+
+  /// 生产环境服务端地址（release / profile 构建生效）。
+  static const String _releaseApiBaseUrl = 'https://jz.686295.xyz';
+
+  /// 当前生效的 API 基地址：debug 连本地、release 连线上，构建时自动切换，无需手动改。
+  static const String apiBaseUrl =
+      kDebugMode ? _debugApiBaseUrl : _releaseApiBaseUrl;
 
   /// Ledger 四种类型。
   static const String kindWork = 'work';

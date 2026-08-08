@@ -5,5 +5,10 @@
 build/
 .idea/
 *.iml
-android/.gradle/
-android/local.properties
+# flutter create . 动态生成的平台工程（CI 同约定，不进库）
+/android/
+/android/.gradle/
+/android/local.properties
+/ios/
+/.android/
+/.ios/
