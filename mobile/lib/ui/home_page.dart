@@ -17,6 +17,7 @@ import 'ledgers/manage_ledgers_page.dart';
 import 'users/users_page.dart';
 import 'widgets/ledger_feature_card.dart';
 import 'widgets/app_card.dart';
+import 'work/work_summary_page.dart';
 import 'widgets/app_floating_button.dart';
 import '../data/local/work_entry_dao.dart';
 import '../data/local/general_entry_dao.dart';
@@ -162,13 +163,6 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  /// 第二阶段才实现的页面占位。
-  void _comingSoon(BuildContext context, String name) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('「$name」将在第二阶段上线')),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthState>();
@@ -275,7 +269,9 @@ class _HomePageState extends State<HomePage> {
                   icon: '📤',
                   title: '工作出项汇总',
                   subtitle: '按月垫款与回款汇总',
-                  onTap: () => _comingSoon(context, '工作出项汇总'),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const WorkSummaryPage()),
+                  ),
                 ),
                 LedgerFeatureCard(
                   icon: '🌸',
