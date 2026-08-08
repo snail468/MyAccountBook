@@ -1,7 +1,7 @@
 name: myaccountbook
 description: "心愿便利贴 - 本地优先的多账本记账 App（Flutter 原生，数据本地存、后台同步）"
 publish_to: 'none'
-version: 1.0.0+1
+version: 2.0.9+2
 
 environment:
   sdk: '>=3.3.0 <4.0.0'

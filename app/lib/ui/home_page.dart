@@ -45,7 +45,15 @@ class _HomePageState extends State<HomePage> {
     final auth = context.watch<AuthState>();
     return Scaffold(
       appBar: AppBar(
-        title: Text('心愿便利贴 · ${auth.username ?? ''}'),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('心愿便利贴',
+                style: TextStyle(fontSize: 18)),
+            Text('${auth.username ?? ''} · v${AppConfig.appVersion}',
+                style: const TextStyle(fontSize: 12)),
+          ],
+        ),
         actions: [
           IconButton(
             tooltip: '同步',

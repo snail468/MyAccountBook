@@ -16,4 +16,8 @@ class AppConfig {
 
   /// 软删除标记：本地库用 NULL 表示未删除。
   static const int notDeleted = 0;
+
+  /// 应用版本号。CI 构建时会被 sed 注入真实 tag 值（见 flutter.yml）。
+  /// 本地构建时就是这个 fallback 值，安装后 AppBar 副标题可见。
+  static const String appVersion = '2.0.9+dev';
 }
