@@ -107,28 +107,20 @@ class SyncService {
 
   // ---------------- 同步主流程 ----------------
 
-  /// 先推后拉。返回是否成功（离线/未登录返回 false，会抛 unauthorized）。
+  /// 先推后拉。任何错误都会抛出去让调用方看到具体消息（不再静默吞掉）。
   Future<bool> syncAll() async {
     if (_syncing) return false;
     _syncing = true;
     try {
-      // 先推（本地改动重放到服务端），再全量拉取。不预先做连通性探测 ——
-      // 用户刚登录就说明网络是通的；即使真离线，真实的 API 调用也会失败，
-      // 让 dio 层的超时/ConnectivityException 自然暴露，比提前用 Socket 判
-      // 更准确（某些 Android 设备上 InternetAddress.lookup 可能误判）。
+      // 先推（本地改动重放到服务端），再全量拉取。
       await drainQueue();
       await _pullAll();
       return true;
     } on ApiException catch (e) {
       if (e.code == 'unauthorized') {
         await _api.clearSession();
-        rethrow;
       }
-      return false;
-    } on NetworkException {
-      return false;
-    } catch (_) {
-      return false;
+      rethrow;
     } finally {
       _syncing = false;
     }
