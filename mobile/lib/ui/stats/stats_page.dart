@@ -79,24 +79,33 @@ class _Body extends StatelessWidget {
                 children: [
                   Text('趋势', style: TextStyle(color: ink500, fontSize: 13)),
                   const SizedBox(height: 12),
-                  LayoutBuilder(
-                    builder: (context, constraints) {
-                      final w = constraints.maxWidth;
-                      return SizedBox(
-                        height: 160,
-                        width: w,
-                        child: CustomPaint(
-                          size: Size(w, 160),
-                          painter: _TrendPainter(
-                            income: incomeSeries,
-                            expense: expenseSeries,
-                            incomeColor: ink900,
-                            expenseColor: ink500,
+                  if (state.trend.isEmpty)
+                    SizedBox(
+                      height: 160,
+                      child: Center(
+                        child: Text('暂无数据',
+                            style: TextStyle(color: ink500, fontSize: 13)),
+                      ),
+                    )
+                  else
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        final w = constraints.maxWidth;
+                        return SizedBox(
+                          height: 160,
+                          width: w,
+                          child: CustomPaint(
+                            size: Size(w, 160),
+                            painter: _TrendPainter(
+                              income: incomeSeries,
+                              expense: expenseSeries,
+                              incomeColor: ink900,
+                              expenseColor: ink500,
+                            ),
                           ),
-                        ),
-                      );
-                    },
-                  ),
+                        );
+                      },
+                    ),
                 ],
               ),
             ),
@@ -114,7 +123,17 @@ class _Body extends StatelessWidget {
                   final avail = constraints.maxWidth;
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    children: state.categories.map((c) {
+                    children: state.categories.isEmpty
+                        ? <Widget>[
+                            Center(
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 8),
+                                child: Text('暂无数据',
+                                    style: TextStyle(color: ink500, fontSize: 13)),
+                              ),
+                            )
+                          ]
+                        : state.categories.map((c) {
                       final ratio = maxCat == 0 ? 0.0 : c.cents / maxCat;
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 12),

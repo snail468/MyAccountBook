@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 
-/// 周期记账规则（demo，内存态）。
+/// 周期记账规则（内存态，仅本地展示，无后端持久化）。
 class RecurringRule {
   final String category;
   final int cents;
@@ -17,31 +17,9 @@ class RecurringRule {
   });
 }
 
-/// 周期记账页状态（in-memory demo）。
+/// 周期记账页状态（in-memory，无后端，数据仅存于本次会话）。
 class RecurringState extends ChangeNotifier {
-  final List<RecurringRule> _rules = [
-    const RecurringRule(
-      category: '房租',
-      cents: 350000,
-      period: '每月',
-      nextDate: '2026-09-01',
-      greenAmount: false,
-    ),
-    const RecurringRule(
-      category: '订阅',
-      cents: 3800,
-      period: '每月',
-      nextDate: '2026-09-05',
-      greenAmount: false,
-    ),
-    const RecurringRule(
-      category: '工资',
-      cents: 820000,
-      period: '每月',
-      nextDate: '2026-09-01',
-      greenAmount: true,
-    ),
-  ];
+  final List<RecurringRule> _rules = <RecurringRule>[];
 
   List<RecurringRule> get rules => _rules;
 

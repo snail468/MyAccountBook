@@ -70,7 +70,7 @@ class _Body extends StatelessWidget {
         .where((e) => e.yearMonth == ym && e.direction == 'income')
         .fold(0, (s, e) => s + e.amountCents);
     final meta = state.entries.isEmpty
-        ? '2026-08 · 进项 ¥8,200'
+        ? '$ym · 暂无记账'
         : '$ym · 进项 ${Money.formatCents(curMonthIncome)}';
 
     return SingleChildScrollView(

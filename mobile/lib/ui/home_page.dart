@@ -18,6 +18,10 @@ import 'users/users_page.dart';
 import 'widgets/ledger_feature_card.dart';
 import 'widgets/app_card.dart';
 import 'widgets/app_floating_button.dart';
+import '../data/local/work_entry_dao.dart';
+import '../data/local/general_entry_dao.dart';
+import '../data/local/event_dao.dart';
+import '../data/local/trip_dao.dart';
 
 /// 首页（设计 2:3 重做）。
 ///
@@ -29,6 +33,17 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
+  // 首页汇总（真实数据，来自各账本 DAO）
+  int _monthIncome = 0;
+  List<({String name, int income})> _incomeLines = const [];
+  int _generalExpense = 0;
+  int _generalIncome = 0;
+  int _taoyuanEvents = 0;
+  int _tripMembers = 0;
+  int _tripSpent = 0;
+  int _overspend = 0;
+  bool _summaryLoading = true;
+
   @override
   void initState() {
     super.initState();
@@ -45,7 +60,92 @@ class _HomePageState extends State<HomePage> {
           );
         }
       }
+      await _loadSummary();
     });
+  }
+
+  /// 汇总首页真实数据：跨账本算本月收入/支出/超支/活动数/行程。
+  Future<void> _loadSummary() async {
+    try {
+      final ledgers = context.read<LedgerListState>().all;
+      final now = DateTime.now();
+      final ym = '${now.year}-${now.month.toString().padLeft(2, '0')}';
+
+      int monthIncome = 0;
+      final incomeLines = <({String name, int income})>[];
+      int generalExpense = 0;
+      int generalIncome = 0;
+      int taoyuanEvents = 0;
+      int tripMembers = 0;
+      int tripSpent = 0;
+      int overspend = 0;
+
+      for (final l in ledgers) {
+        switch (l.kind) {
+          case AppConfig.kindWork:
+            final m = await WorkEntryDao().totalsByMonth(l.id);
+            final cur = m[ym];
+            if (cur != null && cur.income > 0) {
+              monthIncome += cur.income;
+              incomeLines.add((name: l.name, income: cur.income));
+            }
+          case AppConfig.kindGeneral:
+            final t = await GeneralEntryDao().monthlyTotals(l.id, ym);
+            generalExpense += t.expense;
+            generalIncome += t.income;
+            if (t.income > 0) {
+              monthIncome += t.income;
+              incomeLines.add((name: l.name, income: t.income));
+            }
+            if (l.budgetCents != null && t.expense > l.budgetCents!) {
+              overspend += 1;
+            }
+          case AppConfig.kindTaoyuan:
+            final evs = await EventDao().listByLedger(l.id);
+            taoyuanEvents += evs.length;
+          case AppConfig.kindTravel:
+            final members = await TripDao().listMembers(l.id);
+            final expenses = await TripDao().listExpenses(l.id);
+            tripMembers += members.length;
+            for (final e in expenses) {
+              if (e.deletedAt == null) tripSpent += e.amountBaseCents;
+            }
+        }
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _monthIncome = monthIncome;
+        _incomeLines = incomeLines;
+        _generalExpense = generalExpense;
+        _generalIncome = generalIncome;
+        _taoyuanEvents = taoyuanEvents;
+        _tripMembers = tripMembers;
+        _tripSpent = tripSpent;
+        _overspend = overspend;
+        _summaryLoading = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _summaryLoading = false);
+    }
+  }
+
+  List<Widget> _incomeBreakdown(Color ink500) {
+    if (_summaryLoading) {
+      return [Text('加载中…', style: TextStyle(color: ink500, fontSize: 13))];
+    }
+    if (_incomeLines.isEmpty) {
+      return [
+        Text('本月暂无记账收入', style: TextStyle(color: ink500, fontSize: 13))
+      ];
+    }
+    return _incomeLines
+        .map((l) => Padding(
+              padding: const EdgeInsets.only(bottom: 2),
+              child: Text('${l.name} 进项 +${Money.formatCents(l.income)}',
+                  style: TextStyle(color: ink500, fontSize: 13)),
+            ))
+        .toList();
   }
 
   /// 按 kind 跳转到对应账本页（复用已有账本对象，避免引用不存在页面）。
@@ -130,7 +230,7 @@ class _HomePageState extends State<HomePage> {
             const SizedBox(height: 16),
 
             // ---- 超支提示卡（即便玻璃主题也不磨砂） ----
-            _OverspendCard(),
+            _OverspendCard(overspendCount: _overspend),
             const SizedBox(height: 12),
 
             // ---- 本月总收入卡 ----
@@ -144,17 +244,12 @@ class _HomePageState extends State<HomePage> {
                         style: TextStyle(color: ink500, fontSize: 13)),
                     const SizedBox(height: 6),
                     Text(
-                      Money.formatCents(1234567),
+                      Money.formatCents(_monthIncome),
                       style: TextStyle(
                         color: ink900, fontSize: 28, fontWeight: FontWeight.w700),
                     ),
                     const SizedBox(height: 10),
-                    Text('B 工作进项 +¥8,200.00',
-                        style: TextStyle(color: ink500, fontSize: 13)),
-                    Text('C 桃源现金 +¥3,145.67',
-                        style: TextStyle(color: ink500, fontSize: 13)),
-                    Text('D 通用出项 −¥1,000.00',
-                        style: TextStyle(color: ink500, fontSize: 13)),
+                    ..._incomeBreakdown(ink500),
                   ],
                 ),
               ),
@@ -179,27 +274,31 @@ class _HomePageState extends State<HomePage> {
                 LedgerFeatureCard(
                   icon: '📤',
                   title: '工作出项汇总',
-                  subtitle: '合计 ¥3,200.00',
+                  subtitle: '按月垫款与回款汇总',
                   onTap: () => _comingSoon(context, '工作出项汇总'),
                 ),
                 LedgerFeatureCard(
                   icon: '🌸',
                   title: '桃源账本',
-                  subtitle: '3 个待处理活动',
+                  subtitle: _taoyuanEvents == 0 ? '暂无活动' : '$_taoyuanEvents 个活动',
                   onTap: () =>
                       _openKind(context, AppConfig.kindTaoyuan, '桃源账本'),
                 ),
                 LedgerFeatureCard(
                   icon: '📒',
                   title: '家庭账本',
-                  subtitle: '本月支出 ¥2,340 · 收入 ¥5,100',
+                  subtitle: _generalExpense == 0 && _generalIncome == 0
+                      ? '本月暂无记账'
+                      : '本月支出 ${Money.formatCents(_generalExpense)} · 收入 ${Money.formatCents(_generalIncome)}',
                   onTap: () =>
                       _openKind(context, AppConfig.kindGeneral, '家庭账本'),
                 ),
                 LedgerFeatureCard(
                   icon: '✈️',
                   title: '东京之旅',
-                  subtitle: '3 人 · 已花 ¥12,800',
+                  subtitle: _tripMembers == 0
+                      ? '暂无行程'
+                      : '$_tripMembers 人 · 已花 ${Money.formatCents(_tripSpent)}',
                   onTap: () =>
                       _openKind(context, AppConfig.kindTravel, '东京之旅'),
                 ),
@@ -274,8 +373,16 @@ class _HomePageState extends State<HomePage> {
 
 /// 超支提示卡：固定 overspendBg/overspendBorder，不磨砂。
 class _OverspendCard extends StatelessWidget {
+  final int overspendCount;
+  const _OverspendCard({required this.overspendCount});
+
   @override
   Widget build(BuildContext context) {
+    final title =
+        overspendCount > 0 ? '⚠️ 分类预算超支' : '✅ 预算正常';
+    final detail = overspendCount > 0
+        ? '家庭账本 · $overspendCount 项超支 ›'
+        : '本月账本均未超支';
     return Container(
       decoration: BoxDecoration(
         color: AppColors.lightOverspendBg,
@@ -285,7 +392,7 @@ class _OverspendCard extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       child: InkWell(
         onTap: () {
-          // 暂 no-op：第二阶段跳转超支详情
+          // 暂 no-op：跳转超支详情
         },
         child: Row(
           children: [
@@ -293,13 +400,13 @@ class _OverspendCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('⚠️ 分类预算超支',
+                  Text(title,
                       style: TextStyle(
                           color: AppColors.lightOverspendTitle,
                           fontWeight: FontWeight.w600,
                           fontSize: 15)),
                   const SizedBox(height: 2),
-                  Text('家庭账本 · 2 项超支 ›',
+                  Text(detail,
                       style: TextStyle(
                           color: AppColors.lightOverspendDetail, fontSize: 13)),
                 ],

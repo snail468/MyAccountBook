@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 
-/// 用户（demo，内存态）。
+/// 用户（内存态，仅本地展示，无后端持久化）。
 class AppUser {
   final String name;
   final String role; // admin | member
@@ -28,13 +28,9 @@ class AppUser {
       );
 }
 
-/// 用户管理页状态（in-memory demo）。
+/// 用户管理页状态（in-memory，无后端，数据仅存于本次会话）。
 class UsersState extends ChangeNotifier {
-  List<AppUser> _users = [
-    const AppUser(name: '我', role: 'admin', joinedDate: '2025-01-01', isSelf: true),
-    const AppUser(name: '小明', role: 'member', joinedDate: '2025-03-12', isSelf: false),
-    const AppUser(name: '小红', role: 'member', joinedDate: '2025-05-20', isSelf: false),
-  ];
+  List<AppUser> _users = <AppUser>[];
 
   List<AppUser> get users => _users;
 

@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 
-/// 银行卡（demo，内存态）。
+/// 银行卡（内存态，仅本地展示，无后端持久化）。
 class BankCard {
   final String bank;
   final String type;
@@ -13,13 +13,9 @@ class BankCard {
   });
 }
 
-/// 银行卡备份页状态（in-memory demo）。
+/// 银行卡备份页状态（in-memory，无后端，数据仅存于本次会话）。
 class BankState extends ChangeNotifier {
-  final List<BankCard> _cards = [
-    const BankCard(bank: '招商银行', type: '储蓄卡', last4: '1234'),
-    const BankCard(bank: '工商银行', type: '信用卡', last4: '5678'),
-    const BankCard(bank: '建设银行', type: '信用卡', last4: '9012'),
-  ];
+  final List<BankCard> _cards = <BankCard>[];
 
   List<BankCard> get cards => _cards;
 
