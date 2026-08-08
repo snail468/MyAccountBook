@@ -17,7 +17,7 @@ const bodySchema = z.object({
 
 // GET /api/ledgers —— 返回当前用户作为成员的全部（未删除）账本。
 // 原生 App 本地优先架构的首屏数据拉取用。
-export async function GET(req: Request) {
+export async function GET(_req: Request) {
   const user = await requireSessionUser();
   if (user instanceof Response) return user;
 
