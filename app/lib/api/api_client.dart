@@ -92,7 +92,12 @@ class ApiClient {
       } else if (status == 429) {
         msg = '操作过于频繁，请稍后再试';
       } else if (status != null) {
-        msg = '请求失败（${status}）';
+        msg = '请求失败（${status}）: $method $path';
+        if (body is Map && body['error'] is String) {
+          msg += ' - ${body['error']}';
+        } else if (body is String && body.isNotEmpty && body.length < 200) {
+          msg += ' - $body';
+        }
       }
       throw ApiException(msg, code: code, statusCode: status);
     }

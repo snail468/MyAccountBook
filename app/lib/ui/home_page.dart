@@ -25,7 +25,7 @@ class _HomePageState extends State<HomePage> {
       } catch (_) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('登录已失效，请重新登录')),
+            const SnackBar(content: Text('同步失败，请查看下方错误')),
           );
         }
       }
@@ -64,7 +64,7 @@ class _HomePageState extends State<HomePage> {
                     } catch (_) {
                       if (mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('登录已失效，请重新登录')),
+                          const SnackBar(content: Text('同步失败，请查看下方错误')),
                         );
                       }
                     }
