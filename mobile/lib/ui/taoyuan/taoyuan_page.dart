@@ -14,15 +14,16 @@ import '../widgets/app_primary_button.dart';
 import '../widgets/section_label.dart';
 
 /// 桃源账本页（设计 2:129 重做）：头部 + 悬浮钮 + 状态筛选 + 活动卡。
+/// 眼睛钮占位：未上线功能提示。定义为文件级函数，供内部 _BodyState 调用。
+void _comingSoon(BuildContext context) {
+  ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(content: Text('第二阶段上线')),
+  );
+}
+
 class TaoyuanPage extends StatelessWidget {
   final Ledger ledger;
   const TaoyuanPage({super.key, required this.ledger});
-
-  void _comingSoon(BuildContext context) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('第二阶段上线')),
-    );
-  }
 
   @override
   Widget build(BuildContext context) {

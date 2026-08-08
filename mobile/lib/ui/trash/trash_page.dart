@@ -69,7 +69,7 @@ class _Body extends StatelessWidget {
 }
 
 class _TrashTile extends StatelessWidget {
-  final _TrashItem item;
+  final TrashItem item;
   const _TrashTile({required this.item});
 
   void _restore(BuildContext context) {

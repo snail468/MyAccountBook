@@ -17,15 +17,16 @@ import '../widgets/money_text.dart';
 import '../widgets/section_label.dart';
 
 /// 旅游账本页（设计 2:130 重做）：头部 + 悬浮钮 + 成员管理 + 汇总/每日曲线/结算单。
+/// 眼睛钮占位：未上线功能提示。定义为文件级函数，供内部 _Body 调用。
+void _comingSoon(BuildContext context) {
+  ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(content: Text('第二阶段上线')),
+  );
+}
+
 class TravelPage extends StatelessWidget {
   final Ledger ledger;
   const TravelPage({super.key, required this.ledger});
-
-  void _comingSoon(BuildContext context) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('第二阶段上线')),
-    );
-  }
 
   @override
   Widget build(BuildContext context) {

@@ -15,15 +15,16 @@ import '../widgets/money_text.dart';
 import '../widgets/section_label.dart';
 
 /// 工作账本页（设计 2:128 重做）：对齐 general_ledger_page 的"无 AppBar + 自定义头部 + 悬浮钮"模式。
+/// 眼睛钮占位：未上线功能提示。定义为文件级函数，供内部 _Body 等类调用。
+void _comingSoon(BuildContext context) {
+  ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(content: Text('第二阶段上线')),
+  );
+}
+
 class WorkLedgerPage extends StatelessWidget {
   final Ledger ledger;
   const WorkLedgerPage({super.key, required this.ledger});
-
-  void _comingSoon(BuildContext context) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('第二阶段上线')),
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
