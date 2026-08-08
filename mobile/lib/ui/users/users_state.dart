@@ -1,60 +1,43 @@
 import 'package:flutter/foundation.dart';
+import 'package:uuid/uuid.dart';
+import '../../data/local/family_member_dao.dart';
+import '../../data/models/app_user.dart';
 
-/// 用户（内存态，仅本地展示，无后端持久化）。
-class AppUser {
-  final String name;
-  final String role; // admin | member
-  final String joinedDate;
-  final bool isSelf;
+export '../../data/models/app_user.dart';
 
-  const AppUser({
-    required this.name,
-    required this.role,
-    required this.joinedDate,
-    required this.isSelf,
-  });
-
-  AppUser copyWith({
-    String? name,
-    String? role,
-    String? joinedDate,
-    bool? isSelf,
-  }) =>
-      AppUser(
-        name: name ?? this.name,
-        role: role ?? this.role,
-        joinedDate: joinedDate ?? this.joinedDate,
-        isSelf: isSelf ?? this.isSelf,
-      );
-}
-
-/// 用户管理页状态（in-memory，无后端，数据仅存于本次会话）。
+/// 用户管理页状态（本地持久化到 family_members 表）。
 class UsersState extends ChangeNotifier {
   List<AppUser> _users = <AppUser>[];
 
   List<AppUser> get users => _users;
 
-  void add(String name, String password) {
-    _users.add(AppUser(
+  Future<void> add(String name, String password) async {
+    final u = AppUser(
+      id: const Uuid().v4(),
       name: name,
       role: 'member',
       joinedDate: _today(),
       isSelf: false,
-    ));
+    );
+    await FamilyMemberDao().insert(u);
+    _users.add(u);
     notifyListeners();
   }
 
-  void remove(AppUser u) {
-    _users.remove(u);
+  Future<void> remove(AppUser u) async {
+    await FamilyMemberDao().delete(u.id);
+    _users.removeWhere((e) => e.id == u.id);
     notifyListeners();
   }
 
-  /// 管理员 <-> 成员 切换。
-  void cycleRole(AppUser u) {
-    final idx = _users.indexOf(u);
+  /// 管理员 <-> 成员 切换（持久化到本地）。
+  Future<void> cycleRole(AppUser u) async {
+    final idx = _users.indexWhere((e) => e.id == u.id);
     if (idx < 0) return;
     final next = u.role == 'admin' ? 'member' : 'admin';
-    _users[idx] = u.copyWith(role: next);
+    final updated = u.copyWith(role: next);
+    _users[idx] = updated;
+    await FamilyMemberDao().update(updated);
     notifyListeners();
   }
 
@@ -64,6 +47,8 @@ class UsersState extends ChangeNotifier {
   }
 
   Future<void> load() async {
+    final list = await FamilyMemberDao().listAll();
+    _users = list;
     notifyListeners();
   }
 

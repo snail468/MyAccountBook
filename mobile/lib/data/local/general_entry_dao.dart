@@ -79,6 +79,80 @@ class GeneralEntryDao {
     return (income: income, expense: expense);
   }
 
+  /// 全部普通账本的收入 / 支出合计（分）。统计页总额用。
+  Future<({int income, int expense})> totalsAll() async {
+    final db = await _db.database;
+    final rows = await db.rawQuery('''
+      SELECT direction, SUM(amount_cents) AS s
+      FROM general_entries
+      WHERE deleted_at IS NULL
+      GROUP BY direction
+    ''');
+    int income = 0;
+    int expense = 0;
+    for (final r in rows) {
+      final dir = r['direction'] as String;
+      final sum = (r['s'] as num?)?.toInt() ?? 0;
+      if (dir == 'income') income = sum;
+      if (dir == 'expense') expense = sum;
+    }
+    return (income: income, expense: expense);
+  }
+
+  /// 最近 [months] 个月的收入 / 支出趋势（分），升序返回连续 [months] 个 YYYY-MM。
+  Future<List<({String month, int income, int expense})>> monthlyTrend(
+      {int months = 12}) async {
+    final db = await _db.database;
+    final now = DateTime.now();
+    final startD = DateTime(now.year, now.month - (months - 1), 1);
+    final start = startD.millisecondsSinceEpoch;
+    final end = DateTime(now.year, now.month + 1, 1).millisecondsSinceEpoch;
+    final rows = await db.rawQuery('''
+      SELECT occurred_at, direction, amount_cents
+      FROM general_entries
+      WHERE deleted_at IS NULL AND occurred_at >= ? AND occurred_at < ?
+    ''', [start, end]);
+
+    final byMonth =
+        <String, ({int income, int expense})>{};
+    for (final r in rows) {
+      final millis = r['occurred_at'] as int;
+      final d = DateTime.fromMillisecondsSinceEpoch(millis);
+      final ym = '${d.year}-${d.month.toString().padLeft(2, '0')}';
+      final dir = r['direction'] as String;
+      final sum = (r['amount_cents'] as num?)?.toInt() ?? 0;
+      final cur = byMonth[ym] ?? (income: 0, expense: 0);
+      byMonth[ym] = dir == 'income'
+          ? (income: cur.income + sum, expense: cur.expense)
+          : (income: cur.income, expense: cur.expense + sum);
+    }
+
+    final result = <({String month, int income, int expense})>[];
+    for (var i = 0; i < months; i++) {
+      final d = DateTime(startD.year, startD.month + i, 1);
+      final ym = '${d.year}-${d.month.toString().padLeft(2, '0')}';
+      final v = byMonth[ym] ?? (income: 0, expense: 0);
+      result.add((month: ym, income: v.income, expense: v.expense));
+    }
+    return result;
+  }
+
+  /// 支出按类别占比（分），降序。
+  Future<List<({String label, int cents})>> categoryBreakdown() async {
+    final db = await _db.database;
+    final rows = await db.rawQuery('''
+      SELECT category, SUM(amount_cents) AS s
+      FROM general_entries
+      WHERE deleted_at IS NULL AND direction = 'expense'
+      GROUP BY category
+      ORDER BY s DESC
+    ''');
+    return rows.map((r) => (
+          label: r['category'] as String,
+          cents: (r['s'] as num?)?.toInt() ?? 0,
+        )).toList();
+  }
+
   static int _monthStart(String ym) {
     final parts = ym.split('-');
     final y = int.parse(parts[0]);

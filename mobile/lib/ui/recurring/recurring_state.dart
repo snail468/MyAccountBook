@@ -1,23 +1,11 @@
 import 'package:flutter/foundation.dart';
+import 'package:uuid/uuid.dart';
+import '../../data/local/recurring_rule_dao.dart';
+import '../../data/models/recurring_rule.dart';
 
-/// 周期记账规则（内存态，仅本地展示，无后端持久化）。
-class RecurringRule {
-  final String category;
-  final int cents;
-  final String period; // 如 "每月"
-  final String nextDate; // 如 "2026-09-01"
-  final bool greenAmount; // 金额是否用绿色（如工资入账）
+export '../../data/models/recurring_rule.dart';
 
-  const RecurringRule({
-    required this.category,
-    required this.cents,
-    required this.period,
-    required this.nextDate,
-    required this.greenAmount,
-  });
-}
-
-/// 周期记账页状态（in-memory，无后端，数据仅存于本次会话）。
+/// 周期记账页状态（本地持久化到 recurring_rules 表）。
 class RecurringState extends ChangeNotifier {
   final List<RecurringRule> _rules = <RecurringRule>[];
 
@@ -25,28 +13,35 @@ class RecurringState extends ChangeNotifier {
 
   int get count => _rules.length;
 
-  void add({
+  Future<void> add({
     required String category,
     required int cents,
     required String period,
     required String nextDate,
-  }) {
-    _rules.add(RecurringRule(
+  }) async {
+    final rule = RecurringRule(
+      id: const Uuid().v4(),
       category: category,
       cents: cents,
       period: period,
       nextDate: nextDate,
       greenAmount: false,
-    ));
+    );
+    await RecurringRuleDao().insert(rule);
+    _rules.add(rule);
     notifyListeners();
   }
 
-  void remove(RecurringRule r) {
-    _rules.remove(r);
+  Future<void> remove(RecurringRule r) async {
+    await RecurringRuleDao().delete(r.id);
+    _rules.removeWhere((e) => e.id == r.id);
     notifyListeners();
   }
 
   Future<void> load() async {
+    final list = await RecurringRuleDao().listAll();
+    _rules.clear();
+    _rules.addAll(list);
     notifyListeners();
   }
 }

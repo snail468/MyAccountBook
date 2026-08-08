@@ -1,19 +1,14 @@
 import 'package:flutter/foundation.dart';
 import '../../core/money.dart';
+import '../../data/local/search_dao.dart';
+import '../../data/models/search_result.dart';
 
-/// 搜索结果条目。
-class SearchResult {
-  final String title;
-  final String subtitle;
-  final int cents;
-  final String type; // expense | income
+export '../../data/models/search_result.dart';
 
-  const SearchResult(this.title, this.subtitle, this.cents, this.type);
-}
-
-/// 搜索页状态（in-memory，无后端，初始结果为空）。
+/// 搜索页状态。
 ///
 /// 持有查询关键字 [query] 与筛选 [filter]，并提供按关键字 + 类型过滤的结果列表。
+/// 结果来自本地 general_entries 实时聚合（见 [SearchDao]）。
 class SearchState extends ChangeNotifier {
   String _query = '';
   String _filter = 'all'; // all | expense | income | time
@@ -21,7 +16,7 @@ class SearchState extends ChangeNotifier {
   String get query => _query;
   String get filter => _filter;
 
-  final List<SearchResult> _results = const <SearchResult>[];
+  List<SearchResult> _results = <SearchResult>[];
 
   List<SearchResult> get all => _results;
 
@@ -52,6 +47,11 @@ class SearchState extends ChangeNotifier {
   }
 
   Future<void> load() async {
+    try {
+      _results = await SearchDao().searchAll(_query, _filter);
+    } catch (_) {
+      _results = <SearchResult>[];
+    }
     notifyListeners();
   }
 }

@@ -11,7 +11,7 @@ class AppDatabase {
   AppDatabase._internal();
   static final AppDatabase instance = AppDatabase._internal();
 
-  static const int _version = 1;
+  static const int _version = 2;
   Database? _db;
 
   Future<Database> get database async {
@@ -22,11 +22,25 @@ class AppDatabase {
       path,
       version: _version,
       onCreate: _onCreate,
+      onUpgrade: _onUpgrade,
     );
     return _db!;
   }
 
   Future<void> _onCreate(Database db, int version) async {
+    await _createTables(db);
+  }
+
+  /// 版本升级：旧库补建新表，保证已安装用户不丢数据。
+  Future<void> _onUpgrade(Database db, int oldV, int newV) async {
+    if (oldV < 2) {
+      await _createV2Tables(db);
+    }
+    // 后续版本在此扩展：if (oldV < 3) { ... }
+  }
+
+  /// 建全部表 + 索引（新装库用）。
+  Future<void> _createTables(Database db) async {
     await db.execute('''
       CREATE TABLE users (
         id TEXT PRIMARY KEY,
@@ -200,6 +214,43 @@ class AppDatabase {
     await db.execute('CREATE INDEX idx_trip_exp_ledger ON trip_expenses(ledger_id, phase, deleted_at);');
     await db.execute('CREATE INDEX idx_trip_split_exp ON trip_splits(expense_id);');
     await db.execute('CREATE INDEX idx_pending_status ON pending_ops(status, created_at);');
+
+    // 版本 2 新增表
+    await _createV2Tables(db);
+  }
+
+  /// 版本 2 新增：银行卡 / 家庭成员 / 周期记账规则（纯本地，无后端）。
+  Future<void> _createV2Tables(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS bank_cards (
+        id TEXT PRIMARY KEY,
+        bank TEXT NOT NULL,
+        type TEXT NOT NULL,
+        last4 TEXT NOT NULL,
+        created_at INTEGER
+      );
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS family_members (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        role TEXT NOT NULL DEFAULT 'member',
+        joined_date TEXT,
+        is_self INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER
+      );
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS recurring_rules (
+        id TEXT PRIMARY KEY,
+        category TEXT NOT NULL,
+        cents INTEGER NOT NULL,
+        period TEXT NOT NULL,
+        next_date TEXT NOT NULL,
+        green_amount INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER
+      );
+    ''');
   }
 
   /// 清空所有本地数据（退出登录或重装场景）。
@@ -209,6 +260,7 @@ class AppDatabase {
       'pending_ops', 'trip_splits', 'trip_expenses', 'trip_members',
       'event_amounts', 'taoyuan_events', 'work_entries', 'general_entries',
       'ledgers', 'users',
+      'bank_cards', 'family_members', 'recurring_rules',
     ];
     for (final t in tables) {
       await db.delete(t);
