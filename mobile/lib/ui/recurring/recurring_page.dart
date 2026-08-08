@@ -116,10 +116,10 @@ class _Body extends StatelessWidget {
               width: double.infinity,
               padding: const EdgeInsets.symmetric(vertical: 14),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: isDark ? AppColors.darkSurface : AppColors.lightSurfaceSubtle,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: AppColors.lightBorderDashed,
+                  color: isDark ? AppColors.darkBorder : AppColors.lightBorderDashed,
                   width: 1,
                 ),
               ),

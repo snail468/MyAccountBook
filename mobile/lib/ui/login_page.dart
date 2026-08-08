@@ -47,7 +47,8 @@ class _LoginPageState extends State<LoginPage> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
     final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
-    final red = isDark ? AppColors.darkCtaText : AppColors.lightSemanticRed;
+    // 错误文案用语义红（暗色下仍清晰，不套 isDark 分支）。
+    final red = AppColors.lightSemanticRed;
 
     return Scaffold(
       backgroundColor: AppTheme.scaffoldBackground(context),

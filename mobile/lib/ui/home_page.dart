@@ -374,6 +374,16 @@ class _OverspendCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    // 暗色下用 surface/border/ink 镜像；浅色保持现有 lightOverspend* 语义色。
+    final bg = isDark ? AppColors.darkSurface : AppColors.lightOverspendBg;
+    final border =
+        isDark ? AppColors.darkBorder : AppColors.lightOverspendBorder;
+    final titleColor =
+        isDark ? AppColors.darkInk100 : AppColors.lightOverspendTitle;
+    final detailColor =
+        isDark ? AppColors.darkInk400 : AppColors.lightOverspendDetail;
+
     final title =
         overspendCount > 0 ? '⚠️ 分类预算超支' : '✅ 预算正常';
     final detail = overspendCount > 0
@@ -381,9 +391,9 @@ class _OverspendCard extends StatelessWidget {
         : '本月账本均未超支';
     return Container(
       decoration: BoxDecoration(
-        color: AppColors.lightOverspendBg,
+        color: bg,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.lightOverspendBorder, width: 1),
+        border: Border.all(color: border, width: 1),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       child: InkWell(
@@ -398,13 +408,12 @@ class _OverspendCard extends StatelessWidget {
                 children: [
                   Text(title,
                       style: TextStyle(
-                          color: AppColors.lightOverspendTitle,
+                          color: titleColor,
                           fontWeight: FontWeight.w600,
                           fontSize: 15)),
                   const SizedBox(height: 2),
                   Text(detail,
-                      style: TextStyle(
-                          color: AppColors.lightOverspendDetail, fontSize: 13)),
+                      style: TextStyle(color: detailColor, fontSize: 13)),
                 ],
               ),
             ),
