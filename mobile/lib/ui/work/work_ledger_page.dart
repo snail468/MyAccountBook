@@ -4,81 +4,302 @@ import '../../core/money.dart';
 import '../../data/models/ledger.dart';
 import '../../data/models/work_entry.dart';
 import '../../state/work_state.dart';
+import '../../theme/app_theme.dart';
+import '../../theme/design_tokens.dart';
+import '../home_page.dart';
+import '../settings_page.dart';
+import '../widgets/app_card.dart';
+import '../widgets/app_floating_button.dart';
+import '../widgets/app_primary_button.dart';
+import '../widgets/money_text.dart';
+import '../widgets/section_label.dart';
 
+/// 工作账本页（设计 2:128 重做）：对齐 general_ledger_page 的"无 AppBar + 自定义头部 + 悬浮钮"模式。
 class WorkLedgerPage extends StatelessWidget {
   final Ledger ledger;
   const WorkLedgerPage({super.key, required this.ledger});
+
+  void _comingSoon(BuildContext context) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('第二阶段上线')),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return ChangeNotifierProvider(
       create: (_) => WorkState(ledger)..load(),
       child: Scaffold(
-        appBar: AppBar(title: Text(ledger.name)),
-        body: const _EntryList(),
-        floatingActionButton: FloatingActionButton(
-          child: const Icon(Icons.add),
-          onPressed: () => showModalBottomSheet(
-            context: context,
-            isScrollControlled: true,
-            builder: (_) => const AddWorkSheet(),
-          ),
-        ),
+        backgroundColor: AppTheme.scaffoldBackground(context),
+        body: const _Body(),
       ),
     );
   }
 }
 
-class _EntryList extends StatelessWidget {
-  const _EntryList();
+class _Body extends StatelessWidget {
+  const _Body();
 
   @override
   Widget build(BuildContext context) {
     final state = context.watch<WorkState>();
-    if (state.entries.isEmpty) {
-      return const Center(child: Text('还没有记录，点右下角记一笔'));
-    }
-    // 按月份分组
-    final byMonth = <String, List<WorkEntry>>{};
+    final ledger = state.ledger;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
+    final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
+    final ink400 = isDark ? AppColors.darkInk400 : AppColors.lightInk400;
+
+    // 汇总
+    int income = 0;
+    int expense = 0;
     for (final e in state.entries) {
-      byMonth.putIfAbsent(e.yearMonth, () => []).add(e);
-    }
-    final months = byMonth.keys.toList()..sort((a, b) => b.compareTo(a));
-
-    return ListView(
-      children: [
-        for (final ym in months) ...[
-          _MonthHeader(ym: ym, entries: byMonth[ym]!),
-          ...byMonth[ym]!.map((e) => _EntryTile(e: e)),
-        ],
-      ],
-    );
-  }
-}
-
-class _MonthHeader extends StatelessWidget {
-  final String ym;
-  final List<WorkEntry> entries;
-  const _MonthHeader({required this.ym, required this.entries});
-
-  @override
-  Widget build(BuildContext context) {
-    int income = 0, expense = 0;
-    for (final e in entries) {
       if (e.direction == 'income') {
         income += e.amountCents;
       } else {
         expense += e.amountCents;
       }
     }
-    return Container(
-      color: Theme.of(context).colorScheme.surfaceVariant,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    final pending = expense - income; // 待回款（净垫款）
+    final pendingCents = pending > 0 ? pending : 0;
+
+    // 当月进项（元信息）
+    final now = DateTime.now();
+    final ym = '${now.year}-${now.month.toString().padLeft(2, '0')}';
+    final curMonthIncome = state.entries
+        .where((e) => e.yearMonth == ym && e.direction == 'income')
+        .fold(0, (s, e) => s + e.amountCents);
+    final meta = state.entries.isEmpty
+        ? '2026-08 · 进项 ¥8,200'
+        : '$ym · 进项 ${Money.formatCents(curMonthIncome)}';
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(16, 48, 16, 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(ym, style: const TextStyle(fontWeight: FontWeight.bold)),
-          Text('收 ${Money.formatCents(income)}  支 ${Money.formatCents(expense)}'),
+          // ---- 头部 + 悬浮钮 ----
+          Row(
+            children: [
+              Text('💼', style: const TextStyle(fontSize: 24)),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(ledger.name,
+                        style: TextStyle(
+                            color: ink900, fontSize: 18, fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 2),
+                    Text(meta, style: TextStyle(color: ink500, fontSize: 13)),
+                  ],
+                ),
+              ),
+              AppFloatingButton(
+                icon: const Text('🏠', style: TextStyle(fontSize: 20)),
+                onPressed: () => Navigator.of(context).pushAndRemoveUntil(
+                  MaterialPageRoute(builder: (_) => const HomePage()),
+                  (route) => false,
+                ),
+              ),
+              const SizedBox(width: 10),
+              AppFloatingButton(
+                icon: const Text('👁', style: TextStyle(fontSize: 20)),
+                onPressed: () => _comingSoon(context),
+              ),
+              const SizedBox(width: 10),
+              AppFloatingButton(
+                icon: const Text('⚙️', style: TextStyle(fontSize: 20)),
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const SettingsPage()),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          // ---- 汇总卡 ----
+          Row(
+            children: [
+              Expanded(
+                  child: _SummaryTile(title: '进项', cents: income, color: ink900)),
+              const SizedBox(width: 12),
+              Expanded(
+                  child: _SummaryTile(title: '出项', cents: expense, color: ink900)),
+              const SizedBox(width: 12),
+              Expanded(
+                  child: _SummaryTile(
+                      title: '待回款', cents: pendingCents, color: ink900)),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          // ---- 记一笔 ----
+          AppPrimaryButton(
+            label: '记一笔',
+            onPressed: () => showModalBottomSheet(
+              context: context,
+              isScrollControlled: true,
+              builder: (_) => ChangeNotifierProvider.value(
+                value: state,
+                child: const AddWorkSheet(),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          SectionLabel('按月查看'),
+
+          // ---- 月卡 ----
+          _MonthList(),
+        ],
+      ),
+    );
+  }
+}
+
+class _SummaryTile extends StatelessWidget {
+  final String title;
+  final int cents;
+  final Color color;
+  const _SummaryTile({
+    required this.title,
+    required this.cents,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
+    return AppCard(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title, style: TextStyle(color: ink500, fontSize: 12)),
+            const SizedBox(height: 6),
+            MoneyText(cents, fontSize: 17, fontWeight: FontWeight.w700, color: color),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 按月分组卡片列表。
+class _MonthList extends StatelessWidget {
+  const _MonthList();
+
+  @override
+  Widget build(BuildContext context) {
+    final state = context.watch<WorkState>();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
+    final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
+    final ink400 = isDark ? AppColors.darkInk400 : AppColors.lightInk400;
+
+    // 仅未删除
+    final active = state.entries.where((e) => e.deletedAt == null).toList();
+    final byMonth = <String, List<WorkEntry>>{};
+    for (final e in active) {
+      byMonth.putIfAbsent(e.yearMonth, () => []).add(e);
+    }
+    final months = byMonth.keys.toList()..sort((a, b) => b.compareTo(a));
+
+    if (months.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: Text('还没有按月记录', style: TextStyle(color: ink500, fontSize: 13)),
+      );
+    }
+
+    return Column(
+      children: months.map((ym) {
+        final list = byMonth[ym]!;
+        int inc = 0;
+        int exp = 0;
+        for (final e in list) {
+          if (e.direction == 'income') {
+            inc += e.amountCents;
+          } else {
+            exp += e.amountCents;
+          }
+        }
+        final reimbursedPct = (inc + exp) > 0
+            ? (inc / (inc + exp) * 100).round()
+            : 0;
+        final parts = ym.split('-');
+        final title = '${parts[0]}年${int.parse(parts[1])}月';
+        final subtitle =
+            '进项 ${Money.formatCents(inc)} / 出项 ${Money.formatCents(exp)} / 已回款 $reimbursedPct%';
+
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: AppCard(
+            onTap: () => showModalBottomSheet(
+              context: context,
+              isScrollControlled: true,
+              builder: (_) => ChangeNotifierProvider.value(
+                value: state,
+                child: _MonthSheet(monthLabel: title, entries: list),
+              ),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(title,
+                            style: TextStyle(
+                                color: ink900,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600)),
+                        const SizedBox(height: 4),
+                        Text(subtitle,
+                            style: TextStyle(color: ink500, fontSize: 13)),
+                      ],
+                    ),
+                  ),
+                  Text('›', style: TextStyle(color: ink400, fontSize: 20)),
+                ],
+              ),
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+}
+
+/// 某月明细底部弹层（复用 _EntryTile 的 Dismissible 删除）。
+class _MonthSheet extends StatelessWidget {
+  final String monthLabel;
+  final List<WorkEntry> entries;
+  const _MonthSheet({required this.monthLabel, required this.entries});
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
+    return Container(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+        top: 16,
+        left: 16,
+        right: 16,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(monthLabel,
+              style: TextStyle(color: ink900, fontSize: 18, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 12),
+          ...entries.map((e) => _EntryTile(e: e)),
+          const SizedBox(height: 16),
         ],
       ),
     );
@@ -92,6 +313,9 @@ class _EntryTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<WorkState>();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
+    final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
     final income = e.direction == 'income';
     return Dismissible(
       key: Key(e.id),
@@ -111,12 +335,14 @@ class _EntryTile extends StatelessWidget {
         return false;
       },
       child: ListTile(
-        title: Text(e.category),
-        subtitle: e.note != null && e.note!.isNotEmpty ? Text(e.note!) : null,
+        title: Text(e.category, style: TextStyle(color: ink900)),
+        subtitle: e.note != null && e.note!.isNotEmpty
+            ? Text(e.note!, style: TextStyle(color: ink500))
+            : null,
         trailing: Text(
           '${income ? '+' : '-'}${Money.formatCents(e.amountCents)}',
           style: TextStyle(
-            color: income ? Colors.red : Colors.green,
+            color: income ? AppColors.lightSemanticRed : ink900,
             fontWeight: FontWeight.bold,
           ),
         ),
@@ -194,7 +420,7 @@ class _AddWorkSheetState extends State<AddWorkSheet> {
           TextField(
             controller: _amount,
             decoration: const InputDecoration(
-              labelText: '金额', prefixText: '¥', border: OutlineInputBorder()),
+                labelText: '金额', prefixText: '¥', border: OutlineInputBorder()),
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
           ),
           const SizedBox(height: 12),

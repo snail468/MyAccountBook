@@ -4,37 +4,47 @@ import '../../core/exceptions.dart';
 import '../../core/money.dart';
 import '../../data/models/ledger.dart';
 import '../../data/models/trip.dart';
+import '../../state/auth_state.dart';
 import '../../state/travel_state.dart';
+import '../../theme/app_theme.dart';
+import '../../theme/design_tokens.dart';
+import '../home_page.dart';
+import '../settings_page.dart';
+import '../widgets/app_card.dart';
+import '../widgets/app_floating_button.dart';
+import '../widgets/app_primary_button.dart';
+import '../widgets/money_text.dart';
+import '../widgets/section_label.dart';
 
+/// 旅游账本页（设计 2:130 重做）：头部 + 悬浮钮 + 成员管理 + 汇总/每日曲线/结算单。
 class TravelPage extends StatelessWidget {
   final Ledger ledger;
   const TravelPage({super.key, required this.ledger});
+
+  void _comingSoon(BuildContext context) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('第二阶段上线')),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return ChangeNotifierProvider(
       create: (_) => TravelState(ledger)..load(),
       child: Scaffold(
-        appBar: AppBar(
-          title: Text(ledger.name),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.people),
-              tooltip: '成员管理',
-              onPressed: () => showDialog(
-                context: context,
-                builder: (_) => const MembersDialog(),
+        backgroundColor: AppTheme.scaffoldBackground(context),
+        body: const _Body(),
+        floatingActionButton: Builder(
+          builder: (ctx) => FloatingActionButton(
+            child: const Icon(Icons.add),
+            onPressed: () => showModalBottomSheet(
+              context: ctx,
+              isScrollControlled: true,
+              builder: (_) => ChangeNotifierProvider.value(
+                value: ctx.read<TravelState>(),
+                child: const AddExpenseSheet(),
               ),
             ),
-          ],
-        ),
-        body: const _Body(),
-        floatingActionButton: FloatingActionButton(
-          child: const Icon(Icons.add),
-          onPressed: () => showModalBottomSheet(
-            context: context,
-            isScrollControlled: true,
-            builder: (_) => const AddExpenseSheet(),
           ),
         ),
       ),
@@ -48,80 +58,379 @@ class _Body extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<TravelState>();
-    return ListView(
-      children: [
-        const _SettlementCard(),
-        if (state.expenses.isEmpty)
-          const Padding(
-            padding: EdgeInsets.all(32),
-            child: Center(child: Text('还没有花费，点右下角记一笔')),
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
+    final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
+    final ink400 = isDark ? AppColors.darkInk400 : AppColors.lightInk400;
+    final red = AppColors.lightSemanticRed;
+
+    // 汇总
+    final total = state.expenses
+        .where((e) => e.deletedAt == null)
+        .fold(0, (s, e) => s + e.amountBaseCents);
+    final headCount = state.members.length;
+    final perHead = headCount > 0 ? total ~/ headCount : 0;
+
+    // 我欠：匹配当前用户名对应成员，取其净欠（正数部分）
+    int myOwe = 0;
+    final username = context.read<AuthState?>()?.username;
+    if (username != null) {
+      final me = state.members
+          .where((m) => m.displayName == username)
+          .firstOrNull;
+      if (me != null) {
+        final bal = state.balances()[me.id] ?? 0;
+        myOwe = bal < 0 ? -bal : 0;
+      }
+    }
+
+    // 元信息
+    final startStr = state.ledger.startDate != null
+        ? _md(state.ledger.startDate!)
+        : '08/01';
+    final endStr = state.ledger.endDate != null
+        ? _md(state.ledger.endDate!)
+        : '08/07';
+    final people = headCount > 0 ? headCount : 3;
+    final meta = '$people 人 · $startStr-$endStr';
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(16, 48, 16, 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ---- 头部 + 悬浮钮 + 成员管理 ----
+          Row(
+            children: [
+              Text('✈️', style: const TextStyle(fontSize: 24)),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(state.ledger.name,
+                        style: TextStyle(
+                            color: ink900, fontSize: 18, fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 2),
+                    Text(meta, style: TextStyle(color: ink500, fontSize: 13)),
+                  ],
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.people_outline),
+                tooltip: '成员管理',
+                onPressed: () => showDialog(
+                  context: context,
+                  builder: (_) => ChangeNotifierProvider.value(
+                    value: state,
+                    child: const MembersDialog(),
+                  ),
+                ),
+              ),
+              AppFloatingButton(
+                icon: const Text('🏠', style: TextStyle(fontSize: 20)),
+                onPressed: () => Navigator.of(context).pushAndRemoveUntil(
+                  MaterialPageRoute(builder: (_) => const HomePage()),
+                  (route) => false,
+                ),
+              ),
+              const SizedBox(width: 10),
+              AppFloatingButton(
+                icon: const Text('👁', style: TextStyle(fontSize: 20)),
+                onPressed: () => _comingSoon(context),
+              ),
+              const SizedBox(width: 10),
+              AppFloatingButton(
+                icon: const Text('⚙️', style: TextStyle(fontSize: 20)),
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const SettingsPage()),
+                ),
+              ),
+            ],
           ),
-        ...state.expenses.map((e) => _ExpenseTile(e: e)),
-      ],
+          const SizedBox(height: 16),
+
+          // ---- 汇总卡 ----
+          Row(
+            children: [
+              Expanded(
+                child: _SummaryTile(title: '总花费', cents: total, color: ink900),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _SummaryTile(title: '人均', cents: perHead, color: ink900),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _SummaryTile(
+                    title: '我欠', cents: myOwe, color: red, titleColor: ink900),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          // ---- 每日花费曲线 ----
+          _DailyCard(),
+          const SizedBox(height: 16),
+
+          // ---- 结算单 ----
+          AppPrimaryButton(
+            label: '查看结算单',
+            onPressed: () => _showSettlement(context, state),
+          ),
+          const SizedBox(height: 16),
+          SectionLabel('旅行记录'),
+
+          // ---- 记录列表 ----
+          if (state.expenses.isEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text('还没有花费，点右下角记一笔',
+                  style: TextStyle(color: ink500, fontSize: 13)),
+            )
+          else
+            ...state.expenses.map((e) => _ExpenseCard(e: e)),
+        ],
+      ),
     );
   }
-}
 
-class _ExpenseTile extends StatelessWidget {
-  final TripExpense e;
-  const _ExpenseTile({required this.e});
-
-  @override
-  Widget build(BuildContext context) {
-    final state = context.watch<TravelState>();
-    final payer = state.members.where((m) => m.id == e.payerId).firstOrNull;
-    return Dismissible(
-      key: Key(e.id),
-      direction: DismissDirection.endToStart,
-      background: const ColoredBox(
-        color: Colors.red,
-        child: Align(
-          alignment: Alignment.centerRight,
-          child: Padding(
-            padding: EdgeInsets.only(right: 16),
-            child: Icon(Icons.delete, color: Colors.white),
-          ),
-        ),
-      ),
-      confirmDismiss: (_) async {
-        await state.deleteExpense(e);
-        return false;
-      },
-      child: ListTile(
-        title: Text(e.title),
-        subtitle: Text('${e.category} · ${payer?.displayName ?? '?'} · ${e.phase == 'pre' ? '行前' : '途中'}'),
-        trailing: Text('${Money.formatCents(e.amountBaseCents)} ${e.currency}'),
-      ),
-    );
+  String _md(int ms) {
+    final d = DateTime.fromMillisecondsSinceEpoch(ms);
+    return '${d.month.toString().padLeft(2, '0')}/${d.day.toString().padLeft(2, '0')}';
   }
-}
 
-class _SettlementCard extends StatelessWidget {
-  const _SettlementCard();
-
-  @override
-  Widget build(BuildContext context) {
-    final state = context.watch<TravelState>();
+  void _showSettlement(BuildContext context, TravelState state) {
     final transfers = state.settlement();
-    final nameOf = (id) => state.members.where((m) => m.id == id).firstOrNull?.displayName ?? id;
-    return Card(
-      margin: const EdgeInsets.all(12),
+    final nameOf = (id) =>
+        state.members.where((m) => m.id == id).firstOrNull?.displayName ?? id;
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('AA 结算单'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: transfers.isEmpty
+              ? const Text('暂无需要结算的转账 🎉')
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: transfers
+                      .map((t) => Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 2),
+                            child: Text(
+                                '${nameOf(t.fromId)} → ${nameOf(t.toId)}  ${Money.formatCents(t.amountCents)}'),
+                          ))
+                      .toList(),
+                ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(context).pop(), child: const Text('关闭')),
+        ],
+      ),
+    );
+  }
+}
+
+class _SummaryTile extends StatelessWidget {
+  final String title;
+  final int cents;
+  final Color color;
+  final Color? titleColor;
+  const _SummaryTile({
+    required this.title,
+    required this.cents,
+    required this.color,
+    this.titleColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
+    final tColor = titleColor ?? ink500;
+    return AppCard(
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('AA 结算', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-            const SizedBox(height: 8),
-            if (transfers.isEmpty)
-              const Text('暂无需要结算的转账 🎉')
-            else
-              ...transfers.map((t) => Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 2),
-                    child: Text('${nameOf(t.fromId)} → ${nameOf(t.toId)}  '
-                        '${Money.formatCents(t.amountCents)}'),
-                  )),
+            Text(title, style: TextStyle(color: tColor, fontSize: 12)),
+            const SizedBox(height: 6),
+            MoneyText(cents, fontSize: 17, fontWeight: FontWeight.w700, color: color),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 每日花费曲线卡（简单 CustomPaint 折线图）。
+class _DailyCard extends StatelessWidget {
+  const _DailyCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final state = context.watch<TravelState>();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
+    final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
+
+    // 按日汇总（YYYY-MM-DD -> 分）
+    final byDay = <String, int>{};
+    for (final e in state.expenses) {
+      if (e.deletedAt != null) continue;
+      final d = DateTime.fromMillisecondsSinceEpoch(e.occurredAt);
+      final key =
+          '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+      byDay.putIfAbsent(key, () => 0);
+      byDay[key] = byDay[key]! + e.amountBaseCents;
+    }
+    final days = byDay.keys.toList()..sort();
+    final values = days.map((d) => byDay[d]!).toList();
+
+    return AppCard(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('每日花费', style: TextStyle(color: ink500, fontSize: 13)),
+            const SizedBox(height: 12),
+            if (values.isEmpty)
+              Text('暂无花费数据',
+                  style: TextStyle(color: ink500, fontSize: 13))
+            else
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final w = constraints.maxWidth;
+                  return SizedBox(
+                    height: 120,
+                    width: w,
+                    child: CustomPaint(
+                      size: Size(w, 120),
+                      painter: _SpendingPainter(
+                        values: values,
+                        color: ink900,
+                      ),
+                    ),
+                  );
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SpendingPainter extends CustomPainter {
+  final List<int> values;
+  final Color color;
+  const _SpendingPainter({required this.values, required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (values.isEmpty) return;
+    final maxV = values.reduce((a, b) => a > b ? a : b).toDouble();
+    final minV = 0.0;
+    final span = (maxV - minV) == 0 ? 1.0 : (maxV - minV);
+    final pad = 12.0;
+    final w = size.width - pad * 2;
+    final h = size.height - pad * 2;
+    final n = values.length;
+
+    final points = <Offset>[];
+    for (var i = 0; i < n; i++) {
+      final x = pad + (n == 1 ? w / 2 : w * i / (n - 1));
+      final y = pad + h * (1 - (values[i].toDouble() - minV) / span);
+      points.add(Offset(x, y));
+    }
+
+    final linePaint = Paint()
+      ..color = color
+      ..strokeWidth = 2
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+    if (points.length > 1) {
+      final path = Path()..moveTo(points.first.dx, points.first.dy);
+      for (var i = 1; i < points.length; i++) {
+        path.lineTo(points[i].dx, points[i].dy);
+      }
+      canvas.drawPath(path, linePaint);
+    }
+
+    final dotPaint = Paint()..color = color;
+    for (final p in points) {
+      canvas.drawCircle(p, 3.5, dotPaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _SpendingPainter old) =>
+      old.values != values || old.color != color;
+}
+
+class _ExpenseCard extends StatelessWidget {
+  final TripExpense e;
+  const _ExpenseCard({required this.e});
+
+  @override
+  Widget build(BuildContext context) {
+    final state = context.watch<TravelState>();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
+    final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
+    final payer = state.members.where((m) => m.id == e.payerId).firstOrNull;
+
+    final d = DateTime.fromMillisecondsSinceEpoch(e.occurredAt);
+    final dateStr =
+        '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: AppCard(
+        child: Dismissible(
+          key: Key(e.id),
+          direction: DismissDirection.endToStart,
+          background: const ColoredBox(
+            color: Colors.red,
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: Padding(
+                padding: EdgeInsets.only(right: 16),
+                child: Icon(Icons.delete, color: Colors.white),
+              ),
+            ),
+          ),
+          confirmDismiss: (_) async {
+            await state.deleteExpense(e);
+            return false;
+          },
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(dateStr, style: TextStyle(color: ink500, fontSize: 12)),
+                      const SizedBox(height: 4),
+                      Text(e.title,
+                          style: TextStyle(color: ink900, fontSize: 15)),
+                      const SizedBox(height: 2),
+                      Text(
+                          '${e.category} · ${payer?.displayName ?? '?'} · ${e.phase == 'pre' ? '行前' : '途中'}',
+                          style: TextStyle(color: ink500, fontSize: 12)),
+                    ],
+                  ),
+                ),
+                MoneyText(e.amountBaseCents, color: ink900, fontSize: 16),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -143,7 +452,6 @@ class _MembersDialogState extends State<MembersDialog> {
     if (v.isEmpty) return;
     try {
       final state = context.read<TravelState>();
-      // 先按用户名邀请，失败则作为纯名字占位
       await state.addMember(username: v);
     } on ApiException {
       try {
@@ -209,18 +517,20 @@ class _MembersDialogState extends State<MembersDialog> {
                   child: TextField(
                     controller: _name,
                     decoration: const InputDecoration(
-                      labelText: '用户名或名字', border: OutlineInputBorder()),
+                        labelText: '用户名或名字', border: OutlineInputBorder()),
                   ),
                 ),
                 IconButton(icon: const Icon(Icons.person_add), onPressed: _add),
               ],
             ),
-            const Text('填用户名邀请已注册用户；纯名字则作为占位成员', style: TextStyle(fontSize: 12)),
+            const Text('填用户名邀请已注册用户；纯名字则作为占位成员',
+                style: TextStyle(fontSize: 12)),
           ],
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('关闭')),
+        TextButton(
+            onPressed: () => Navigator.of(context).pop(), child: const Text('关闭')),
       ],
     );
   }
@@ -355,7 +665,7 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
           TextField(
             controller: _rate,
             decoration: const InputDecoration(
-              labelText: '汇率（1 外币 = ? 本币）', border: OutlineInputBorder()),
+                labelText: '汇率（1 外币 = ? 本币）', border: OutlineInputBorder()),
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
           ),
           const SizedBox(height: 8),

@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../state/auth_state.dart';
+import '../theme/app_theme.dart';
+import '../theme/design_tokens.dart';
+import 'widgets/app_text_field.dart';
+import 'widgets/app_primary_button.dart';
 
+/// 注册页（设计 2:138）：完全对齐 [LoginPage] 结构。
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
   @override
@@ -18,10 +23,13 @@ class _RegisterPageState extends State<RegisterPage> {
     setState(() => _busy = true);
     _error = null;
     try {
-      await context.read<AuthState>().register(_user.text.trim(), _pass.text);
-      if (mounted) Navigator.of(context).pop(); // 回到登录页（已自动登录）
-    } catch (e) {
-      setState(() => _error = '注册失败：${e is Exception ? e.toString() : '网络错误'}');
+      await context.read<AuthState>().register(
+            _user.text.trim(),
+            _pass.text,
+          );
+      // 成功后让 RootSwitcher 自动切到首页（与登录行为一致），不 pop
+    } catch (_) {
+      setState(() => _error = '注册失败，请检查网络或用户名');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -36,36 +44,48 @@ class _RegisterPageState extends State<RegisterPage> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
+    final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
+    final red = isDark ? AppColors.darkCtaText : AppColors.lightSemanticRed;
+
     return Scaffold(
-      appBar: AppBar(title: const Text('注册')),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            TextField(
-              controller: _user,
-              decoration: const InputDecoration(labelText: '用户名', border: OutlineInputBorder()),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _pass,
-              decoration: const InputDecoration(labelText: '密码', border: OutlineInputBorder()),
-              obscureText: true,
-            ),
-            const SizedBox(height: 16),
-            if (_error != null) Text(_error!, style: const TextStyle(color: Colors.red)),
-            const SizedBox(height: 8),
-            FilledButton(
-              onPressed: _busy ? null : _submit,
-              child: _busy
-                  ? const SizedBox(
-                      width: 18, height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                    )
-                  : const Text('注册并登录'),
-            ),
-          ],
+      backgroundColor: AppTheme.scaffoldBackground(context),
+      body: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('创建账号',
+                  style: TextStyle(
+                      color: ink900, fontSize: 28, fontWeight: FontWeight.w700)),
+              const SizedBox(height: 6),
+              Text('记录每一笔，理清生活的账',
+                  style: TextStyle(color: ink500, fontSize: 13)),
+              const SizedBox(height: 24),
+              AppTextField(hint: '用户名', controller: _user),
+              const SizedBox(height: 12),
+              AppTextField(hint: '密码', obscure: true, controller: _pass),
+              const SizedBox(height: 16),
+              if (_error != null) ...[
+                Text(_error!, style: TextStyle(color: red, fontSize: 13)),
+                const SizedBox(height: 8),
+              ],
+              AppPrimaryButton(
+                label: _busy ? '注册中…' : '注册',
+                onPressed: _busy ? null : _submit,
+              ),
+              const SizedBox(height: 12),
+              Center(
+                child: TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: Text('已有账号？ 登录',
+                      style: TextStyle(color: ink500, fontSize: 13)),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

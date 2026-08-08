@@ -103,4 +103,42 @@ class Ledger {
     }
     return null;
   }
+
+  /// 不可变更新副本（账本管理页软删除/恢复时用）。
+  Ledger copyWith({
+    String? id,
+    String? serverId,
+    String? kind,
+    String? name,
+    String? icon,
+    String? color,
+    int? order,
+    bool? archived,
+    int? deletedAt,
+    int? budgetCents,
+    String? customCategories,
+    String? baseCurrency,
+    int? startDate,
+    int? endDate,
+    String? tripBudget,
+    int? synced,
+  }) =>
+      Ledger(
+        id: id ?? this.id,
+        serverId: serverId ?? this.serverId,
+        kind: kind ?? this.kind,
+        name: name ?? this.name,
+        icon: icon ?? this.icon,
+        color: color ?? this.color,
+        order: order ?? this.order,
+        archived: archived ?? this.archived,
+        deletedAt: deletedAt ?? this.deletedAt,
+        budgetCents: budgetCents ?? this.budgetCents,
+        customCategories: customCategories ?? this.customCategories,
+        baseCurrency: baseCurrency ?? this.baseCurrency,
+        startDate: startDate ?? this.startDate,
+        endDate: endDate ?? this.endDate,
+        tripBudget: tripBudget ?? this.tripBudget,
+        synced: synced ?? this.synced,
+      );
 }

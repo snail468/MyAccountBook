@@ -1,8 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../state/auth_state.dart';
+import '../theme/app_theme.dart';
+import '../theme/design_tokens.dart';
 import 'register_page.dart';
+import 'widgets/app_text_field.dart';
+import 'widgets/app_primary_button.dart';
 
+/// 登录页（设计 2:76 重做）。
+///
+/// 背景 pageBg，标题「登录」ink900。保留现有登录流程：catch 到错误显示「用户名或密码错误」。
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
   @override
@@ -21,8 +28,8 @@ class _LoginPageState extends State<LoginPage> {
     try {
       await context.read<AuthState>().login(_user.text.trim(), _pass.text);
       // 登录成功后 RootSwitcher 会自动切到首页，首页负责首次同步
-    } catch (e) {
-      setState(() => _error = '登录失败：${e is Exception ? e.toString() : '网络错误'}');
+    } catch (_) {
+      setState(() => _error = '用户名或密码错误');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -37,45 +44,48 @@ class _LoginPageState extends State<LoginPage> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
+    final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
+    final red = isDark ? AppColors.darkCtaText : AppColors.lightSemanticRed;
+
     return Scaffold(
-      appBar: AppBar(title: const Text('登录')),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            TextField(
-              controller: _user,
-              decoration: const InputDecoration(labelText: '用户名', border: OutlineInputBorder()),
-              autofillHints: const [AutofillHints.username],
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _pass,
-              decoration: const InputDecoration(labelText: '密码', border: OutlineInputBorder()),
-              obscureText: true,
-              autofillHints: const [AutofillHints.password],
-            ),
-            const SizedBox(height: 16),
-            if (_error != null)
-              Text(_error!, style: const TextStyle(color: Colors.red)),
-            const SizedBox(height: 8),
-            FilledButton(
-              onPressed: _busy ? null : _submit,
-              child: _busy
-                  ? const SizedBox(
-                      width: 18, height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                    )
-                  : const Text('登录'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const RegisterPage()),
+      backgroundColor: AppTheme.scaffoldBackground(context),
+      body: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('登录',
+                  style: TextStyle(
+                      color: ink900, fontSize: 28, fontWeight: FontWeight.w700)),
+              const SizedBox(height: 24),
+              AppTextField(hint: '用户名', controller: _user),
+              const SizedBox(height: 12),
+              AppTextField(hint: '密码', obscure: true, controller: _pass),
+              const SizedBox(height: 16),
+              if (_error != null) ...[
+                Text(_error!,
+                    style: TextStyle(color: red, fontSize: 13)),
+                const SizedBox(height: 8),
+              ],
+              AppPrimaryButton(
+                label: _busy ? '登录中…' : '登录',
+                onPressed: _busy ? null : _submit,
               ),
-              child: const Text('没有账号？去注册'),
-            ),
-          ],
+              const SizedBox(height: 12),
+              Center(
+                child: TextButton(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const RegisterPage()),
+                  ),
+                  child: Text('还没有账号？ 注册',
+                      style: TextStyle(color: ink500, fontSize: 13)),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

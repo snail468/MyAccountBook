@@ -45,6 +45,22 @@ class LedgerDao {
     return rows.map(Ledger.fromDb).toList();
   }
 
+  /// 全部账本（含已软删除），用于账本管理页的回收站分区。
+  Future<List<Ledger>> listAllIncludingDeleted() async {
+    final db = await _db.database;
+    final rows = await db.query(
+      'ledgers',
+      orderBy: 'sort_order ASC',
+    );
+    return rows.map(Ledger.fromDb).toList();
+  }
+
+  /// 按 id 物理删除（回收站「彻底删除」用）。
+  Future<void> delete(String id) async {
+    final db = await _db.database;
+    await db.delete('ledgers', where: 'id = ?', whereArgs: [id]);
+  }
+
   Future<void> softDelete(String id) async {
     final db = await _db.database;
     await db.update(

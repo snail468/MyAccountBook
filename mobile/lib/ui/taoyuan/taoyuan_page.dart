@@ -4,77 +4,280 @@ import '../../core/money.dart';
 import '../../data/models/ledger.dart';
 import '../../data/models/taoyuan_event.dart';
 import '../../state/taoyuan_state.dart';
+import '../../theme/app_theme.dart';
+import '../../theme/design_tokens.dart';
+import '../home_page.dart';
+import '../settings_page.dart';
+import '../widgets/app_card.dart';
+import '../widgets/app_floating_button.dart';
+import '../widgets/app_primary_button.dart';
+import '../widgets/section_label.dart';
 
+/// 桃源账本页（设计 2:129 重做）：头部 + 悬浮钮 + 状态筛选 + 活动卡。
 class TaoyuanPage extends StatelessWidget {
   final Ledger ledger;
   const TaoyuanPage({super.key, required this.ledger});
+
+  void _comingSoon(BuildContext context) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('第二阶段上线')),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return ChangeNotifierProvider(
       create: (_) => TaoyuanState(ledger)..load(),
       child: Scaffold(
-        appBar: AppBar(title: Text(ledger.name)),
-        body: const _EventList(),
-        floatingActionButton: FloatingActionButton(
-          child: const Icon(Icons.add),
-          onPressed: () => showModalBottomSheet(
-            context: context,
-            isScrollControlled: true,
-            builder: (_) => const AddEventSheet(),
-          ),
-        ),
+        backgroundColor: AppTheme.scaffoldBackground(context),
+        body: const _Body(),
       ),
     );
   }
 }
 
-class _EventList extends StatelessWidget {
-  const _EventList();
+/// 状态分段选项（已发布/预测/公示/到账），映射到 [TaoyuanEvent.status]。
+const List<({String label, String value})> _kStatusOptions = [
+  (label: '已发布', value: 'published'),
+  (label: '预测', value: 'predicted'),
+  (label: '公示', value: 'announced'),
+  (label: '到账', value: 'paid'),
+];
+
+/// 状态 pill 配色（品牌色，跨主题固定）。
+({Color bg, Color fg, String label}) _statusStyle(String status) {
+  switch (status) {
+    case 'published':
+      return (bg: Color(0xFF0F172A), fg: Colors.white, label: '已发布');
+    case 'predicted':
+      return (bg: Color(0xFFF1F5F9), fg: Color(0xFF64748B), label: '预测');
+    case 'announced':
+      return (bg: Color(0xFFFEF3C7), fg: Color(0xFF92400E), label: '公示');
+    case 'paid':
+      return (bg: Color(0xFFDCFCE7), fg: Color(0xFF166534), label: '到账');
+    default:
+      return (bg: Color(0xFFF1F5F9), fg: Color(0xFF64748B), label: status);
+  }
+}
+
+class _Body extends StatefulWidget {
+  const _Body();
+
+  @override
+  State<_Body> createState() => _BodyState();
+}
+
+class _BodyState extends State<_Body> {
+  String _status = 'published'; // 默认选中"已发布"
 
   @override
   Widget build(BuildContext context) {
     final state = context.watch<TaoyuanState>();
-    if (state.events.isEmpty) {
-      return const Center(child: Text('还没有活动，点右下角发布一个'));
-    }
-    return ListView.separated(
-      itemCount: state.events.length,
-      separatorBuilder: (_, __) => const Divider(height: 1),
-      itemBuilder: (_, i) {
-        final e = state.events[i];
-        return Dismissible(
-          key: Key(e.id),
-          direction: DismissDirection.endToStart,
-          background: const ColoredBox(
-            color: Colors.red,
-            child: Align(
-              alignment: Alignment.centerRight,
-              child: Padding(
-                padding: EdgeInsets.only(right: 16),
-                child: Icon(Icons.delete, color: Colors.white),
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
+    final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
+    final ink400 = isDark ? AppColors.darkInk400 : AppColors.lightInk400;
+
+    final filtered =
+        state.events.where((e) => e.status == _status).toList();
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(16, 48, 16, 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ---- 头部 + 悬浮钮 ----
+          Row(
+            children: [
+              Text('🌸', style: const TextStyle(fontSize: 24)),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(state.ledger.name,
+                        style: TextStyle(
+                            color: ink900, fontSize: 18, fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 2),
+                    Text('活动发布 → 预测 → 公示 → 发钱',
+                        style: TextStyle(color: ink500, fontSize: 13)),
+                  ],
+                ),
+              ),
+              AppFloatingButton(
+                icon: const Text('🏠', style: TextStyle(fontSize: 20)),
+                onPressed: () => Navigator.of(context).pushAndRemoveUntil(
+                  MaterialPageRoute(builder: (_) => const HomePage()),
+                  (route) => false,
+                ),
+              ),
+              const SizedBox(width: 10),
+              AppFloatingButton(
+                icon: const Text('👁', style: TextStyle(fontSize: 20)),
+                onPressed: () => _comingSoon(context),
+              ),
+              const SizedBox(width: 10),
+              AppFloatingButton(
+                icon: const Text('⚙️', style: TextStyle(fontSize: 20)),
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const SettingsPage()),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          // ---- 状态筛选分段 ----
+          _StatusSegmented(
+            value: _status,
+            onChanged: (v) => setState(() => _status = v),
+          ),
+          const SizedBox(height: 12),
+
+          // ---- 新建活动 ----
+          AppPrimaryButton(
+            label: '新建活动',
+            onPressed: () => showModalBottomSheet(
+              context: context,
+              isScrollControlled: true,
+              builder: (_) => ChangeNotifierProvider.value(
+                value: state,
+                child: const AddEventSheet(),
               ),
             ),
           ),
-          confirmDismiss: (_) async {
-            await state.deleteEvent(e);
-            return false;
-          },
-          child: ListTile(
-            title: Text(e.title),
-            subtitle: Text('状态：${e.status}'),
-            trailing: e.paidCents != null
-                ? Text('已到账 ${Money.formatCents(e.paidCents!)}',
-                    style: const TextStyle(color: Colors.red))
-                : null,
-            onTap: () => showModalBottomSheet(
-              context: context,
-              isScrollControlled: true,
-              builder: (_) => EventDetailSheet(event: e),
+          const SizedBox(height: 8),
+          SectionLabel('活动'),
+
+          // ---- 活动卡 ----
+          if (filtered.isEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text('该状态下还没有活动',
+                  style: TextStyle(color: ink500, fontSize: 13)),
+            )
+          else
+            ...filtered.map((e) => _EventCard(e: e)),
+        ],
+      ),
+    );
+  }
+}
+
+/// 状态筛选分段控件（选中 = ink900 填充 + 白字；未选 = 微妙底 #F1F5F9 + ink500 字）。
+class _StatusSegmented extends StatelessWidget {
+  final String value;
+  final ValueChanged<String> onChanged;
+  const _StatusSegmented({required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final selectedBg = isDark ? AppColors.darkCtaFill : AppColors.lightInk900;
+    final selectedText = isDark ? AppColors.darkCtaText : Colors.white;
+    final unselBg =
+        isDark ? AppColors.darkSurface : AppColors.lightSurfaceSubtle;
+    final unselText = isDark ? AppColors.darkInk100 : AppColors.lightInk500;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: unselBg,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+          width: 1,
+        ),
+      ),
+      child: Row(
+        children: _kStatusOptions.map((o) {
+          final sel = o.value == value;
+          return Expanded(
+            child: GestureDetector(
+              onTap: () => onChanged(o.value),
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                  color: sel ? selectedBg : Colors.transparent,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Center(
+                  child: Text(
+                    o.label,
+                    style: TextStyle(
+                      color: sel ? selectedText : unselText,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+              ),
             ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+}
+
+class _EventCard extends StatelessWidget {
+  final TaoyuanEvent e;
+  const _EventCard({required this.e});
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
+    final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
+    final state = context.watch<TaoyuanState>();
+
+    final pill = _statusStyle(e.status);
+    final rewardText = e.reward != null && e.reward!.isNotEmpty
+        ? '现金奖励 ${e.reward}'
+        : null;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: AppCard(
+        onTap: () => showModalBottomSheet(
+          context: context,
+          isScrollControlled: true,
+          builder: (_) => ChangeNotifierProvider.value(
+            value: state,
+            child: EventDetailSheet(event: e),
           ),
-        );
-      },
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(e.title,
+                        style: TextStyle(
+                            color: ink900, fontSize: 16, fontWeight: FontWeight.w600)),
+                  ),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: pill.bg,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(pill.label,
+                        style: TextStyle(color: pill.fg, fontSize: 12)),
+                  ),
+                ],
+              ),
+              if (rewardText != null) ...[
+                const SizedBox(height: 6),
+                Text(rewardText, style: TextStyle(color: ink500, fontSize: 13)),
+              ],
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -219,7 +422,8 @@ class _EventDetailSheetState extends State<EventDetailSheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(widget.event.title, style: Theme.of(context).textTheme.titleLarge),
+          Text(widget.event.title,
+              style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 8),
           const Text('金额记录', style: TextStyle(fontWeight: FontWeight.bold)),
           ..._amounts.map((a) => ListTile(

@@ -2,11 +2,26 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../core/constants.dart';
 import '../core/money.dart';
-import '../data/models/ledger.dart';
 import '../state/auth_state.dart';
 import '../state/ledger_list_state.dart';
+import '../theme/app_theme.dart';
+import '../theme/design_tokens.dart';
 import 'routes.dart';
+import 'settings_page.dart';
+import 'stats/stats_page.dart';
+import 'search/search_page.dart';
+import 'bank/bank_page.dart';
+import 'recurring/recurring_page.dart';
+import 'trash/trash_page.dart';
+import 'ledgers/manage_ledgers_page.dart';
+import 'users/users_page.dart';
+import 'widgets/ledger_feature_card.dart';
+import 'widgets/app_card.dart';
+import 'widgets/app_floating_button.dart';
 
+/// 首页（设计 2:3 重做）。
+///
+/// 无底部 tab；右上悬浮钮（眼睛占位 / 设置）。复用 [LedgerListState] 的 load+sync。
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
   @override
@@ -17,6 +32,7 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
+    // 保留现有首次加载 + 同步逻辑与错误提示
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final s = context.read<LedgerListState>();
       await s.load();
@@ -32,103 +48,316 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  static const _sections = [
-    (AppConfig.kindGeneral, '普通账本', Icons.wallet),
-    (AppConfig.kindWork, '工作账本', Icons.work),
-    (AppConfig.kindTaoyuan, '桃源', Icons.auto_awesome),
-    (AppConfig.kindTravel, '旅游', Icons.flight),
-  ];
+  /// 按 kind 跳转到对应账本页（复用已有账本对象，避免引用不存在页面）。
+  void _openKind(BuildContext context, String kind, String name) {
+    final ledgers = context.read<LedgerListState>().byKind(kind);
+    if (ledgers.isNotEmpty) {
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => pageForLedger(ledgers.first)),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('「$name」账本尚未创建')),
+      );
+    }
+  }
 
-  @override
-  Widget build(BuildContext context) {
-    final state = context.watch<LedgerListState>();
-    final auth = context.watch<AuthState>();
-    return Scaffold(
-      appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('心愿便利贴',
-                style: TextStyle(fontSize: 18)),
-            Text('${auth.username ?? ''} · v${AppConfig.appVersion}',
-                style: const TextStyle(fontSize: 12)),
-          ],
-        ),
-        actions: [
-          IconButton(
-            tooltip: '同步',
-            icon: state.syncing
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.sync),
-            onPressed: state.syncing
-                ? null
-                : () async {
-                    try {
-                      await state.sync();
-                    } catch (_) {
-                      if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('同步失败，请查看下方错误')),
-                        );
-                      }
-                    }
-                  },
-          ),
-          PopupMenuButton<String>(
-            onSelected: (v) async {
-              if (v == 'logout') {
-                await context.read<AuthState>().logout();
-              }
-            },
-            itemBuilder: (_) =>
-                const [PopupMenuItem(value: 'logout', child: Text('退出登录'))],
-          ),
-        ],
-      ),
-      body: state.all.isEmpty && state.error == null
-          ? const Center(child: Padding(
-              padding: EdgeInsets.all(32),
-              child: Text('还没有账本，去网页端创建吧'),
-            ))
-          : ListView(
-              children: [
-                if (state.error != null)
-                  Padding(
-                    padding: const EdgeInsets.all(8),
-                    child: Text(state.error!,
-                        style: const TextStyle(color: Colors.orange)),
-                  ),
-                ..._sections.expand((sec) {
-                  final list = state.byKind(sec.$1);
-                  if (list.isEmpty) return <Widget>[];
-                  return [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-                      child: Text(sec.$2,
-                          style: Theme.of(context).textTheme.titleMedium),
-                    ),
-                    ...list.map((l) => _ledgerTile(context, l, sec.$3)),
-                  ];
-                }),
-              ],
-            ),
+  /// 第二阶段才实现的页面占位。
+  void _comingSoon(BuildContext context, String name) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('「$name」将在第二阶段上线')),
     );
   }
 
-  Widget _ledgerTile(BuildContext context, Ledger l, IconData icon) {
-    return ListTile(
-      leading: CircleAvatar(child: Icon(icon)),
-      title: Text(l.name),
-      subtitle: l.budgetCents != null
-          ? Text('月预算 ${Money.formatCents(l.budgetCents!)}')
-          : null,
-      trailing: const Icon(Icons.chevron_right),
-      onTap: () => Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => pageForLedger(l)),
+  @override
+  Widget build(BuildContext context) {
+    final auth = context.watch<AuthState>();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
+    final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
+    final ink400 = isDark ? AppColors.darkInk400 : AppColors.lightInk400;
+
+    return Scaffold(
+      backgroundColor: AppTheme.scaffoldBackground(context),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(16, 48, 16, 24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ---- 头部 ----
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${auth.username ?? ''} · 心愿便利贴',
+                        style: TextStyle(color: ink500, fontSize: 13),
+                      ),
+                      const SizedBox(height: 8),
+                      GestureDetector(
+                        onTap: () async {
+                          await context.read<AuthState>().logout();
+                        },
+                        child: Text('退出',
+                            style: TextStyle(
+                                color: ink900,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600)),
+                      ),
+                    ],
+                  ),
+                ),
+                AppFloatingButton(
+                  icon: const Text('👁',
+                      style: TextStyle(fontSize: 20)),
+                  onPressed: () {
+                    // 占位：首页眼睛入口（第二阶段）
+                  },
+                ),
+                const SizedBox(width: 10),
+                AppFloatingButton(
+                  icon: const Text('✨',
+                      style: TextStyle(fontSize: 20)),
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const SettingsPage()),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            // ---- 超支提示卡（即便玻璃主题也不磨砂） ----
+            _OverspendCard(),
+            const SizedBox(height: 12),
+
+            // ---- 本月总收入卡 ----
+            AppCard(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('本月总收入',
+                        style: TextStyle(color: ink500, fontSize: 13)),
+                    const SizedBox(height: 6),
+                    Text(
+                      Money.formatCents(1234567),
+                      style: TextStyle(
+                        color: ink900, fontSize: 28, fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 10),
+                    Text('B 工作进项 +¥8,200.00',
+                        style: TextStyle(color: ink500, fontSize: 13)),
+                    Text('C 桃源现金 +¥3,145.67',
+                        style: TextStyle(color: ink500, fontSize: 13)),
+                    Text('D 通用出项 −¥1,000.00',
+                        style: TextStyle(color: ink500, fontSize: 13)),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // ---- 功能网格 ----
+            GridView.count(
+              crossAxisCount: 2,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              mainAxisSpacing: 12,
+              crossAxisSpacing: 12,
+              childAspectRatio: 1.35,
+              children: [
+                LedgerFeatureCard(
+                  icon: '💼',
+                  title: '工作账本',
+                  subtitle: '按月记录进项与出项',
+                  onTap: () => _openKind(context, AppConfig.kindWork, '工作账本'),
+                ),
+                LedgerFeatureCard(
+                  icon: '📤',
+                  title: '工作出项汇总',
+                  subtitle: '合计 ¥3,200.00',
+                  onTap: () => _comingSoon(context, '工作出项汇总'),
+                ),
+                LedgerFeatureCard(
+                  icon: '🌸',
+                  title: '桃源账本',
+                  subtitle: '3 个待处理活动',
+                  onTap: () =>
+                      _openKind(context, AppConfig.kindTaoyuan, '桃源账本'),
+                ),
+                LedgerFeatureCard(
+                  icon: '📒',
+                  title: '家庭账本',
+                  subtitle: '本月支出 ¥2,340 · 收入 ¥5,100',
+                  onTap: () =>
+                      _openKind(context, AppConfig.kindGeneral, '家庭账本'),
+                ),
+                LedgerFeatureCard(
+                  icon: '✈️',
+                  title: '东京之旅',
+                  subtitle: '3 人 · 已花 ¥12,800',
+                  onTap: () =>
+                      _openKind(context, AppConfig.kindTravel, '东京之旅'),
+                ),
+                LedgerFeatureCard(
+                  icon: '🔁',
+                  title: '周期记账',
+                  subtitle: '房租 · 订阅 · 工资，配一次自动记',
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const RecurringPage()),
+                  ),
+                ),
+                LedgerFeatureCard(
+                  icon: '💳',
+                  title: '银行卡备份',
+                  subtitle: '加密存储卡号 · 查看需验密码',
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const BankPage()),
+                  ),
+                ),
+                LedgerFeatureCard(
+                  icon: '📈',
+                  title: '统计',
+                  subtitle: '月度趋势 · 类别占比 · 环比同比',
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const StatsPage()),
+                  ),
+                ),
+                LedgerFeatureCard(
+                  icon: '🔍',
+                  title: '搜索',
+                  subtitle: '跨账本按关键字 · 金额 · 时间 · 类别',
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const SearchPage()),
+                  ),
+                ),
+                _AddLedgerCard(
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const ManageLedgersPage()),
+                  ),
+                ),
+                LedgerFeatureCard(
+                  icon: '🗑️',
+                  title: '回收站',
+                  subtitle: '删除的记录 · 60 天内可恢复',
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const TrashPage()),
+                  ),
+                ),
+                LedgerFeatureCard(
+                  icon: '👥',
+                  title: '用户管理',
+                  subtitle: '家庭成员 · 角色与权限',
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const UsersPage()),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+
+            // ---- 页脚 ----
+            Center(
+              child: Text('导出数据 · 导入数据 · 修改密码',
+                  style: TextStyle(color: ink400, fontSize: 12)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 超支提示卡：固定 overspendBg/overspendBorder，不磨砂。
+class _OverspendCard extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.lightOverspendBg,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.lightOverspendBorder, width: 1),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      child: InkWell(
+        onTap: () {
+          // 暂 no-op：第二阶段跳转超支详情
+        },
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('⚠️ 分类预算超支',
+                      style: TextStyle(
+                          color: AppColors.lightOverspendTitle,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 15)),
+                  const SizedBox(height: 2),
+                  Text('家庭账本 · 2 项超支 ›',
+                      style: TextStyle(
+                          color: AppColors.lightOverspendDetail, fontSize: 13)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 「添加 / 删除账本」卡片：surfaceSubtle 底 + 虚线 #CBD5E1 描边，标题副标 ink500。
+class _AddLedgerCard extends StatelessWidget {
+  final VoidCallback? onTap;
+  const _AddLedgerCard({this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
+    final dashed = isDark
+        ? AppColors.darkBorder
+        : AppColors.lightBorderDashed;
+    final fill = isDark ? AppColors.darkSurface : AppColors.lightSurfaceSubtle;
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(16),
+      onTap: onTap,
+      child: Container(
+        decoration: BoxDecoration(
+          color: fill,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: dashed, width: 1),
+        ),
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            const Text('＋', style: TextStyle(fontSize: 24)),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('添加 / 删除账本',
+                      style: TextStyle(
+                          color: ink500,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 15)),
+                  const SizedBox(height: 2),
+                  Text('新增账本 · 恢复回收站 · 管理已有',
+                      style: TextStyle(color: ink500, fontSize: 13)),
+                ],
+              ),
+            ),
+            Text('›', style: TextStyle(color: ink500, fontSize: 20)),
+          ],
+        ),
       ),
     );
   }
