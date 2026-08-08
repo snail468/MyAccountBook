@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { requireOwnedLedger } from '@/lib/ownership';
-import { badRequest } from '@/lib/apiError';
+import { badRequest, notFound } from '@/lib/apiError';
 import { cleanupCollectedImages, collectLedgerImageUrls } from '@/lib/imageCleanup';
 
 const patchSchema = z.object({
