@@ -40,7 +40,11 @@ class LedgerListState extends ChangeNotifier {
       return ok;
     } catch (e) {
       _syncing = false;
-      _error = '同步出错，请重新登录';
+      if (e is ApiException) {
+        _error = '同步失败：${e.message}';
+      } else {
+        _error = '同步异常：${e.toString()}';
+      }
       notifyListeners();
       rethrow;
     }

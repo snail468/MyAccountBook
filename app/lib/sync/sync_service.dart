@@ -112,7 +112,10 @@ class SyncService {
     if (_syncing) return false;
     _syncing = true;
     try {
-      if (!await _conn.isOnline()) return false;
+      // 先推（本地改动重放到服务端），再全量拉取。不预先做连通性探测 ——
+      // 用户刚登录就说明网络是通的；即使真离线，真实的 API 调用也会失败，
+      // 让 dio 层的超时/ConnectivityException 自然暴露，比提前用 Socket 判
+      // 更准确（某些 Android 设备上 InternetAddress.lookup 可能误判）。
       await drainQueue();
       await _pullAll();
       return true;
