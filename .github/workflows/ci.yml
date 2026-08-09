@@ -5,12 +5,14 @@ name: CI
 # tsc/lint/test/build 任一挂了就不再去构镜像。
 #
 # 触发矩阵：
-#   push 到任意分支 / PR / 手动 dispatch → verify
-#   push 到 main / 打 v*.*.* 标签 / 手动 dispatch → verify → docker
+#   push 到 main / PR / 手动 dispatch → verify
+#   push 到 main / 手动 dispatch → verify → docker
+# 注意：这里不打 v*.*.* 标签。Flutter APK 用 flutter.yml 单独触发；
+# GitHub Actions 的 paths-ignore 对 tag push 不生效，所以 tag 必须单独剥离，
+# 否则每次 Flutter 发 tag 都会误跑 web verify + docker 多架构构建。
 on:
   push:
-    branches: ['**']
-    tags: ['v*.*.*']
+    branches: [main]
     # Flutter-only 改动（仅 mobile/**）不触发 web 构建：Flutter 端改完只想要 APK
     # （见 flutter.yml），不应连带跑 web verify + docker 多架构构建。
     # 若某次提交同时动了服务端与 mobile，仍会正常触发 web CI。
@@ -59,13 +61,13 @@ jobs:
           npx prisma migrate deploy
           npm run build
 
-  # 只在 push 到 main / 打 tag / 手动 dispatch 时构镜像。
+  # 只在 push 到 main / 手动 dispatch 时构镜像。
   # PR 与其它分支的 push 只跑 verify，别浪费镜像仓库配额和多架构构建时间。
   docker:
     needs: verify
     if: >-
       github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')))
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     permissions:
       contents: read
