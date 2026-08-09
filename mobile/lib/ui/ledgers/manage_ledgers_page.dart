@@ -32,7 +32,7 @@ String _kindLabel(String kind) {
     case 'taoyuan':
       return '桃源';
     case 'general':
-      return '家庭';
+      return '普通';
     case 'travel':
       return '旅行';
     default:
@@ -58,12 +58,13 @@ class _Body extends StatelessWidget {
     final active = all.where((l) => l.deletedAt == null).toList();
     final recycled = all.where((l) => l.deletedAt != null).toList();
 
-    // 预设模板：标题 + 图标 + 对应 kind。
+    // 预设模板：严格对齐网页端 PresetPicker（工作/桃源/普通/旅游/自定义）。
     const templates = [
-      (title: '工资账本', icon: '💼', kind: 'work'),
-      (title: '装修账本', icon: '🔧', kind: 'general'),
-      (title: '旅行账本', icon: '✈️', kind: 'travel'),
-      (title: '母婴账本', icon: '🍼', kind: 'general'),
+      (title: '工作账本', icon: '💼', kind: 'work'),
+      (title: '桃源账本', icon: '🌸', kind: 'taoyuan'),
+      (title: '普通账本', icon: '📒', kind: 'general'),
+      (title: '旅游账本', icon: '✈️', kind: 'travel'),
+      (title: '自定义账本', icon: '📝', kind: 'general'),
     ];
 
     void createFromTemplate(String title, String icon, String kind) {

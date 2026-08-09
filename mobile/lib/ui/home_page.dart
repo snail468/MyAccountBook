@@ -24,6 +24,7 @@ import '../data/local/work_entry_dao.dart';
 import '../data/local/general_entry_dao.dart';
 import '../data/local/event_dao.dart';
 import '../data/local/trip_dao.dart';
+import '../data/models/ledger.dart';
 
 /// 首页（设计 2:3 重做）。
 ///
@@ -132,6 +133,63 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  /// 动态渲染用户真实账本（来自同步），替代原先硬编码的"家庭账本/东京之旅"测试卡。
+  /// 与网页端一致：首页展示用户实际拥有的账本。
+  List<Widget> _ledgerCards(List<Ledger> ledgers) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
+    if (ledgers.isEmpty) {
+      return [
+        AppCard(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text('还没有账本，点下方「添加账本」创建一个',
+                style: TextStyle(color: ink500, fontSize: 13)),
+          ),
+        ),
+      ];
+    }
+    return ledgers.map((l) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: LedgerFeatureCard(
+          icon: l.icon ?? _kindIcon(l.kind),
+          title: l.name,
+          subtitle: _kindLabel(l.kind),
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => pageForLedger(l)),
+          ),
+        ),
+      );
+    }).toList();
+  }
+
+  String _kindIcon(String kind) {
+    switch (kind) {
+      case AppConfig.kindWork:
+        return '💼';
+      case AppConfig.kindTaoyuan:
+        return '🌸';
+      case AppConfig.kindTravel:
+        return '✈️';
+      default:
+        return '📒';
+    }
+  }
+
+  String _kindLabel(String kind) {
+    switch (kind) {
+      case AppConfig.kindWork:
+        return '工作';
+      case AppConfig.kindTaoyuan:
+        return '桃源';
+      case AppConfig.kindTravel:
+        return '旅行';
+      default:
+        return '普通';
+    }
+  }
+
   List<Widget> _incomeBreakdown(Color ink500) {
     if (_summaryLoading) {
       return [Text('加载中…', style: TextStyle(color: ink500, fontSize: 12))];
@@ -167,6 +225,7 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthState>();
+    final ledgers = context.watch<LedgerListState>().all;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
     final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
@@ -259,12 +318,7 @@ class _HomePageState extends State<HomePage> {
             // ---- 功能列表（1:1 对齐 Ardot：单列纵向，卡片 64 高，间距 12）----
             Column(
               children: [
-                LedgerFeatureCard(
-                  icon: '💼',
-                  title: '工作账本',
-                  subtitle: '按月记录进项与出项',
-                  onTap: () => _openKind(context, AppConfig.kindWork, '工作账本'),
-                ),
+                ..._ledgerCards(ledgers),
                 const SizedBox(height: 12),
                 LedgerFeatureCard(
                   icon: '📤',
@@ -273,34 +327,6 @@ class _HomePageState extends State<HomePage> {
                   onTap: () => Navigator.of(context).push(
                     MaterialPageRoute(builder: (_) => const WorkSummaryPage()),
                   ),
-                ),
-                const SizedBox(height: 12),
-                LedgerFeatureCard(
-                  icon: '🌸',
-                  title: '桃源账本',
-                  subtitle: _taoyuanEvents == 0 ? '暂无活动' : '$_taoyuanEvents 个活动',
-                  onTap: () =>
-                      _openKind(context, AppConfig.kindTaoyuan, '桃源账本'),
-                ),
-                const SizedBox(height: 12),
-                LedgerFeatureCard(
-                  icon: '📒',
-                  title: '家庭账本',
-                  subtitle: _generalExpense == 0 && _generalIncome == 0
-                      ? '本月暂无记账'
-                      : '本月支出 ${Money.formatCents(_generalExpense)} · 收入 ${Money.formatCents(_generalIncome)}',
-                  onTap: () =>
-                      _openKind(context, AppConfig.kindGeneral, '家庭账本'),
-                ),
-                const SizedBox(height: 12),
-                LedgerFeatureCard(
-                  icon: '✈️',
-                  title: '东京之旅',
-                  subtitle: _tripMembers == 0
-                      ? '暂无行程'
-                      : '$_tripMembers 人 · 已花 ${Money.formatCents(_tripSpent)}',
-                  onTap: () =>
-                      _openKind(context, AppConfig.kindTravel, '东京之旅'),
                 ),
                 const SizedBox(height: 12),
                 LedgerFeatureCard(
@@ -396,7 +422,7 @@ class _OverspendCard extends StatelessWidget {
     final title =
         overspendCount > 0 ? '⚠️ 分类预算超支' : '✅ 预算正常';
     final detail = overspendCount > 0
-        ? '家庭账本 · $overspendCount 项超支 ›'
+        ? '账本 · $overspendCount 项超支 ›'
         : '本月账本均未超支';
     return Container(
       decoration: BoxDecoration(

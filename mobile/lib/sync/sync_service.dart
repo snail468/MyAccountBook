@@ -207,24 +207,40 @@ class SyncService {
       ledgerServerToLocal[sid] = localId;
     }
 
+    // 逐账本拉取：单个账本失败（权限不足 / 服务端 5xx / 残留测试数据）不应拖垮整体同步。
+    // 跳过失败账本、其余继续；仅当全部账本都拉取失败时才视为同步失败。
+    int ok = 0;
+    final errors = <String>[];
     for (final j in ledgers) {
       final sid = j['id'] as String;
       final localId = ledgerServerToLocal[sid]!;
       final kind = j['kind'] as String;
-      if (kind == AppConfig.kindGeneral) {
-        await _pullGeneral(localId, sid);
-      } else if (kind == AppConfig.kindWork) {
-        await _pullWork(localId, sid);
-      } else if (kind == AppConfig.kindTaoyuan) {
-        await _pullTaoyuan(localId, sid);
-      } else if (kind == AppConfig.kindTravel) {
-        await _pullTravel(localId, sid);
+      try {
+        if (kind == AppConfig.kindGeneral) {
+          await _pullGeneral(localId, sid);
+        } else if (kind == AppConfig.kindWork) {
+          await _pullWork(localId, sid);
+        } else if (kind == AppConfig.kindTaoyuan) {
+          await _pullTaoyuan(localId, sid);
+        } else if (kind == AppConfig.kindTravel) {
+          await _pullTravel(localId, sid);
+        }
+        ok++;
+      } on ApiException catch (e) {
+        errors.add('$sid($kind): ${e.message}');
+      } on NetworkException {
+        rethrow; // 离线则整体失败，让上层提示重连
       }
     }
 
     // 账本级对账：服务端已删除的账本（含其全部本地子数据）清理掉。
     final ledgerServerIds = <String>{for (final j in ledgers) j['id'] as String};
     await _ledgerDao.deleteSyncedNotIn(ledgerServerIds);
+
+    if (ledgers.isNotEmpty && ok == 0) {
+      final msg = errors.isNotEmpty ? errors.join('; ') : '未知同步错误';
+      throw ApiException('同步失败（全部账本拉取出错）：$msg');
+    }
   }
 
   Future<void> _pullGeneral(String ledgerId, String serverLedgerId) async {

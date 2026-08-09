@@ -74,11 +74,15 @@ jobs:
       - name: Inject app version from git tag
         # 把 v2.0.10 这种 tag 去掉 v 前缀写入 AppConfig.appVersion（首页标题栏可见），
         # 同时把 pubspec.yaml 的 version 也带上（Android 系统侧版本号）。
+        # versionCode 从 tag 推导（2.0.24 -> 20024），保证每次发版都是递增的版本号，
+        # 升级安装时不会被判定为"相同/更低版本"而要求先卸载。
         run: |
           TAG=${GITHUB_REF_NAME#v}
+          IFS='.' read -r MAJ MIN PAT <<< "$TAG"
+          CODE=$(( MAJ * 10000 + MIN * 100 + PAT ))
           sed -i "s/static const String appVersion = '.*'/static const String appVersion = '${TAG}'/" \
             mobile/lib/core/constants.dart
-          sed -i "s/^version: .*/version: ${TAG}+1/" mobile/pubspec.yaml
+          sed -i "s/^version: .*/version: ${TAG}+${CODE}/" mobile/pubspec.yaml
 
       - name: Ensure INTERNET permission (release build needs it)
         run: |
@@ -88,6 +92,52 @@ jobs:
       - name: Pub get
         working-directory: mobile
         run: flutter pub get
+
+      - name: Decode Android signing key (if secret provided)
+        # 解决"安装冲突需先卸载"：GitHub 托管的 runner 每次重新生成 debug 密钥
+        # （随机密钥对），导致同一包名不同签名 → 升级安装被拒。用固定 release 密钥
+        # 后所有构建签名一致，升级无需卸载。未配置 secret 时回退 debug 签名。
+        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        run: |
+          base64 -d <<< "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" > mobile/android/app/upload-keystore.jks
+          printf 'storeFile=upload-keystore.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+            "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" \
+            "${{ secrets.ANDROID_KEY_ALIAS }}" \
+            "${{ secrets.ANDROID_KEY_PASSWORD }}" > mobile/android/key.properties
+
+      - name: Apply release signing config (guarded)
+        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        run: |
+          python3 - <<'PY'
+          import pathlib
+          p = pathlib.Path('mobile/android/app/build.gradle')
+          s = p.read_text(encoding='utf-8')
+          if 'signingConfigs {' not in s:
+              block = (
+                  "    signingConfigs {\n"
+                  "        release {\n"
+                  "            def keyProps = new File(rootProject.projectDir, 'key.properties')\n"
+                  "            if (keyProps.exists()) {\n"
+                  "                Properties props = new Properties()\n"
+                  "                props.load(new FileInputStream(keyProps))\n"
+                  "                storeFile file(props['storeFile'])\n"
+                  "                storePassword props['storePassword']\n"
+                  "                keyAlias props['keyAlias']\n"
+                  "                keyPassword props['keyPassword']\n"
+                  "            } else {\n"
+                  "                storeFile file(System.getProperty('user.home') + '/.android/debug.keystore')\n"
+                  "                storePassword 'android'\n"
+                  "                keyAlias 'androiddebugkey'\n"
+                  "                keyPassword 'android'\n"
+                  "            }\n"
+                  "        }\n"
+                  "    }\n\n"
+              )
+              s = s.replace('    buildTypes {', block + '    buildTypes {', 1)
+          s = s.replace('signingConfig = signingConfigs.debug', 'signingConfig = signingConfigs.release')
+          p.write_text(s, encoding='utf-8')
+          print('patched build.gradle for release signing')
+          PY
 
       - name: Build release APK
         working-directory: mobile
