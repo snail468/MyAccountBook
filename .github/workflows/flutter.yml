@@ -97,47 +97,60 @@ jobs:
         # 解决"安装冲突需先卸载"：GitHub 托管的 runner 每次重新生成 debug 密钥
         # （随机密钥对），导致同一包名不同签名 → 升级安装被拒。用固定 release 密钥
         # 后所有构建签名一致，升级无需卸载。未配置 secret 时回退 debug 签名。
-        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        # 注意：GitHub Actions 的 step 级 if 不能引用 secrets 上下文，故改用
+        # env 传参（env 允许引用 secrets）+ 脚本内判空，效果等价。
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PW: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PW: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          base64 -d <<< "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" > mobile/android/app/upload-keystore.p12
+          if [ -z "$KEYSTORE_B64" ]; then
+            echo "ANDROID_KEYSTORE_BASE64 secret 未配置，使用默认 debug 签名。"
+            exit 0
+          fi
+          base64 -d <<< "$KEYSTORE_B64" > mobile/android/app/upload-keystore.p12
           printf 'storeFile=upload-keystore.p12\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
-            "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" \
-            "${{ secrets.ANDROID_KEY_ALIAS }}" \
-            "${{ secrets.ANDROID_KEY_PASSWORD }}" > mobile/android/key.properties
+            "$KEYSTORE_PW" "$KEY_ALIAS" "$KEY_PW" > mobile/android/key.properties
 
-      - name: Apply release signing config (guarded)
-        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+      - name: Apply release signing config
+        # 仅当 key.properties 存在（即已配置签名 secret）时才把 build.gradle
+        # 切换到 release 签名；否则保持默认 debug 签名。
         run: |
           python3 - <<'PY'
           import pathlib
-          p = pathlib.Path('mobile/android/app/build.gradle')
-          s = p.read_text(encoding='utf-8')
-          if 'signingConfigs {' not in s:
-              block = (
-                  "    signingConfigs {\n"
-                  "        release {\n"
-                  "            def keyProps = new File(rootProject.projectDir, 'key.properties')\n"
-                  "            if (keyProps.exists()) {\n"
-                  "                Properties props = new Properties()\n"
-                  "                props.load(new FileInputStream(keyProps))\n"
-                  "                storeFile file(props['storeFile'])\n"
-                  "                storeType 'PKCS12'\n"
-                  "                storePassword props['storePassword']\n"
-                  "                keyAlias props['keyAlias']\n"
-                  "                keyPassword props['keyPassword']\n"
-                  "            } else {\n"
-                  "                storeFile file(System.getProperty('user.home') + '/.android/debug.keystore')\n"
-                  "                storePassword 'android'\n"
-                  "                keyAlias 'androiddebugkey'\n"
-                  "                keyPassword 'android'\n"
-                  "            }\n"
-                  "        }\n"
-                  "    }\n\n"
-              )
-              s = s.replace('    buildTypes {', block + '    buildTypes {', 1)
-          s = s.replace('signingConfig = signingConfigs.debug', 'signingConfig = signingConfigs.release')
-          p.write_text(s, encoding='utf-8')
-          print('patched build.gradle for release signing')
+          kp = pathlib.Path('mobile/android/key.properties')
+          if not kp.exists():
+              print('未检测到 key.properties（签名 secret 未配置），保持默认 debug 签名，跳过 patch。')
+          else:
+              p = pathlib.Path('mobile/android/app/build.gradle')
+              s = p.read_text(encoding='utf-8')
+              if 'signingConfigs {' not in s:
+                  block = (
+                      "    signingConfigs {\n"
+                      "        release {\n"
+                      "            def keyProps = new File(rootProject.projectDir, 'key.properties')\n"
+                      "            if (keyProps.exists()) {\n"
+                      "                Properties props = new Properties()\n"
+                      "                props.load(new FileInputStream(keyProps))\n"
+                      "                storeFile file(props['storeFile'])\n"
+                      "                storeType 'PKCS12'\n"
+                      "                storePassword props['storePassword']\n"
+                      "                keyAlias props['keyAlias']\n"
+                      "                keyPassword props['keyPassword']\n"
+                      "            } else {\n"
+                      "                storeFile file(System.getProperty('user.home') + '/.android/debug.keystore')\n"
+                      "                storePassword 'android'\n"
+                      "                keyAlias 'androiddebugkey'\n"
+                      "                keyPassword 'android'\n"
+                      "            }\n"
+                      "        }\n"
+                      "    }\n\n"
+                  )
+                  s = s.replace('    buildTypes {', block + '    buildTypes {', 1)
+              s = s.replace('signingConfig = signingConfigs.debug', 'signingConfig = signingConfigs.release')
+              p.write_text(s, encoding='utf-8')
+              print('patched build.gradle for release signing')
           PY
 
       - name: Build release APK
