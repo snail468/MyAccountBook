@@ -1,0 +1,38 @@
+classDiagram
+    class LedgerRole {
+        <<enumeration>>
+        viewer
+        editor
+        owner
+    }
+
+    class LedgerOptions {
+        +kind: LedgerKind
+        +kindMessage: string
+        +minRole: LedgerRole
+    }
+
+    class OwnershipGuards {
+        +requireOwnedLedger(id, opts) LedgerOptions
+        +requireOwnedEvent(id, opts) LedgerOptions
+        +requireOwnedEntry(id, opts)
+        +requireOwnedGeneralEntry(ledgerId, entryId, opts)
+        +requireOwnedTripExpense(ledgerId, expenseId, opts)
+        +requireOwnedEventAmount(eventId, amountId, opts)
+        +requireSessionUser()
+        +requireAdmin()   %% 仅用于 /api/admin/users 账户管理，绝不碰账本数据
+    }
+    OwnershipGuards ..> LedgerOptions : opts.minRole
+
+    class ReadGuardDefaults {
+        requireOwnedLedger: 默认 owner
+        requireOwnedEvent: 默认 editor  ← 本次改 viewer(仅 GET)
+    }
+
+    note for OwnershipGuards "读接口显式传 minRole:'viewer'；\n写接口维持 editor/owner（默认或不传）"
+
+    class ChangedEndpoints {
+        GET /events?ledgerId  editor→viewer
+        GET /events/{id}      editor→viewer
+    }
+    ChangedEndpoints ..> OwnershipGuards : 调用

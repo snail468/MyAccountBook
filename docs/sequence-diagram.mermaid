@@ -1,0 +1,40 @@
+sequenceDiagram
+    participant App as Flutter SyncService._pullAll
+    participant List as GET /ledgers
+    participant Srv as 各账本读路由（服务端）
+
+    App->>List: GET /ledgers (limit=200, cursor)
+    List-->>App: 全部成员账本 (owner/editor/viewer 都返回)
+
+    loop 每个账本 j
+        alt kind = general
+            App->>Srv: GET /ledgers/{id}/entries
+            Srv-->>App: entries (minRole viewer ✓)
+        else kind = work
+            App->>Srv: GET /entries?ledgerId={id}
+            Srv-->>App: entries (minRole viewer ✓)
+        else kind = taoyuan
+            App->>Srv: GET /events?ledgerId={id}
+            Note over Srv: resolveTaoyuanLedger 硬编码 editor
+            alt 当前用户为 viewer（共享只读）
+                Srv-->>App: 404 ❌ (现已 try/catch 兜底跳过)
+            else editor / owner
+                Srv-->>App: events ✓
+            end
+            App->>Srv: GET /events/{id}
+            Note over Srv: requireOwnedEvent 默认 editor
+            alt viewer
+                Srv-->>App: 404 ❌
+            else editor/owner
+                Srv-->>App: event + amounts ✓
+            end
+        else kind = travel
+            App->>Srv: GET /ledgers/{id}/members
+            Srv-->>App: members (viewer ✓)
+            App->>Srv: GET /ledgers/{id}/expenses?all=1
+            Srv-->>App: expenses (viewer ✓)
+        end
+    end
+
+    Note over App,Srv: 修复后：桃源两读接口 minRole='viewer'，
+    viewer 参与者不再 404，逐账本同步全部成功
