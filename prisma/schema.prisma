@@ -1,6 +1,11 @@
 generator client {
   provider        = "prisma-client-js"
   previewFeatures = ["driverAdapters"]
+  // 多架构镜像修复：部署节点是 ARM64 Alpine(musl)，而 CI 构建机是 amd64。
+  // 若不显式列出 binaryTargets，prisma generate 只下载构建机架构(x86_64 musl)的
+  // Query Engine，导致 arm64 容器加载不到匹配二进制而 500。
+  // 显式包含两个 musl 目标，保证两种架构的引擎都被打进镜像。
+  binaryTargets   = ["native", "linux-musl-openssl-3.0.x", "linux-arm64-musl-openssl-3.0.x"]
 }
 
 datasource db {
