@@ -11,7 +11,12 @@ on:
   push:
     branches: ['**']
     tags: ['v*.*.*']
+    # Flutter-only 改动（仅 mobile/**）不触发 web 构建：Flutter 端改完只想要 APK
+    # （见 flutter.yml），不应连带跑 web verify + docker 多架构构建。
+    # 若某次提交同时动了服务端与 mobile，仍会正常触发 web CI。
+    paths-ignore: ['mobile/**']
   pull_request:
+    paths-ignore: ['mobile/**']
   workflow_dispatch:
 
 jobs:
