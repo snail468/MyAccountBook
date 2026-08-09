@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../api/api_client.dart';
+import '../../api/recurring_api.dart';
 import '../../core/money.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/design_tokens.dart';
@@ -40,17 +42,17 @@ class _Body extends StatelessWidget {
     final noteBg = isDark ? AppColors.darkSurface : AppColors.lightSurfaceSubtle;
     final noteBorder = isDark ? AppColors.darkBorder : AppColors.lightBorder;
     final green = AppColors.lightSemanticGreen;
-    final red = AppColors.lightSemanticRed;
+    final red = isDark ? AppColors.darkSemanticRed : AppColors.lightSemanticRed;
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(16, 48, 16, 24),
+      padding: const EdgeInsets.fromLTRB(24, 56, 24, 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const PageHeader(
             icon: '🔁',
             title: '周期记账',
-            subtitle: '配一次，按周期自动记一笔',
+            subtitle: '',
           ),
 
           // ---- 说明底 ----
@@ -59,12 +61,12 @@ class _Body extends StatelessWidget {
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
               color: noteBg,
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(16),
               border: Border.all(color: noteBorder, width: 1),
             ),
-            child: Text(
-              '配一次，按周期自动记一笔。下次打开 App 时生成。',
-              style: TextStyle(color: ink500, fontSize: 13),
+            child: const Text(
+              '房租、订阅、工资这类固定项配一次就行。打开首页时自动补齐到期的账。',
+              style: TextStyle(color: AppColors.lightInk500, fontSize: 11),
             ),
           ),
           const SizedBox(height: 12),
@@ -83,20 +85,30 @@ class _Body extends StatelessWidget {
 
           // ---- 生成记录 ----
           GestureDetector(
-            onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('已生成 ${state.count} 条记录')),
-            ),
+            onTap: () async {
+              try {
+                await RecurringApi(ApiClient.instance).runDue();
+                await state.load();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('已生成到期的账')),
+                );
+              } catch (e) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('生成失败：$e')),
+                );
+              }
+            },
             child: Container(
               width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 14),
+              height: 38,
               decoration: BoxDecoration(
                 color: noteBg,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: noteBorder, width: 1),
               ),
               child: Center(
-                child: Text('生成记录',
-                    style: TextStyle(color: ink500, fontSize: 15)),
+                child: Text('立即生成到期的账',
+                    style: TextStyle(color: ink500, fontSize: 14)),
               ),
             ),
           ),
@@ -114,17 +126,17 @@ class _Body extends StatelessWidget {
             ),
             child: Container(
               width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 14),
+              height: 46,
               decoration: BoxDecoration(
                 color: isDark ? AppColors.darkSurface : AppColors.lightSurfaceSubtle,
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(16),
                 border: Border.all(
                   color: isDark ? AppColors.darkBorder : AppColors.lightBorderDashed,
                   width: 1,
                 ),
               ),
               child: Center(
-                child: Text('添加规则',
+                child: Text('＋ 添加周期规则',
                     style: TextStyle(color: ink500, fontSize: 15)),
               ),
             ),
@@ -133,6 +145,23 @@ class _Body extends StatelessWidget {
       ),
     );
   }
+}
+
+/// 周期行标签：每月 1 号 / 每周 周一 · 账本名。
+String _periodLine(RecurringRule r) {
+  final freqLabel = r.frequency == 'weekly' ? '每周' : '每月';
+  final dayLabel = r.frequency == 'weekly'
+      ? '周${_weekdayName(r.dayOfWeek ?? 1)}'
+      : '${r.dayOfMonth ?? 1} 号';
+  final ledger = r.ledgerName ?? '';
+  return '$freqLabel $dayLabel · $ledger';
+}
+
+/// 0=周日 … 6=周六 -> 中文星期名。
+String _weekdayName(int dow) {
+  const names = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+  final idx = (dow >= 0 && dow <= 6) ? dow : 1;
+  return names[idx];
 }
 
 class _RuleTile extends StatelessWidget {
@@ -146,7 +175,7 @@ class _RuleTile extends StatelessWidget {
     final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
     final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
     final ink400 = isDark ? AppColors.darkInk400 : AppColors.lightInk400;
-    final red = AppColors.lightSemanticRed;
+    final red = isDark ? AppColors.darkSemanticRed : AppColors.lightSemanticRed;
     final green = AppColors.lightSemanticGreen;
 
     return Padding(
@@ -158,27 +187,40 @@ class _RuleTile extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // 类别（16 w500 ink900）+ 仅本机灰标 + 删除（右对齐 12 red）
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(rule.category,
-                      style: TextStyle(color: ink900, fontSize: 15)),
-                  Row(
-                    children: [
-                      GestureDetector(
-                        onTap: () {
-                          // 操作占位（演示页，无实际生成）
-                        },
-                        child: Text('操作',
-                            style: TextStyle(color: ink500, fontSize: 13)),
-                      ),
-                      const SizedBox(width: 16),
-                      GestureDetector(
-                        onTap: () => state.remove(rule),
-                        child: Text('删除',
-                            style: TextStyle(color: red, fontSize: 13)),
-                      ),
-                    ],
+                  Expanded(
+                    child: Row(
+                      children: [
+                        Text(rule.category,
+                            style: TextStyle(
+                                color: ink900,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w500)),
+                        if (rule.serverId == null) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: isDark
+                                  ? AppColors.darkSurface
+                                  : AppColors.lightSurfaceSubtle,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text('仅本机',
+                                style: TextStyle(color: ink500, fontSize: 11)),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: () => state.remove(rule),
+                    child: Text('删除',
+                        style: TextStyle(color: red, fontSize: 12)),
                   ),
                 ],
               ),
@@ -186,19 +228,41 @@ class _RuleTile extends StatelessWidget {
               MoneyText(rule.cents,
                   color: rule.greenAmount ? green : ink500, fontSize: 15),
               const SizedBox(height: 4),
-              Text('周期 · ${rule.period}',
-                  style: TextStyle(color: ink500, fontSize: 13)),
-              Text('下次 · ${rule.nextDate}',
-                  style: TextStyle(color: ink400, fontSize: 13)),
+              // 周期行：每月 1 号 · 账本名（12 ink500）
+              Text(_periodLine(rule),
+                  style: TextStyle(color: ink500, fontSize: 12)),
+              // 下次行：下次：yyyy-MM-dd（11 ink400）
+              Text('下次：${rule.nextDueDisplay}',
+                  style: TextStyle(color: ink400, fontSize: 11)),
+              const SizedBox(height: 8),
+              // 操作占位：停用 / 改为仅提醒 / 启用（11 ink500，可点）
+              Row(
+                children: [
+                  if (rule.active) ...[
+                    _action(ink500, '停用', () => state.disable(rule)),
+                    const SizedBox(width: 16),
+                    _action(ink500, '改为仅提醒',
+                        () => state.setReminderOnly(rule)),
+                  ] else ...[
+                    _action(ink500, '启用', () => state.enable(rule)),
+                  ],
+                ],
+              ),
             ],
           ),
         ),
       ),
     );
   }
+
+  Widget _action(Color ink500, String label, VoidCallback onTap) =>
+      GestureDetector(
+        onTap: onTap,
+        child: Text(label, style: TextStyle(color: ink500, fontSize: 11)),
+      );
 }
 
-/// 添加规则弹层（类别 / 金额 / 周期 / 下次）。
+/// 添加规则弹层（类别 / 金额 / 周期 / 下次）。[D1] 保持「本地新建」，不推送服务端。
 class AddRuleSheet extends StatefulWidget {
   const AddRuleSheet({super.key});
 
@@ -265,7 +329,10 @@ class _AddRuleSheetState extends State<AddRuleSheet> {
           const SizedBox(height: 12),
           AppTextField(hint: '下次日期（如 2026-09-01）', controller: _next),
           const SizedBox(height: 16),
-          AppPrimaryButton(label: '保存', onPressed: _save),
+          SizedBox(
+            width: double.infinity,
+            child: AppPrimaryButton(label: '保存', onPressed: _save),
+          ),
           const SizedBox(height: 16),
         ],
       ),

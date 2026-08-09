@@ -36,7 +36,7 @@ class _Body extends StatelessWidget {
     final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(16, 48, 16, 24),
+      padding: const EdgeInsets.fromLTRB(24, 56, 24, 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -48,7 +48,7 @@ class _Body extends StatelessWidget {
 
           // ---- 添加银行卡 ----
           AppPrimaryButton(
-            label: '添加银行卡',
+            label: '＋ 添加银行卡',
             onPressed: () => showModalBottomSheet(
               context: context,
               isScrollControlled: true,
@@ -79,6 +79,9 @@ class _BankCardTile extends StatelessWidget {
   final BankCard card;
   const _BankCardTile({required this.card});
 
+  /// 卡图标按类型区分：[D6] 储蓄卡🏦 / 信用卡🏧。
+  String get _icon => card.type == '信用卡' ? '🏧' : '🏦';
+
   @override
   Widget build(BuildContext context) {
     final state = context.watch<BankState>();
@@ -93,23 +96,46 @@ class _BankCardTile extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('💳', style: TextStyle(fontSize: 24, color: ink900)),
+              Text(_icon, style: TextStyle(fontSize: 24, color: ink900)),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(card.bank,
-                        style: TextStyle(color: ink900, fontSize: 15)),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Text(card.bank,
+                              style: TextStyle(color: ink900, fontSize: 18)),
+                        ),
+                        const SizedBox(width: 8),
+                        // 类型右对齐（储蓄卡/信用卡）。
+                        Text(card.type,
+                            style: TextStyle(color: ink500, fontSize: 13)),
+                      ],
+                    ),
                     const SizedBox(height: 2),
-                    Text(card.type,
-                        style: TextStyle(color: ink500, fontSize: 13)),
-                    Text('****${card.last4}',
-                        style: TextStyle(color: ink500, fontSize: 13)),
+                    Text('**** ${card.last4}',
+                        style: TextStyle(color: ink500, fontSize: 14)),
+                    if (card.alias != null && card.alias!.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Text(card.alias!,
+                            style: TextStyle(color: ink500, fontSize: 13)),
+                      ),
+                    if (card.holder != null && card.holder!.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Text(card.holder!,
+                            style: TextStyle(color: ink500, fontSize: 13)),
+                      ),
                   ],
                 ),
               ),
+              const SizedBox(width: 12),
               GestureDetector(
                 onTap: () => state.remove(card),
                 child: Text('删除',
@@ -123,7 +149,7 @@ class _BankCardTile extends StatelessWidget {
   }
 }
 
-/// 添加银行卡弹层。
+/// 添加银行卡弹层（新增 alias / holder 字段，对应服务端明文扩展字段 [D2]）。
 class AddBankSheet extends StatefulWidget {
   const AddBankSheet({super.key});
 
@@ -135,12 +161,16 @@ class _AddBankSheetState extends State<AddBankSheet> {
   final _bank = TextEditingController();
   final _type = TextEditingController();
   final _number = TextEditingController();
+  final _alias = TextEditingController();
+  final _holder = TextEditingController();
 
   @override
   void dispose() {
     _bank.dispose();
     _type.dispose();
     _number.dispose();
+    _alias.dispose();
+    _holder.dispose();
     super.dispose();
   }
 
@@ -153,10 +183,14 @@ class _AddBankSheetState extends State<AddBankSheet> {
       );
       return;
     }
+    final alias = _alias.text.trim();
+    final holder = _holder.text.trim();
     context.read<BankState>().add(
           bank: bank,
           type: _type.text.trim().isEmpty ? '储蓄卡' : _type.text.trim(),
           number: number,
+          alias: alias.isEmpty ? null : alias,
+          holder: holder.isEmpty ? null : holder,
         );
     if (mounted) Navigator.of(context).pop();
   }
@@ -182,6 +216,10 @@ class _AddBankSheetState extends State<AddBankSheet> {
           AppTextField(hint: '卡片类型（如 储蓄卡 / 信用卡）', controller: _type),
           const SizedBox(height: 12),
           AppTextField(hint: '卡号', controller: _number),
+          const SizedBox(height: 12),
+          AppTextField(hint: '卡别名（选填）', controller: _alias),
+          const SizedBox(height: 12),
+          AppTextField(hint: '持卡人（选填）', controller: _holder),
           const SizedBox(height: 16),
           AppPrimaryButton(label: '保存', onPressed: _save),
           const SizedBox(height: 16),

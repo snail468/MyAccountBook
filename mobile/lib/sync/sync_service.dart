@@ -10,16 +10,22 @@ import '../api/general_entry_api.dart';
 import '../api/work_entry_api.dart';
 import '../api/event_api.dart';
 import '../api/trip_api.dart';
+import '../api/card_api.dart';
+import '../api/recurring_api.dart';
 import '../data/models/ledger.dart';
 import '../data/models/general_entry.dart';
 import '../data/models/work_entry.dart';
 import '../data/models/taoyuan_event.dart';
 import '../data/models/trip.dart';
+import '../data/models/bank_card.dart';
+import '../data/models/recurring_rule.dart';
 import '../data/local/ledger_dao.dart';
 import '../data/local/general_entry_dao.dart';
 import '../data/local/work_entry_dao.dart';
 import '../data/local/event_dao.dart';
 import '../data/local/trip_dao.dart';
+import '../data/local/bank_card_dao.dart';
+import '../data/local/recurring_rule_dao.dart';
 import '../data/local/pending_op_dao.dart';
 import '../data/models/pending_op.dart';
 import 'connectivity.dart';
@@ -44,12 +50,16 @@ class SyncService {
   final WorkEntryApi _work = WorkEntryApi(ApiClient.instance);
   final EventApi _events = EventApi(ApiClient.instance);
   final TripApi _trip = TripApi(ApiClient.instance);
+  final CardApi _cards = CardApi(ApiClient.instance);
+  final RecurringApi _recurring = RecurringApi(ApiClient.instance);
 
   final LedgerDao _ledgerDao = LedgerDao();
   final GeneralEntryDao _generalDao = GeneralEntryDao();
   final WorkEntryDao _workDao = WorkEntryDao();
   final EventDao _eventDao = EventDao();
   final TripDao _tripDao = TripDao();
+  final BankCardDao _bankDao = BankCardDao();
+  final RecurringRuleDao _ruleDao = RecurringRuleDao();
   final PendingOpDao _opDao = PendingOpDao();
 
   bool _syncing = false;
@@ -192,6 +202,16 @@ class SyncService {
         final sid = serverId; // 花费行在 enqueue 时已是 synced，无需查
         if (sid != null && sid.isNotEmpty) await _tripDao.markExpenseSynced(localId, sid);
         break;
+      case 'bank_card':
+        final cur = await _bankDao.getById(localId);
+        final sid = serverId ?? cur?.serverId;
+        if (sid != null && sid.isNotEmpty) await _bankDao.markSynced(localId, sid);
+        break;
+      case 'recurring_rule':
+        final cur = await _ruleDao.getById(localId);
+        final sid = serverId ?? cur?.serverId;
+        if (sid != null && sid.isNotEmpty) await _ruleDao.markSynced(localId, sid);
+        break;
     }
   }
 
@@ -264,6 +284,108 @@ class SyncService {
       final msg = errors.isNotEmpty ? errors.join('; ') : '未知同步错误';
       throw ApiException('同步失败（全部账本拉取出错）：$msg');
     }
+
+    // 银行卡 / 周期规则：非致命拉取。仅 NetworkException 上抛中断整体 syncAll；
+    // 其余（503 / 业务错误 / 解析失败）记日志跳过，绝不拖垮账本/规则同步。[D3]
+    try {
+      await _pullCards();
+    } on NetworkException {
+      rethrow;
+    } catch (e) {
+      // 非致命：银行卡同步失败不影响整体同步。
+      // ignore: avoid_print
+      print('银行卡同步失败（已跳过）：$e');
+    }
+    try {
+      await _pullRecurring();
+    } on NetworkException {
+      rethrow;
+    } catch (e) {
+      // 非致命：周期规则同步失败不影响整体同步。
+      // ignore: avoid_print
+      print('周期规则同步失败（已跳过）：$e');
+    }
+  }
+
+  /// 拉取银行卡：GET /api/cards 全量拉回，按 server_id 复用本地 id 覆盖；
+  /// 对账删本地已同步但服务端已删除的行（保留未同步的本地新建）。
+  ///
+  /// CARD_SECRET 未配时 list() 抛 ApiException(503)，此处记警告、不更新本地、不中断。
+  Future<void> _pullCards() async {
+    List<Map<String, dynamic>> cards;
+    try {
+      cards = await _cards.list();
+    } on ApiException catch (e) {
+      if (e.statusCode == 503) {
+        // [D3] 非致命：服务端未配置 CARD_SECRET，保留本地数据，跳过本次银行卡同步。
+        // ignore: avoid_print
+        print('银行卡同步跳过：服务端未配置 CARD_SECRET（503），保留本地数据');
+        return;
+      }
+      rethrow; // 其它 ApiException（如 401）上抛，由 _pullAll 的 catch 记日志跳过。
+    }
+
+    // 离线删除防复活：读取 pending DELETE 中 bank_card 的 server_id 集合并入保留集。[D4]
+    final pendingDel = await _pendingDeleteServerIds(['bank_card']);
+
+    // server_id -> local_id 映射（来自本地库，保证复用同一 local id）。
+    final localByServer = <String, String>{};
+    final existing = await _bankDao.listAllIncludingDeleted();
+    for (final c in existing) {
+      if (c.serverId != null && c.serverId!.isNotEmpty) {
+        localByServer[c.serverId!] = c.id;
+      }
+    }
+
+    final pulled = <String>{};
+    for (final j in cards) {
+      final sid = (j['id'] as String?) ?? '';
+      if (sid.isEmpty) continue;
+      final localId = localByServer[sid] ?? _uuid.v4();
+      await _bankDao.upsert(BankCard.fromApi(j, localId: localId));
+      localByServer[sid] = localId;
+      pulled.add(sid);
+    }
+
+    // keep = 本次拉回 ∪ pendingDelete（pendingDelete 的本地已同步行暂时保留，防离线删复活）。
+    final keep = <String>{...pulled, ...pendingDel};
+    await _bankDao.deleteSyncedNotIn(keep);
+  }
+
+  /// 拉取周期规则：GET /api/recurring 全量拉回，按 server_id 复用本地 id 覆盖；
+  /// 对账删本地已同步但服务端已删除的行（保留未同步的本地新建）。与 [_pullCards] 同构。
+  Future<void> _pullRecurring() async {
+    final rules = await _recurring.list();
+
+    // 离线删除防复活：读取 pending DELETE 中 recurring_rule 的 server_id 集合并入保留集。[D4]
+    final pendingDel = await _pendingDeleteServerIds(['recurring_rule']);
+
+    final localByServer = <String, String>{};
+    final existing = await _ruleDao.listAllIncludingDeleted();
+    for (final r in existing) {
+      if (r.serverId != null && r.serverId!.isNotEmpty) {
+        localByServer[r.serverId!] = r.id;
+      }
+    }
+
+    final pulled = <String>{};
+    for (final j in rules) {
+      final sid = (j['id'] as String?) ?? '';
+      if (sid.isEmpty) continue;
+      final localId = localByServer[sid] ?? _uuid.v4();
+      await _ruleDao.upsert(RecurringRule.fromApi(j, localId: localId));
+      localByServer[sid] = localId;
+      pulled.add(sid);
+    }
+
+    final keep = <String>{...pulled, ...pendingDel};
+    await _ruleDao.deleteSyncedNotIn(keep);
+  }
+
+  /// 读取 pending DELETE 中指定实体的 server_id 集合（存入 client_id），
+  /// 供 [_pullCards]/[_pullRecurring] 的「保留集」使用，防离线删除被服务端数据复活。[D4]
+  Future<Set<String>> _pendingDeleteServerIds(List<String> entityTypes) async {
+    return _opDao.pendingDeleteServerIds(entityTypes);
   }
 
   Future<void> _pullGeneral(String ledgerId, String serverLedgerId) async {

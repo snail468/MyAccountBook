@@ -11,7 +11,7 @@ class AppDatabase {
   AppDatabase._internal();
   static final AppDatabase instance = AppDatabase._internal();
 
-  static const int _version = 3;
+  static const int _version = 4;
   Database? _db;
 
   Future<Database> get database async {
@@ -44,6 +44,11 @@ class AppDatabase {
       await db.execute(
         'CREATE UNIQUE INDEX IF NOT EXISTS idx_ledgers_server_id ON ledgers(server_id) WHERE server_id IS NOT NULL;',
       );
+    }
+    // 版本 4：bank_cards / recurring_rules 接入同步。补齐 server_id 等新列
+    // + server_id 唯一部分索引（幂等迁移，PRAGMA 探测缺失列后 ALTER ADD）。
+    if (oldV < 4) {
+      await _migrateToV4(db);
     }
   }
 
@@ -84,6 +89,62 @@ class AppDatabase {
         await db.delete('general_entries', where: 'ledger_id = ?', whereArgs: [lid]);
         await db.delete('work_entries', where: 'ledger_id = ?', whereArgs: [lid]);
         await db.delete('ledgers', where: 'id = ?', whereArgs: [lid]);
+      }
+    }
+  }
+
+  /// 升级到 v4：根据 PRAGMA table_info 探测缺失列，仅对缺失列做 ALTER ADD
+  /// （SQLite 不支持 ADD COLUMN IF NOT EXISTS，探测保证幂等，避免重复升级/版本回退时崩）。
+  /// 再建 server_id 唯一部分索引。
+  Future<void> _migrateToV4(Database db) async {
+    const bankCols = <String, String>{
+      'server_id': 'TEXT',
+      'alias': 'TEXT',
+      'holder': 'TEXT',
+      'synced': 'INTEGER NOT NULL DEFAULT 1',
+    };
+    const ruleCols = <String, String>{
+      'server_id': 'TEXT',
+      'target': 'TEXT',
+      'ledger_id': 'TEXT',
+      'ledger_name': 'TEXT',
+      'direction': 'TEXT',
+      'frequency': 'TEXT',
+      'day_of_month': 'INTEGER',
+      'day_of_week': 'INTEGER',
+      'start_date': 'TEXT',
+      'end_date': 'TEXT',
+      'last_generated_at': 'TEXT',
+      'active': 'INTEGER NOT NULL DEFAULT 1',
+      'auto_create': 'INTEGER NOT NULL DEFAULT 1',
+      'note': 'TEXT',
+      'synced': 'INTEGER NOT NULL DEFAULT 1',
+    };
+    await _addColumnsIfMissing(db, 'bank_cards', bankCols);
+    await _addColumnsIfMissing(db, 'recurring_rules', ruleCols);
+    await db.execute(
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_bank_cards_server_id ON bank_cards(server_id) WHERE server_id IS NOT NULL;',
+    );
+    await db.execute(
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_recurring_rules_server_id ON recurring_rules(server_id) WHERE server_id IS NOT NULL;',
+    );
+  }
+
+  /// 对指定表探测列，仅 ALTER ADD 缺失列（幂等）。
+  Future<void> _addColumnsIfMissing(
+    Database db,
+    String table,
+    Map<String, String> columns,
+  ) async {
+    final info = await db.rawQuery('PRAGMA table_info($table);');
+    final existing = <String>{
+      for (final row in info) (row['name'] as String).toLowerCase(),
+    };
+    for (final entry in columns.entries) {
+      if (!existing.contains(entry.key.toLowerCase())) {
+        await db.execute(
+          'ALTER TABLE $table ADD COLUMN ${entry.key} ${entry.value};',
+        );
       }
     }
   }
@@ -270,11 +331,22 @@ class AppDatabase {
       'CREATE UNIQUE INDEX IF NOT EXISTS idx_ledgers_server_id ON ledgers(server_id) WHERE server_id IS NOT NULL;',
     );
 
-    // 版本 2 新增表
+    // 版本 2 新增表（含 v4 同步新列 + 唯一部分索引；新装即 v4）。
     await _createV2Tables(db);
+
+    // 版本 4 兼容索引（新装库也建立，保证与升级路径一致）。
+    await db.execute(
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_bank_cards_server_id ON bank_cards(server_id) WHERE server_id IS NOT NULL;',
+    );
+    await db.execute(
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_recurring_rules_server_id ON recurring_rules(server_id) WHERE server_id IS NOT NULL;',
+    );
   }
 
-  /// 版本 2 新增：银行卡 / 家庭成员 / 周期记账规则（纯本地，无后端）。
+  /// 版本 2 新增：银行卡 / 家庭成员 / 周期记账规则。
+  ///
+  /// v4 起银行卡/规则接入同步：bank_cards / recurring_rules 补齐 server_id 等新列
+  /// + server_id 唯一部分索引（upsert 真「更新」不「插入新行」）。
   Future<void> _createV2Tables(Database db) async {
     await db.execute('''
       CREATE TABLE IF NOT EXISTS bank_cards (
@@ -282,7 +354,11 @@ class AppDatabase {
         bank TEXT NOT NULL,
         type TEXT NOT NULL,
         last4 TEXT NOT NULL,
-        created_at INTEGER
+        created_at INTEGER,
+        server_id TEXT,
+        alias TEXT,
+        holder TEXT,
+        synced INTEGER NOT NULL DEFAULT 1
       );
     ''');
     await db.execute('''
@@ -303,9 +379,31 @@ class AppDatabase {
         period TEXT NOT NULL,
         next_date TEXT NOT NULL,
         green_amount INTEGER NOT NULL DEFAULT 0,
-        created_at INTEGER
+        created_at INTEGER,
+        server_id TEXT,
+        target TEXT,
+        ledger_id TEXT,
+        ledger_name TEXT,
+        direction TEXT,
+        frequency TEXT,
+        day_of_month INTEGER,
+        day_of_week INTEGER,
+        start_date TEXT,
+        end_date TEXT,
+        last_generated_at TEXT,
+        active INTEGER NOT NULL DEFAULT 1,
+        auto_create INTEGER NOT NULL DEFAULT 1,
+        note TEXT,
+        synced INTEGER NOT NULL DEFAULT 1
       );
     ''');
+
+    await db.execute(
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_bank_cards_server_id ON bank_cards(server_id) WHERE server_id IS NOT NULL;',
+    );
+    await db.execute(
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_recurring_rules_server_id ON recurring_rules(server_id) WHERE server_id IS NOT NULL;',
+    );
   }
 
   /// 清空所有本地数据（退出登录或重装场景）。

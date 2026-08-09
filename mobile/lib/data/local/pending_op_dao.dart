@@ -58,4 +58,25 @@ class PendingOpDao {
     await db.delete('pending_ops',
         where: 'entity_local_id = ?', whereArgs: [entityLocalId]);
   }
+
+  /// 读取 pending DELETE 操作中指定实体的 server_id 集合（存入 client_id），
+  /// 供拉取对账「保留集」使用，防止离线删除被服务端数据「复活」。[D4]
+  Future<Set<String>> pendingDeleteServerIds(List<String> entities) async {
+    final db = await _db.database;
+    if (entities.isEmpty) return const {};
+    final ph = List.filled(entities.length, '?').join(',');
+    final rows = await db.query(
+      'pending_ops',
+      columns: ['client_id'],
+      where:
+          "status = 'pending' AND method = 'DELETE' AND entity IN ($ph)",
+      whereArgs: entities,
+    );
+    final set = <String>{};
+    for (final r in rows) {
+      final cid = r['client_id'] as String?;
+      if (cid != null && cid.isNotEmpty) set.add(cid);
+    }
+    return set;
+  }
 }
