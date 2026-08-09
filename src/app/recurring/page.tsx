@@ -25,13 +25,13 @@ export default async function RecurringPage() {
   });
 
   return (
-    <div>
-      <header className="px-4 pt-6 pb-2 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">周期记账</h1>
-        <Link href="/" className="text-xs text-ink-400 underline">
-          返回
+    <div className="pt-14">
+      <div className="px-4 flex items-center gap-3 mb-2">
+        <Link href="/" className="text-ink-500 text-sm">
+          ‹ 返回
         </Link>
-      </header>
+        <h1 className="text-2xl font-semibold flex-1">周期记账</h1>
+      </div>
       <p className="px-4 pb-3 text-xs text-ink-500">房租、订阅、工资这类固定项自动记</p>
       <RecurringClient ledgers={ledgers} />
     </div>

@@ -10,13 +10,13 @@ export default async function SearchPage() {
   if (!user) redirect('/login');
 
   return (
-    <div>
-      <header className="px-4 pt-6 pb-2 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">搜索</h1>
-        <Link href="/" className="text-xs text-ink-400 underline">
-          返回
+    <div className="pt-14">
+      <div className="px-4 flex items-center gap-3 mb-2">
+        <Link href="/" className="text-ink-500 text-sm">
+          ‹ 返回
         </Link>
-      </header>
+        <h1 className="text-2xl font-semibold flex-1">搜索</h1>
+      </div>
       <p className="px-4 text-xs text-ink-500">跨全部账本查找记录</p>
       <SearchClient />
     </div>

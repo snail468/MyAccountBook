@@ -164,13 +164,13 @@ export default async function StatsPage() {
   const hasData = rows.length > 0;
 
   return (
-    <div className="px-4 pt-6 pb-24 space-y-4">
-      <header className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">统计</h1>
-        <Link href="/" className="text-xs text-ink-400 underline">
-          返回
+    <div className="px-4 pt-14 pb-24 space-y-4">
+      <div className="flex items-center gap-3">
+        <Link href="/" className="text-ink-500 text-sm">
+          ‹ 返回
         </Link>
-      </header>
+        <h1 className="text-2xl font-semibold flex-1">统计</h1>
+      </div>
       <p className="text-xs text-ink-500">全部账本 · 最近 12 个月</p>
 
       {!hasData && (
