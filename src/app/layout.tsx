@@ -8,6 +8,7 @@ import FxDelegator from '@/components/ui/FxDelegator';
 import GlobalProgress from '@/components/ui/GlobalProgress';
 import HomeButton from '@/components/ui/HomeButton';
 import OfflineSync from '@/components/ui/OfflineSync';
+import PwaInstallPrompt from '@/components/ui/PwaInstallPrompt';
 
 export const metadata: Metadata = {
   title: '心愿便利贴',
@@ -81,6 +82,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             <HomeButton />
             <FloatingToolbar />
             <OfflineSync />
+            <PwaInstallPrompt />
             <div className="mx-auto max-w-md min-h-dvh pb-20">{children}</div>
           </DialogProvider>
         </UIProvider>
