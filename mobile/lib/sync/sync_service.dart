@@ -221,6 +221,10 @@ class SyncService {
         await _pullTravel(localId, sid);
       }
     }
+
+    // 账本级对账：服务端已删除的账本（含其全部本地子数据）清理掉。
+    final ledgerServerIds = <String>{for (final j in ledgers) j['id'] as String};
+    await _ledgerDao.deleteSyncedNotIn(ledgerServerIds);
   }
 
   Future<void> _pullGeneral(String ledgerId, String serverLedgerId) async {
@@ -235,6 +239,10 @@ class SyncService {
       final localId = map[sid] ?? _uuid.v4();
       await _generalDao.insert(GeneralEntry.fromApi(j, ledgerId, localId: localId));
     }
+
+    // 对账：删本地已同步但服务端已软删的行（未同步的本地新建保留）。
+    final serverIds = <String>{for (final j in entries) j['id'] as String};
+    await _generalDao.deleteSyncedNotIn(ledgerId, serverIds);
   }
 
   Future<void> _pullWork(String ledgerId, String serverLedgerId) async {
@@ -249,6 +257,10 @@ class SyncService {
       final localId = map[sid] ?? _uuid.v4();
       await _workDao.insert(WorkEntry.fromApi(j, ledgerId, localId: localId));
     }
+
+    // 对账：删本地已同步但服务端已软删的行（未同步的本地新建保留）。
+    final serverIds = <String>{for (final j in entries) j['id'] as String};
+    await _workDao.deleteSyncedNotIn(ledgerId, serverIds);
   }
 
   Future<void> _pullTaoyuan(String ledgerId, String serverLedgerId) async {
@@ -272,6 +284,10 @@ class SyncService {
         );
       }
     }
+
+    // 对账：删本地已同步但服务端已软删的活动（金额级联清理由 DAO 处理）。
+    final serverIds = <String>{for (final j in events) j['id'] as String};
+    await _eventDao.deleteSyncedNotIn(ledgerId, serverIds);
   }
 
   Future<void> _pullTravel(String ledgerId, String serverLedgerId) async {
@@ -315,5 +331,12 @@ class SyncService {
         ));
       }
     }
+
+    // 对账：成员与花费各自清理本地已同步但服务端已移除的行
+    //（花费的分摊级联清理由 DAO 处理）。
+    final memberServerIds = <String>{for (final j in members) j['id'] as String};
+    await _tripDao.deleteSyncedMembersNotIn(ledgerId, memberServerIds);
+    final expServerIds = <String>{for (final j in expenses) j['id'] as String};
+    await _tripDao.deleteSyncedExpensesNotIn(ledgerId, expServerIds);
   }
 }

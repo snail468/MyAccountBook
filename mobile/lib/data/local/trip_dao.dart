@@ -96,6 +96,45 @@ class TripDao {
     );
   }
 
+  /// 拉取对账：删本地已同步但服务端已移除的成员；不动未同步的本地占位。
+  Future<void> deleteSyncedMembersNotIn(
+      String ledgerId, Set<String> serverIds) async {
+    final db = await _db.database;
+    if (serverIds.isEmpty) {
+      await db.delete('trip_members',
+          where: 'ledger_id = ? AND server_id IS NOT NULL', whereArgs: [ledgerId]);
+      return;
+    }
+    final ph = List.filled(serverIds.length, '?').join(',');
+    await db.delete(
+      'trip_members',
+      where:
+          'ledger_id = ? AND server_id IS NOT NULL AND server_id NOT IN ($ph)',
+      whereArgs: [ledgerId, ...serverIds],
+    );
+  }
+
+  /// 拉取对账：删本地已同步但服务端已移除的花费；先清其分摊(引用 expense_id)，
+  /// 再清花费本身。不动未同步的本地新建。
+  Future<void> deleteSyncedExpensesNotIn(
+      String ledgerId, Set<String> serverIds) async {
+    final db = await _db.database;
+    late final String ph;
+    late final List<Object?> args;
+    if (serverIds.isEmpty) {
+      ph = 'ledger_id = ? AND server_id IS NOT NULL';
+      args = [ledgerId];
+    } else {
+      ph =
+          'ledger_id = ? AND server_id IS NOT NULL AND server_id NOT IN (${List.filled(serverIds.length, '?').join(',')})';
+      args = [ledgerId, ...serverIds];
+    }
+    await db.delete('trip_splits',
+        where: 'expense_id IN (SELECT id FROM trip_expenses WHERE $ph)',
+        whereArgs: args);
+    await db.delete('trip_expenses', where: ph, whereArgs: args);
+  }
+
   // ---- 分摊 ----
   Future<void> insertSplit(TripSplit s) async {
     final db = await _db.database;

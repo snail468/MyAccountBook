@@ -81,6 +81,40 @@ class LedgerDao {
     );
   }
 
+  /// 拉取对账 + 级联：删本地「已同步但服务端已删除」的账本，并清掉其下全部本地
+  /// 子数据（金额/分摊引用父表，先清子再清父）。绝不删未同步(server_id 为 null)
+  /// 的本地账本（待推送的新建）。
+  Future<void> deleteSyncedNotIn(Set<String> serverIds) async {
+    final db = await _db.database;
+    late final String ph;
+    late final List<Object?> args;
+    if (serverIds.isEmpty) {
+      ph = 'server_id IS NOT NULL';
+      args = const [];
+    } else {
+      ph =
+          'server_id IS NOT NULL AND server_id NOT IN (${List.filled(serverIds.length, '?').join(',')})';
+      args = serverIds.toList();
+    }
+    final rows =
+        await db.query('ledgers', columns: ['id'], where: ph, whereArgs: args);
+    for (final r in rows) {
+      final lid = r['id'] as String;
+      await db.delete('event_amounts',
+          where: 'event_id IN (SELECT id FROM taoyuan_events WHERE ledger_id = ?)',
+          whereArgs: [lid]);
+      await db.delete('taoyuan_events', where: 'ledger_id = ?', whereArgs: [lid]);
+      await db.delete('trip_splits',
+          where: 'expense_id IN (SELECT id FROM trip_expenses WHERE ledger_id = ?)',
+          whereArgs: [lid]);
+      await db.delete('trip_expenses', where: 'ledger_id = ?', whereArgs: [lid]);
+      await db.delete('trip_members', where: 'ledger_id = ?', whereArgs: [lid]);
+      await db.delete('general_entries', where: 'ledger_id = ?', whereArgs: [lid]);
+      await db.delete('work_entries', where: 'ledger_id = ?', whereArgs: [lid]);
+      await db.delete('ledgers', where: 'id = ?', whereArgs: [lid]);
+    }
+  }
+
   Future<void> clearAll() async {
     final db = await _db.database;
     await db.delete('ledgers');

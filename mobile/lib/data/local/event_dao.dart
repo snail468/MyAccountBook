@@ -53,6 +53,26 @@ class EventDao {
     );
   }
 
+  /// 拉取对账：删本地已同步但服务端已不存在的活动；先清其金额(引用 event_id)，
+  /// 再清活动本身。不动未同步的本地新建。
+  Future<void> deleteSyncedNotIn(String ledgerId, Set<String> serverIds) async {
+    final db = await _db.database;
+    late final String ph;
+    late final List<Object?> args;
+    if (serverIds.isEmpty) {
+      ph = 'ledger_id = ? AND server_id IS NOT NULL';
+      args = [ledgerId];
+    } else {
+      ph =
+          'ledger_id = ? AND server_id IS NOT NULL AND server_id NOT IN (${List.filled(serverIds.length, '?').join(',')})';
+      args = [ledgerId, ...serverIds];
+    }
+    await db.delete('event_amounts',
+        where: 'event_id IN (SELECT id FROM taoyuan_events WHERE $ph)',
+        whereArgs: args);
+    await db.delete('taoyuan_events', where: ph, whereArgs: args);
+  }
+
   /// 插入金额；拉取同步时用 [ConflictAlgorithm.replace] 按 id 覆盖已存在行。
   Future<void> insertAmount(EventAmount a) async {
     final db = await _db.database;

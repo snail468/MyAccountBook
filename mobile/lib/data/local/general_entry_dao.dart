@@ -53,6 +53,24 @@ class GeneralEntryDao {
     );
   }
 
+  /// 拉取对账：删本地「已同步(server_id 非空)」但服务端已不存在(serverId 不在
+  /// [serverIds])的行。绝不删未同步(server_id 为 null)的本地行（待推送的新建）。
+  Future<void> deleteSyncedNotIn(String ledgerId, Set<String> serverIds) async {
+    final db = await _db.database;
+    if (serverIds.isEmpty) {
+      await db.delete('general_entries',
+          where: 'ledger_id = ? AND server_id IS NOT NULL', whereArgs: [ledgerId]);
+      return;
+    }
+    final ph = List.filled(serverIds.length, '?').join(',');
+    await db.delete(
+      'general_entries',
+      where:
+          'ledger_id = ? AND server_id IS NOT NULL AND server_id NOT IN ($ph)',
+      whereArgs: [ledgerId, ...serverIds],
+    );
+  }
+
   /// 某月收入/支出合计（分）。预算进度用。
   Future<({int income, int expense})> monthlyTotals(
       String ledgerId, String yearMonth) async {

@@ -6,13 +6,23 @@ class GeneralEntryApi {
   final ApiClient _client;
   GeneralEntryApi(this._client);
 
-  /// 列表（按 occurredAt 倒序，分页由服务端游标处理；这里一次取首屏）。
+  /// 列表（按 occurredAt 倒序）。服务端游标分页，这里循环拉全量，
+  /// 供同步对账使用——只有拿到完整集合，才能安全清理服务端已软删的本地行。
   Future<List<Map<String, dynamic>>> list(String ledgerId) async {
-    final data = await _client.get('/ledgers/$ledgerId/entries');
-    if (data is Map && data['entries'] is List) {
-      return List<Map<String, dynamic>>.from(data['entries'] as List);
-    }
-    return [];
+    final all = <Map<String, dynamic>>[];
+    String? cursor;
+    do {
+      final q = <String, String>{'limit': '200'};
+      if (cursor != null) q['cursor'] = cursor;
+      final data = await _client.get('/ledgers/$ledgerId/entries', query: q);
+      if (data is Map && data['entries'] is List) {
+        all.addAll(List<Map<String, dynamic>>.from(data['entries'] as List));
+        cursor = data['nextCursor'] as String?;
+      } else {
+        break;
+      }
+    } while (cursor != null);
+    return all;
   }
 
   /// 新建。返回服务端 id（cuid）。[e.clientId] 用于幂等。

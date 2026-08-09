@@ -6,13 +6,22 @@ class WorkEntryApi {
   final ApiClient _client;
   WorkEntryApi(this._client);
 
-  /// 列表（需显式 ledgerId 以命中协作账本）。
+  /// 列表（需显式 ledgerId 以命中协作账本）。服务端游标分页，这里循环拉全量。
   Future<List<Map<String, dynamic>>> list(String ledgerId) async {
-    final data = await _client.get('/entries', query: {'ledgerId': ledgerId});
-    if (data is Map && data['entries'] is List) {
-      return List<Map<String, dynamic>>.from(data['entries'] as List);
-    }
-    return [];
+    final all = <Map<String, dynamic>>[];
+    String? cursor;
+    do {
+      final q = <String, String>{'ledgerId': ledgerId, 'limit': '200'};
+      if (cursor != null) q['cursor'] = cursor;
+      final data = await _client.get('/entries', query: q);
+      if (data is Map && data['entries'] is List) {
+        all.addAll(List<Map<String, dynamic>>.from(data['entries'] as List));
+        cursor = data['nextCursor'] as String?;
+      } else {
+        break;
+      }
+    } while (cursor != null);
+    return all;
   }
 
   /// 新建。返回服务端 id（cuid）。[e.clientId] 用于幂等。

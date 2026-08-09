@@ -52,6 +52,23 @@ class WorkEntryDao {
     );
   }
 
+  /// 拉取对账：删本地已同步但服务端已不存在的行；不动未同步的本地新建。
+  Future<void> deleteSyncedNotIn(String ledgerId, Set<String> serverIds) async {
+    final db = await _db.database;
+    if (serverIds.isEmpty) {
+      await db.delete('work_entries',
+          where: 'ledger_id = ? AND server_id IS NOT NULL', whereArgs: [ledgerId]);
+      return;
+    }
+    final ph = List.filled(serverIds.length, '?').join(',');
+    await db.delete(
+      'work_entries',
+      where:
+          'ledger_id = ? AND server_id IS NOT NULL AND server_id NOT IN ($ph)',
+      whereArgs: [ledgerId, ...serverIds],
+    );
+  }
+
   /// 各月合计（支出/收入），用于工作账本"按月卡片"。
   Future<Map<String, ({int income, int expense})>> totalsByMonth(
       String ledgerId) async {
