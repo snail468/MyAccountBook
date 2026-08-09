@@ -46,6 +46,11 @@ class AppColors {
   static const Color darkFloatingBtnBorder = Color(0xB2334155);
   // 品牌粉：与浅色同值（亮粉在深色背景下仍清晰可读）。
   static const Color darkBrandPink = Color(0xFFff2d87);
+  // 语义色：与浅色同值（深色背景下仍清晰可读）。T01 收入配色引用了 darkSemanticRed，
+  // 此前漏定义导致 v2.0.20/21/22 全部编译失败；补齐整套以避免同类问题。
+  static const Color darkSemanticRed = Color(0xFFEF4444);
+  static const Color darkSemanticGreen = Color(0xFF049E69);
+  static const Color darkSemanticBlue = Color(0xFF2557EB);
 
   // ---------------- Glass（仅浅色生效） ----------------
   static const Color glassPageBg = Color(0xFFFBF5FF); // (0.984, 0.961, 1)
