@@ -134,18 +134,18 @@ class _HomePageState extends State<HomePage> {
 
   List<Widget> _incomeBreakdown(Color ink500) {
     if (_summaryLoading) {
-      return [Text('加载中…', style: TextStyle(color: ink500, fontSize: 13))];
+      return [Text('加载中…', style: TextStyle(color: ink500, fontSize: 12))];
     }
     if (_incomeLines.isEmpty) {
       return [
-        Text('本月暂无记账收入', style: TextStyle(color: ink500, fontSize: 13))
+        Text('本月暂无记账收入', style: TextStyle(color: ink500, fontSize: 12))
       ];
     }
     return _incomeLines
         .map((l) => Padding(
               padding: const EdgeInsets.only(bottom: 2),
               child: Text('${l.name} 进项 +${Money.formatCents(l.income)}',
-                  style: TextStyle(color: ink500, fontSize: 13)),
+                  style: TextStyle(color: ink500, fontSize: 12)),
             ))
         .toList();
   }
@@ -195,7 +195,7 @@ class _HomePageState extends State<HomePage> {
                     children: [
                       Text(
                         '${auth.username ?? ''} · 心愿便利贴',
-                        style: TextStyle(color: ink500, fontSize: 13),
+                        style: TextStyle(color: ink500, fontSize: 14),
                       ),
                       const SizedBox(height: 8),
                       GestureDetector(
@@ -203,10 +203,7 @@ class _HomePageState extends State<HomePage> {
                           await context.read<AuthState>().logout();
                         },
                         child: Text('退出',
-                            style: TextStyle(
-                                color: ink900,
-                                fontSize: 15,
-                                fontWeight: FontWeight.w600)),
+                            style: TextStyle(color: ink900, fontSize: 14)),
                       ),
                     ],
                   ),
@@ -259,14 +256,8 @@ class _HomePageState extends State<HomePage> {
             ),
             const SizedBox(height: 16),
 
-            // ---- 功能网格 ----
-            GridView.count(
-              crossAxisCount: 2,
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              mainAxisSpacing: 12,
-              crossAxisSpacing: 12,
-              childAspectRatio: 1.35,
+            // ---- 功能列表（1:1 对齐 Ardot：单列纵向，卡片 64 高，间距 12）----
+            Column(
               children: [
                 LedgerFeatureCard(
                   icon: '💼',
@@ -274,6 +265,7 @@ class _HomePageState extends State<HomePage> {
                   subtitle: '按月记录进项与出项',
                   onTap: () => _openKind(context, AppConfig.kindWork, '工作账本'),
                 ),
+                const SizedBox(height: 12),
                 LedgerFeatureCard(
                   icon: '📤',
                   title: '工作出项汇总',
@@ -282,6 +274,7 @@ class _HomePageState extends State<HomePage> {
                     MaterialPageRoute(builder: (_) => const WorkSummaryPage()),
                   ),
                 ),
+                const SizedBox(height: 12),
                 LedgerFeatureCard(
                   icon: '🌸',
                   title: '桃源账本',
@@ -289,6 +282,7 @@ class _HomePageState extends State<HomePage> {
                   onTap: () =>
                       _openKind(context, AppConfig.kindTaoyuan, '桃源账本'),
                 ),
+                const SizedBox(height: 12),
                 LedgerFeatureCard(
                   icon: '📒',
                   title: '家庭账本',
@@ -298,6 +292,7 @@ class _HomePageState extends State<HomePage> {
                   onTap: () =>
                       _openKind(context, AppConfig.kindGeneral, '家庭账本'),
                 ),
+                const SizedBox(height: 12),
                 LedgerFeatureCard(
                   icon: '✈️',
                   title: '东京之旅',
@@ -307,6 +302,7 @@ class _HomePageState extends State<HomePage> {
                   onTap: () =>
                       _openKind(context, AppConfig.kindTravel, '东京之旅'),
                 ),
+                const SizedBox(height: 12),
                 LedgerFeatureCard(
                   icon: '🔁',
                   title: '周期记账',
@@ -315,6 +311,7 @@ class _HomePageState extends State<HomePage> {
                     MaterialPageRoute(builder: (_) => const RecurringPage()),
                   ),
                 ),
+                const SizedBox(height: 12),
                 LedgerFeatureCard(
                   icon: '💳',
                   title: '银行卡备份',
@@ -323,6 +320,7 @@ class _HomePageState extends State<HomePage> {
                     MaterialPageRoute(builder: (_) => const BankPage()),
                   ),
                 ),
+                const SizedBox(height: 12),
                 LedgerFeatureCard(
                   icon: '📈',
                   title: '统计',
@@ -331,6 +329,7 @@ class _HomePageState extends State<HomePage> {
                     MaterialPageRoute(builder: (_) => const StatsPage()),
                   ),
                 ),
+                const SizedBox(height: 12),
                 LedgerFeatureCard(
                   icon: '🔍',
                   title: '搜索',
@@ -339,11 +338,13 @@ class _HomePageState extends State<HomePage> {
                     MaterialPageRoute(builder: (_) => const SearchPage()),
                   ),
                 ),
+                const SizedBox(height: 12),
                 _AddLedgerCard(
                   onTap: () => Navigator.of(context).push(
                     MaterialPageRoute(builder: (_) => const ManageLedgersPage()),
                   ),
                 ),
+                const SizedBox(height: 12),
                 LedgerFeatureCard(
                   icon: '🗑️',
                   title: '回收站',
@@ -352,6 +353,7 @@ class _HomePageState extends State<HomePage> {
                     MaterialPageRoute(builder: (_) => const TrashPage()),
                   ),
                 ),
+                const SizedBox(height: 12),
                 LedgerFeatureCard(
                   icon: '👥',
                   title: '用户管理',
@@ -365,10 +367,8 @@ class _HomePageState extends State<HomePage> {
             const SizedBox(height: 20),
 
             // ---- 页脚 ----
-            Center(
-              child: Text('导出数据 · 导入数据 · 修改密码',
-                  style: TextStyle(color: ink400, fontSize: 12)),
-            ),
+            Text('导出数据 · 导入数据 · 修改密码',
+                style: TextStyle(color: ink400, fontSize: 12)),
           ],
         ),
       ),
@@ -401,7 +401,7 @@ class _OverspendCard extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: bg,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(24),
         border: Border.all(color: border, width: 1),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -416,13 +416,10 @@ class _OverspendCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(title,
-                      style: TextStyle(
-                          color: titleColor,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 15)),
+                      style: TextStyle(color: titleColor, fontSize: 12)),
                   const SizedBox(height: 2),
                   Text(detail,
-                      style: TextStyle(color: detailColor, fontSize: 13)),
+                      style: TextStyle(color: detailColor, fontSize: 14)),
                 ],
               ),
             ),
@@ -466,13 +463,10 @@ class _AddLedgerCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text('添加 / 删除账本',
-                      style: TextStyle(
-                          color: ink500,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 15)),
+                      style: TextStyle(color: ink500, fontSize: 18)),
                   const SizedBox(height: 2),
                   Text('新增账本 · 恢复回收站 · 管理已有',
-                      style: TextStyle(color: ink500, fontSize: 13)),
+                      style: TextStyle(color: ink400, fontSize: 12)),
                 ],
               ),
             ),

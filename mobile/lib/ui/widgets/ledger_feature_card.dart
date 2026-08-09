@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 import '../../theme/design_tokens.dart';
 import 'app_card.dart';
 
-/// 首页功能入口卡片（[AppCard] 行布局）。
+/// 首页功能入口卡片（[AppCard] 行布局，1:1 对齐 Ardot 功能卡）。
 ///
-/// 前导 emoji(24) + Expanded 列（title ink900 w600 size15 / subtitle ink500 size13）
-/// + 尾随 "›" ink400 size20。内边距 16。
+/// 前导 emoji(22) + Expanded 列（title ink900 size18 / subtitle ink500 size12）
+/// + 尾随 "›" ink400 size18。内边距 16。卡片整体 64 高、圆角 16。
 class LedgerFeatureCard extends StatelessWidget {
   final String icon; // emoji 字符串
   final String title;
@@ -33,7 +33,7 @@ class LedgerFeatureCard extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         child: Row(
           children: [
-            Text(icon, style: const TextStyle(fontSize: 24)),
+            Text(icon, style: const TextStyle(fontSize: 22)),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -43,19 +43,18 @@ class LedgerFeatureCard extends StatelessWidget {
                     title,
                     style: TextStyle(
                       color: ink900,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 15,
+                      fontSize: 18,
                     ),
                   ),
                   const SizedBox(height: 2),
                   Text(
                     subtitle,
-                    style: TextStyle(color: ink500, fontSize: 13),
+                    style: TextStyle(color: ink500, fontSize: 12),
                   ),
                 ],
               ),
             ),
-            Text('›', style: TextStyle(color: ink400, fontSize: 20)),
+            Text('›', style: TextStyle(color: ink400, fontSize: 18)),
           ],
         ),
       ),
