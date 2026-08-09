@@ -439,6 +439,7 @@ class _AddLedgerCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
+    final ink400 = isDark ? AppColors.darkInk400 : AppColors.lightInk400;
     final dashed = isDark
         ? AppColors.darkBorder
         : AppColors.lightBorderDashed;
