@@ -34,6 +34,7 @@ export async function GET(req: Request) {
   const ledgerId = await resolveTaoyuanLedger(
     user.id,
     url.searchParams.get('ledgerId'),
+    'viewer',
   );
   if (ledgerId instanceof Response) return ledgerId;
 
@@ -133,10 +134,12 @@ export async function POST(req: Request) {
   }
 }
 
-// 与 /api/entries 的 resolveWorkLedger 对称：taoyuan 版
+// 与 /api/entries 的 resolveWorkLedger 对称：taoyuan 版。
+// minRole 默认 'editor'（写路径语义），读路径（GET）显式传 'viewer' 以放行协作者。
 async function resolveTaoyuanLedger(
   userId: string,
   explicit: string | null,
+  minRole: 'viewer' | 'editor' = 'editor',
 ): Promise<string | Response> {
   if (!explicit) {
     return resolveOwnLedgerId(userId, 'taoyuan');
@@ -151,6 +154,6 @@ async function resolveTaoyuanLedger(
   if (!ledger || ledger.kind !== 'taoyuan') return notFound('账本不存在');
   const rawRole = ledger.members[0]?.role;
   if (!rawRole || !isLedgerRole(rawRole)) return notFound('账本不存在');
-  if (!roleAtLeast(rawRole, 'editor')) return notFound('账本不存在');
+  if (!roleAtLeast(rawRole, minRole)) return notFound('账本不存在');
   return explicit;
 }

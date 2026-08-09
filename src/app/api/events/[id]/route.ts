@@ -11,7 +11,8 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const ctx = await requireOwnedEvent(id);
+  // 读路径放行 viewer 角色（共享账本的 viewer 成员可同步活动），写路径 PATCH/DELETE 保持默认 editor。
+  const ctx = await requireOwnedEvent(id, { minRole: 'viewer' });
   if (ctx instanceof Response) return ctx;
 
   const event = await prisma.event.findUnique({

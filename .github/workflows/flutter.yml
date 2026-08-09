@@ -99,8 +99,8 @@ jobs:
         # 后所有构建签名一致，升级无需卸载。未配置 secret 时回退 debug 签名。
         if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
         run: |
-          base64 -d <<< "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" > mobile/android/app/upload-keystore.jks
-          printf 'storeFile=upload-keystore.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+          base64 -d <<< "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" > mobile/android/app/upload-keystore.p12
+          printf 'storeFile=upload-keystore.p12\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
             "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" \
             "${{ secrets.ANDROID_KEY_ALIAS }}" \
             "${{ secrets.ANDROID_KEY_PASSWORD }}" > mobile/android/key.properties
@@ -121,6 +121,7 @@ jobs:
                   "                Properties props = new Properties()\n"
                   "                props.load(new FileInputStream(keyProps))\n"
                   "                storeFile file(props['storeFile'])\n"
+                  "                storeType 'PKCS12'\n"
                   "                storePassword props['storePassword']\n"
                   "                keyAlias props['keyAlias']\n"
                   "                keyPassword props['keyPassword']\n"
