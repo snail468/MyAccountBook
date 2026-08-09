@@ -240,7 +240,7 @@ class _HomePageState extends State<HomePage> {
     return Scaffold(
       backgroundColor: AppTheme.scaffoldBackground(context),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(16, 48, 16, 24),
+        padding: const EdgeInsets.fromLTRB(24, 48, 24, 24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -259,6 +259,8 @@ class _HomePageState extends State<HomePage> {
                       const SizedBox(height: 8),
                       GestureDetector(
                         onTap: () async {
+                          // 退出登录前重置同步节流，确保重新登录能立即全量同步。
+                          context.read<LedgerListState>().resetSync();
                           await context.read<AuthState>().logout();
                         },
                         child: Text('退出',

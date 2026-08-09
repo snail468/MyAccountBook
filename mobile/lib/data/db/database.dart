@@ -11,7 +11,7 @@ class AppDatabase {
   AppDatabase._internal();
   static final AppDatabase instance = AppDatabase._internal();
 
-  static const int _version = 2;
+  static const int _version = 3;
   Database? _db;
 
   Future<Database> get database async {
@@ -36,7 +36,56 @@ class AppDatabase {
     if (oldV < 2) {
       await _createV2Tables(db);
     }
-    // 后续版本在此扩展：if (oldV < 3) { ... }
+    // 版本 3：新增 ledgers.server_id 唯一索引，根治「同步重复账本」Bug。
+    if (oldV < 3) {
+      // 先清理历史重复行（同一 server_id 多行），否则建唯一索引会因
+      // UNIQUE constraint failed 中断升级，导致旧库永远卡在 v2 反复失败。
+      await _dedupeLedgersByServerId(db);
+      await db.execute(
+        'CREATE UNIQUE INDEX IF NOT EXISTS idx_ledgers_server_id ON ledgers(server_id) WHERE server_id IS NOT NULL;',
+      );
+    }
+  }
+
+  /// 升级到 v3 前清理历史重复账本：同一 server_id 若出现多行，仅保留一行
+  /// （优先保留已同步行，其次 rowid 最小行），并级联清理其下孤儿子数据，避免外键半成品。
+  Future<void> _dedupeLedgersByServerId(Database db) async {
+    final dupRows = await db.rawQuery('''
+      SELECT server_id
+      FROM ledgers
+      WHERE server_id IS NOT NULL
+      GROUP BY server_id
+      HAVING COUNT(*) > 1
+    ''');
+    for (final row in dupRows) {
+      final sid = row['server_id'] as String;
+      final rows = await db.query(
+        'ledgers',
+        where: 'server_id = ?',
+        whereArgs: [sid],
+        orderBy: 'synced DESC, rowid ASC',
+      );
+      // 跳过首个（保留行），删除其余重复行及其子数据。
+      for (final r in rows.skip(1)) {
+        final lid = r['id'] as String;
+        await db.delete(
+          'event_amounts',
+          where: 'event_id IN (SELECT id FROM taoyuan_events WHERE ledger_id = ?)',
+          whereArgs: [lid],
+        );
+        await db.delete('taoyuan_events', where: 'ledger_id = ?', whereArgs: [lid]);
+        await db.delete(
+          'trip_splits',
+          where: 'expense_id IN (SELECT id FROM trip_expenses WHERE ledger_id = ?)',
+          whereArgs: [lid],
+        );
+        await db.delete('trip_expenses', where: 'ledger_id = ?', whereArgs: [lid]);
+        await db.delete('trip_members', where: 'ledger_id = ?', whereArgs: [lid]);
+        await db.delete('general_entries', where: 'ledger_id = ?', whereArgs: [lid]);
+        await db.delete('work_entries', where: 'ledger_id = ?', whereArgs: [lid]);
+        await db.delete('ledgers', where: 'id = ?', whereArgs: [lid]);
+      }
+    }
   }
 
   /// 建全部表 + 索引（新装库用）。
@@ -214,6 +263,12 @@ class AppDatabase {
     await db.execute('CREATE INDEX idx_trip_exp_ledger ON trip_expenses(ledger_id, phase, deleted_at);');
     await db.execute('CREATE INDEX idx_trip_split_exp ON trip_splits(expense_id);');
     await db.execute('CREATE INDEX idx_pending_status ON pending_ops(status, created_at);');
+
+    // 账本 server_id 唯一索引：根治「同步重复账本」Bug（离线优先 + 服务端对账）。
+    // 部分索引：仅对非 NULL 的 server_id 生效，本地未同步（server_id 为 NULL）的行不受约束。
+    await db.execute(
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_ledgers_server_id ON ledgers(server_id) WHERE server_id IS NOT NULL;',
+    );
 
     // 版本 2 新增表
     await _createV2Tables(db);

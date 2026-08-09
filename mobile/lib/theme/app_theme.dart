@@ -5,7 +5,7 @@ import 'design_tokens.dart';
 
 /// 应用主题：基于设计令牌构建的 Material 3 浅色/深色 [ThemeData]。
 ///
-/// 风格：扁平卡片 + 1px 描边，无重阴影；圆角 16 卡 / 12 按钮与输入框。
+/// 风格：扁平卡片 + 1px 描边，无重阴影；圆角 16 卡 / 16 按钮与输入框（52pt 高）。
 class AppTheme {
   AppTheme._();
 
@@ -52,13 +52,13 @@ class AppTheme {
           foregroundColor: dark ? AppColors.darkCtaText : Colors.white,
           elevation: 0,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(16),
           ),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(16),
           borderSide: BorderSide(
             color: dark ? AppColors.darkBorder : AppColors.lightBorder,
           ),

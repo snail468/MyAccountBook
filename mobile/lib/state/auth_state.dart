@@ -1,8 +1,13 @@
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../api/api_client.dart';
 import '../api/auth_api.dart';
 
 /// 登录态。Cookie 由 [ApiClient] 持久化，这里只维护内存态 + 启动探测。
+///
+/// 「记住登录信息」：用户名与密码明文存入 shared_preferences（移动端本地存储，
+/// 对应网页端 localStorage）。出于安全考虑，启动探测到 cookie 已失效时**不**自动登录，
+/// 仅把记住的用户名预填到登录页（需用户重新输入密码验证）。
 class AuthState extends ChangeNotifier {
   final ApiClient _api = ApiClient.instance;
   final AuthApi _auth = AuthApi(ApiClient.instance);
@@ -11,12 +16,24 @@ class AuthState extends ChangeNotifier {
   bool _authed = false;
   String? _username;
 
+  /// 记住的用户名（启动探测后填充，供登录页预填）。
+  String? _rememberedUsername;
+
   bool get initialized => _initialized;
   bool get authed => _authed;
   String? get username => _username;
 
+  /// 记住的用户名（非空才可用于预填登录页）。
+  String? get rememberedUsername => _rememberedUsername;
+
+  static const String _kRememberUser = 'remember_username';
+  static const String _kRememberPass = 'remember_password';
+
   Future<void> init() async {
     _authed = await _api.hasSessionCookie();
+    // 读取记住的凭据用于预填（不自动登录：cookie 失效需用户重新验证）。
+    final prefs = await SharedPreferences.getInstance();
+    _rememberedUsername = prefs.getString(_kRememberUser);
     _initialized = true;
     notifyListeners();
   }
@@ -25,6 +42,21 @@ class AuthState extends ChangeNotifier {
     _username = await _auth.login(username, password);
     _authed = true;
     notifyListeners();
+  }
+
+  /// 登录成功后，若用户勾选「记住登录信息」则保存明文凭据；否则清除已保存的密码。
+  Future<void> saveRememberMe(String username, String password) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kRememberUser, username);
+    await prefs.setString(_kRememberPass, password);
+    _rememberedUsername = username;
+  }
+
+  /// 清除记住的密码（保留用户名），用于未勾选或退出登录时。
+  Future<void> clearRememberPassword() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_kRememberPass);
+    _rememberedUsername = prefs.getString(_kRememberUser);
   }
 
   Future<void> register(String username, String password) async {
@@ -37,6 +69,8 @@ class AuthState extends ChangeNotifier {
     await _auth.logout();
     _authed = false;
     _username = null;
+    // 退出登录时清除记住的密码（保留用户名，便于下次预填）。
+    await clearRememberPassword();
     notifyListeners();
   }
 }

@@ -22,6 +22,19 @@ class LedgerDao {
     return Ledger.fromDb(rows.first);
   }
 
+  /// 按 server_id 查本地账本（同步去重用）。唯一索引保证最多一行。
+  Future<Ledger?> getByServerId(String serverId) async {
+    final db = await _db.database;
+    final rows = await db.query(
+      'ledgers',
+      where: 'server_id = ?',
+      whereArgs: [serverId],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return Ledger.fromDb(rows.first);
+  }
+
   /// 列出某类型、未删除的账本（首页用）。
   Future<List<Ledger>> listByKind(String kind) async {
     final db = await _db.database;

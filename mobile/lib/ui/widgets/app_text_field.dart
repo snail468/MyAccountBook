@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../theme/design_tokens.dart';
 
-/// 输入框：surface 填充，1px border，hint ink400，圆角 12，contentPadding 16。
+/// 输入框：surface 填充，1px border，hint ink500，圆角 16，contentPadding 16。
 class AppTextField extends StatelessWidget {
   final String hint;
   final bool obscure;
@@ -19,7 +19,7 @@ class AppTextField extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final fill = isDark ? AppColors.darkSurface : AppColors.lightSurface;
     final border = isDark ? AppColors.darkBorder : AppColors.lightBorder;
-    final hintColor = isDark ? AppColors.darkInk400 : AppColors.lightInk400;
+    final hintColor = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
 
     return TextField(
       controller: controller,
@@ -31,15 +31,15 @@ class AppTextField extends StatelessWidget {
         fillColor: fill,
         contentPadding: const EdgeInsets.all(16),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(16),
           borderSide: BorderSide(color: border, width: 1),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(16),
           borderSide: BorderSide(color: border, width: 1),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(16),
           borderSide: BorderSide(color: border, width: 1),
         ),
       ),

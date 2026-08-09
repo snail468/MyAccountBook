@@ -196,7 +196,7 @@ class _SyncHint extends StatelessWidget {
     return GestureDetector(
       onTap: () async {
         try {
-          await context.read<LedgerListState>().sync();
+          await context.read<LedgerListState>().forceSync();
         } catch (_) {
           if (context.mounted) {
             ScaffoldMessenger.of(context).showSnackBar(

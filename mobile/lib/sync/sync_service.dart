@@ -199,21 +199,44 @@ class SyncService {
 
   Future<void> _pullAll() async {
     final ledgers = await _ledgers.list();
-    final ledgerServerToLocal = <String, String>{};
+
+    // 防御：服务端响应里同一 server_id 理论上不会重复；若重复只取第一条，其余丢弃。
+    final seenServerIds = <String>{};
+    final deduped = <Map<String, dynamic>>[];
     for (final j in ledgers) {
       final sid = j['id'] as String;
-      final localId = ledgerServerToLocal[sid] ?? _uuid.v4();
+      if (seenServerIds.contains(sid)) continue;
+      seenServerIds.add(sid);
+      deduped.add(j);
+    }
+
+    // 建立本地 server_id -> local_id 映射（来自持久化库，而非每次新建的临时 Map）。
+    // 这样同一 server_id 的账本永远复用同一 local_id，配合 ledgers.server_id 唯一索引，
+    // [LedgerDao.upsert] 的 ConflictAlgorithm.replace 会真正「更新」而非「插入新行」，
+    // 从而根治「同步重复账本」Bug。map 基于 listAllIncludingDeleted，确保软删除过的
+    // 账本也能被复用 local_id（否则新 UUID 写入会因唯一索引冲突而失败）。
+    final localByServer = <String, String>{};
+    final existing = await _ledgerDao.listAllIncludingDeleted();
+    for (final l in existing) {
+      if (l.serverId != null && l.serverId!.isNotEmpty) {
+        localByServer[l.serverId!] = l.id;
+      }
+    }
+
+    for (final j in deduped) {
+      final sid = j['id'] as String;
+      final localId = localByServer[sid] ?? _uuid.v4();
       await _ledgerDao.upsert(Ledger.fromApi(j, localId: localId));
-      ledgerServerToLocal[sid] = localId;
+      localByServer[sid] = localId;
     }
 
     // 逐账本拉取：单个账本失败（权限不足 / 服务端 5xx / 残留测试数据）不应拖垮整体同步。
     // 跳过失败账本、其余继续；仅当全部账本都拉取失败时才视为同步失败。
     int ok = 0;
     final errors = <String>[];
-    for (final j in ledgers) {
+    for (final j in deduped) {
       final sid = j['id'] as String;
-      final localId = ledgerServerToLocal[sid]!;
+      final localId = localByServer[sid]!;
       final kind = j['kind'] as String;
       try {
         if (kind == AppConfig.kindGeneral) {
@@ -234,10 +257,10 @@ class SyncService {
     }
 
     // 账本级对账：服务端已删除的账本（含其全部本地子数据）清理掉。
-    final ledgerServerIds = <String>{for (final j in ledgers) j['id'] as String};
+    final ledgerServerIds = <String>{for (final j in deduped) j['id'] as String};
     await _ledgerDao.deleteSyncedNotIn(ledgerServerIds);
 
-    if (ledgers.isNotEmpty && ok == 0) {
+    if (deduped.isNotEmpty && ok == 0) {
       final msg = errors.isNotEmpty ? errors.join('; ') : '未知同步错误';
       throw ApiException('同步失败（全部账本拉取出错）：$msg');
     }

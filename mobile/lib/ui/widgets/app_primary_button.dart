@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../theme/design_tokens.dart';
 
-/// 主操作按钮：高 48，圆角 12，按主题填充 CTA 色，白/ink900 文字，w600。
+/// 主操作按钮：高 52，圆角 16，按主题填充 CTA 色，白/ink900 文字，w600。
 class AppPrimaryButton extends StatelessWidget {
   final String label;
   final VoidCallback? onPressed;
@@ -19,7 +19,7 @@ class AppPrimaryButton extends StatelessWidget {
     final text = isDark ? AppColors.darkCtaText : Colors.white;
 
     return SizedBox(
-      height: 48,
+      height: 52,
       width: double.infinity,
       child: ElevatedButton(
         onPressed: onPressed,
@@ -28,7 +28,7 @@ class AppPrimaryButton extends StatelessWidget {
           foregroundColor: text,
           elevation: 0,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(16),
           ),
         ),
         child: Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
