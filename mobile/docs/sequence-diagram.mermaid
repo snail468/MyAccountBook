@@ -1,0 +1,61 @@
+%% ===== 4.1 启动与主题装配 =====
+sequenceDiagram
+    participant M as main()
+    participant P as AppearanceProvider
+    participant T as AppTheme
+    participant R as RootSwitcher
+    participant H as HomePage
+    M->>P: load()  (读 shared_preferences)
+    M->>T: from(P.mode)
+    M->>R: MaterialApp(theme: T, router: AppRouter)
+    R->>H: 路由 '/' 根列表
+    H->>H: initState → load() + sync()
+    H->>H: 渲染 PageHeader + AppearanceFab + 分组 AppCard
+
+%% ===== 4.2 导航范式（首页根 / 回首页 / 外观 FAB）=====
+sequenceDiagram
+    participant U as 用户
+    participant H as HomePage
+    participant R as AppRouter
+    participant D as LedgerDetailPage
+    participant PH as PageHeader
+    participant Fab as AppearanceFab
+    participant S as AppearanceSheet
+    participant P as AppearanceProvider
+    U->>H: 点击某账本
+    H->>R: go('/l/'+id)
+    R->>D: 按 kind 渲染类型视图
+    D->>PH: 标题 + onBackHome
+    U->>PH: 点左上回首页
+    PH->>R: go('/')  // 回首页根
+    U->>Fab: 点右上外观按钮
+    Fab->>S: 打开浮层
+    U->>S: 选主题/字号
+    S->>P: setMode / setFontScale
+    P-->>R: notifyListeners → 整树 ThemeData 重建
+
+%% ===== 4.3 同步红线：_pullAll 软删对账（P0/P1 必含）=====
+sequenceDiagram
+    participant H as HomePage
+    participant S as SyncService.syncAll
+    participant A as ApiClient
+    participant DB as 本地库(5模型)
+    participant L as LedgerListState
+    H->>S: syncAll()  (先推后拉)
+    S->>S: _pushAll()  // 重放离线队列
+    S->>A: GET /api/ledgers, /items, /members, /settlements...
+    A-->>S: 返回 server 全量(含 deletedAt)
+    loop 每个含 deletedAt 的模型
+        S->>S: serverIds = 返回中未软删的 serverId 集合
+        S->>DB: 查出本地「已同步行」(serverId != null)
+        S->>S: _reconcileDeletes(model, serverIds)
+        alt 本地行 serverId 不在 serverIds 且已同步
+            S->>DB: 删除本地多余行(或按 deletedAt 标记)
+        end
+        alt 服务端返回软删(deletedAt != null)
+            S->>DB: 本地标记/排除(软删对齐)
+        end
+        Note over S,DB: 绝不删 serverId == null 的本地未同步行
+    end
+    S->>L: notifyRefresh()
+    L-->>H: UI 刷新（已删数据不再显示）

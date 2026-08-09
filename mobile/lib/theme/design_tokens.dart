@@ -22,6 +22,8 @@ class AppColors {
   static const Color lightSemanticRed = Color(0xFFEF4444);
   static const Color lightSemanticGreen = Color(0xFF049E69);
   static const Color lightSemanticBlue = Color(0xFF2557EB);
+  // 品牌粉：正值收入/进度高亮（1:1 对齐网页端 #ff2d87，见 IncomeComponentsCard）。
+  static const Color lightBrandPink = Color(0xFFff2d87);
   static const Color lightOverspendBg = Color(0xFFFEF2F2);
   static const Color lightOverspendBorder = Color(0xFFFECACA);
   static const Color lightOverspendTitle = Color(0xFF991B1B);
@@ -42,6 +44,8 @@ class AppColors {
   // 浮动按钮：#1E293B 0.8 + 描边 #334155 0.7
   static const Color darkFloatingBtnBg = Color(0xCC1E293B);
   static const Color darkFloatingBtnBorder = Color(0xB2334155);
+  // 品牌粉：与浅色同值（亮粉在深色背景下仍清晰可读）。
+  static const Color darkBrandPink = Color(0xFFff2d87);
 
   // ---------------- Glass（仅浅色生效） ----------------
   static const Color glassPageBg = Color(0xFFFBF5FF); // (0.984, 0.961, 1)

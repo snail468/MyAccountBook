@@ -19,6 +19,7 @@ import 'widgets/ledger_feature_card.dart';
 import 'widgets/app_card.dart';
 import 'work/work_summary_page.dart';
 import 'widgets/app_floating_button.dart';
+import 'widgets/appearance_sheet.dart';
 import '../data/local/work_entry_dao.dart';
 import '../data/local/general_entry_dao.dart';
 import '../data/local/event_dao.dart';
@@ -170,6 +171,12 @@ class _HomePageState extends State<HomePage> {
     final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
     final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
     final ink400 = isDark ? AppColors.darkInk400 : AppColors.lightInk400;
+    // 本月总收入配色：正值=品牌粉（1:1 对齐网页端），负值=语义红，零=主墨色。
+    final incomeColor = _monthIncome > 0
+        ? (isDark ? AppColors.darkBrandPink : AppColors.lightBrandPink)
+        : (_monthIncome < 0
+            ? (isDark ? AppColors.darkSemanticRed : AppColors.lightSemanticRed)
+            : ink900);
 
     return Scaffold(
       backgroundColor: AppTheme.scaffoldBackground(context),
@@ -207,9 +214,11 @@ class _HomePageState extends State<HomePage> {
                 AppFloatingButton(
                   icon: const Text('👁',
                       style: TextStyle(fontSize: 20)),
-                  onPressed: () {
-                    // 占位：首页眼睛入口（第二阶段）
-                  },
+                  onPressed: () => showModalBottomSheet(
+                    context: context,
+                    backgroundColor: Colors.transparent,
+                    builder: (_) => const AppearanceSheet(),
+                  ),
                 ),
                 const SizedBox(width: 10),
                 AppFloatingButton(
@@ -240,7 +249,7 @@ class _HomePageState extends State<HomePage> {
                     Text(
                       Money.formatCents(_monthIncome),
                       style: TextStyle(
-                        color: ink900, fontSize: 28, fontWeight: FontWeight.w700),
+                        color: incomeColor, fontSize: 28, fontWeight: FontWeight.w700),
                     ),
                     const SizedBox(height: 10),
                     ..._incomeBreakdown(ink500),

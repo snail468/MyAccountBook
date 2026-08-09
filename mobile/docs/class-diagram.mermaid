@@ -1,0 +1,198 @@
+classDiagram
+    %% ===== 主题 / 外观层 =====
+    class AppearanceMode {
+        <<enum>>
+        light
+        dark
+        glass
+    }
+    class FontScale {
+        <<enum>>
+        compact   // 0.92
+        normal    // 1.0
+        large     // 1.15
+    }
+    class AppColors {
+        <<static>>
+        + Color ink900
+        + Color ink800
+        + Color ink700
+        + Color ink500
+        + Color ink400
+        + Color ink100
+        + Color brandPink  // #ff2d87
+        + Color emerald    // 收入绿
+        + Color red        // 支出红
+        + Color amber      // 警告
+        + Color surfaceLight()
+        + Color surfaceDark()
+        + Color surfaceGlass()
+    }
+    class AppearanceProvider {
+        <<ChangeNotifier>>
+        - AppearanceMode _mode
+        - FontScale _fontScale
+        + AppearanceMode get mode
+        + FontScale get fontScale
+        + double get scaleFactor
+        + Future~void~ load()
+        + void setMode(AppearanceMode m)
+        + void setFontScale(FontScale s)
+        - Future~void~ _persist()
+    }
+    class AppTheme {
+        <<static>>
+        + ThemeData light
+        + ThemeData dark
+        + ThemeData glass
+        + ThemeData from(AppearanceMode m)
+        - TextTheme _textTheme(double factor)
+    }
+    class GlassDecoration {
+        <<static>>
+        + BoxDecoration boxDecoration()
+        + Widget clip(BackdropFilter child)
+    }
+
+    AppearanceProvider ..> AppearanceMode : holds
+    AppearanceProvider ..> FontScale : holds
+    AppTheme ..> AppColors : reads
+    AppTheme ..> AppearanceMode : from()
+    GlassDecoration ..> AppColors : uses
+
+    %% ===== 复用组件层 =====
+    class AppCard {
+        <<StatelessWidget>>
+        + Widget child
+        + CardVariant variant  // solid | glass
+        + VoidCallback? onTap
+    }
+    class AppPrimaryButton {
+        <<StatelessWidget>>
+        + String label
+        + VoidCallback? onPressed
+        + ButtonVariant variant
+    }
+    class MoneyText {
+        <<StatelessWidget>>
+        + num amount
+        + MoneyType type  // income | expense | neutral
+    }
+    class PageHeader {
+        <<StatelessWidget>>
+        + String title
+        + VoidCallback onBackHome
+        + Widget? trailing
+    }
+    class AppearanceFab {
+        <<StatelessWidget>>
+        + VoidCallback onTap
+    }
+    class AppearanceSheet {
+        <<StatelessWidget>>
+        - void _onPickMode(AppearanceMode)
+        - void _onPickScale(FontScale)
+    }
+    class ConfirmDeleteDialog {
+        <<StatelessWidget>>
+        + String title
+        + VoidCallback onConfirm
+    }
+    class RecordSheet {
+        <<StatelessWidget>>
+        + LedgerKind kind
+        + String ledgerId
+    }
+    class TrendChart {
+        <<StatelessWidget>>
+        + List~Point~ data
+        + String period  // daily | monthly
+    }
+    class CategoryPie {
+        <<StatelessWidget>>
+        + Map~String,num~ categories
+    }
+    class SyncStatusWidget {
+        <<StatelessWidget>>
+        + SyncState state
+    }
+
+    AppCard ..> GlassDecoration : uses(glass variant)
+    AppCard ..> AppColors : colors
+    MoneyText ..> AppColors : emerald/red
+    AppPrimaryButton ..> AppColors : brandPink
+    AppearanceSheet ..> AppearanceProvider : setMode/setFontScale
+
+    %% ===== 页面 / 导航层 =====
+    class AppRouter {
+        <<static>>
+        + GoRouter router
+        + void toLedger(String id)
+        + void backHome()
+    }
+    class HomePage {
+        <<StatefulWidget>>
+        + void load()
+        + void sync()
+    }
+    class LedgerDetailPage {
+        <<abstract>>
+        + String ledgerId
+        + LedgerKind kind
+    }
+    class GeneralDetailPage
+    class WorkDetailPage
+    class TaoyuanDetailPage
+    class TravelDetailPage
+    class StatsPage
+    class SearchPage
+    class SettingsPage
+    class SharedEntryPage
+    class LoginPage
+    class RegisterPage
+
+    LedgerDetailPage <|-- GeneralDetailPage
+    LedgerDetailPage <|-- WorkDetailPage
+    LedgerDetailPage <|-- TaoyuanDetailPage
+    LedgerDetailPage <|-- TravelDetailPage
+    AppRouter ..> HomePage : '/'
+    AppRouter ..> LedgerDetailPage : '/l/:id'
+    AppRouter ..> StatsPage : '/stats'
+    AppRouter ..> SearchPage : '/search'
+    AppRouter ..> SettingsPage : '/settings'
+
+    HomePage ..> PageHeader : uses
+    HomePage ..> AppearanceFab : uses
+    HomePage ..> AppCard : ledger groups
+    LedgerDetailPage ..> PageHeader : back-home
+    LedgerDetailPage ..> RecordSheet : 记一笔
+    LedgerDetailPage ..> MoneyText : amounts
+    LedgerDetailPage ..> AppCard : cards
+    StatsPage ..> TrendChart : uses
+    StatsPage ..> CategoryPie : uses
+    TravelDetailPage ..> SettlementSheet : uses
+    AppearanceFab ..> AppearanceSheet : opens
+
+    %% ===== 同步 / 状态层（红线）=====
+    class SyncService {
+        <<existing>>
+        + Future~bool~ syncAll()
+        - Future~void~ _pushAll()
+        - Future~void~ _pullAll()
+        - Future~void~ _reconcileDeletes(String model, Set~String~ serverIds)
+    }
+    class LedgerListState {
+        <<ChangeNotifier>>
+        + void triggerSync()
+        + void notifyRefresh()
+    }
+    class ApiClient {
+        <<existing>>
+        + Future~Response~ get(path)
+        + Future~Response~ post(path, body)
+    }
+
+    HomePage ..> SyncService : sync()
+    SyncService ..> ApiClient : pull/push
+    SyncService ..> LedgerListState : notifyRefresh
+    LedgerListState ..> AppearanceProvider : (optional) consume
