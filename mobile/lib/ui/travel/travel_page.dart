@@ -2924,7 +2924,7 @@ class _FunReportSheet extends StatelessWidget {
                 ),
               ),
             if (cheapSkate != null &&
-                cheapSkate.id != bigSpender?.id &&
+                cheapSkate.memberId != bigSpender?.memberId &&
                 cheapSkate.netCents >= 0)
               _ReportCard(
                 emoji: '🐔',
