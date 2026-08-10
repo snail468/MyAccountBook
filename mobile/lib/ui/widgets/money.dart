@@ -14,13 +14,7 @@ class Money extends StatelessWidget {
   final String fallback;
   final TextStyle? style;
 
-  const Money(
-    this.cents, {
-    super.key,
-    this.sign = false,
-    this.fallback = '·····',
-    this.style,
-  });
+  const Money({ super.key, required this.cents, this.sign = false, this.fallback = '·····', this.style });
 
   @override
   Widget build(BuildContext context) {

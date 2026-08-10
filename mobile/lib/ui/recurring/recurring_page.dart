@@ -260,7 +260,7 @@ class _RuleTile extends StatelessWidget {
                               ),
                               const SizedBox(width: 8),
                               Money(
-                                signedCents,
+                                cents: signedCents,
                                 sign: true,
                                 style: TextStyle(
                                     color: amountColor,

@@ -480,7 +480,7 @@ class _SummaryCard extends StatelessWidget {
                 style: TextStyle(color: ink500, fontSize: 12)),
             const SizedBox(height: 4),
             Money(
-              total,
+              cents: total,
               style: TextStyle(
                   color: ink900, fontSize: 34, fontWeight: FontWeight.w800),
             ),
@@ -500,7 +500,7 @@ class _SummaryCard extends StatelessWidget {
                       children: [
                         Text('行前', style: TextStyle(color: ink500, fontSize: 12)),
                         const SizedBox(height: 2),
-                        Money(preTotal,
+                        Money(cents: preTotal,
                             style: TextStyle(
                                 color: ink900,
                                 fontSize: 15,
@@ -523,7 +523,7 @@ class _SummaryCard extends StatelessWidget {
                       children: [
                         Text('行中', style: TextStyle(color: ink500, fontSize: 12)),
                         const SizedBox(height: 2),
-                        Money(duringTotal,
+                        Money(cents: duringTotal,
                             style: TextStyle(
                                 color: ink900,
                                 fontSize: 15,
@@ -1029,7 +1029,7 @@ class _ExpenseTile extends StatelessWidget {
             Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                Money(expense.amountBaseCents,
+                Money(cents: expense.amountBaseCents,
                     style: TextStyle(color: ink900, fontSize: 15)),
                 Text(baseCurrency,
                     style: TextStyle(color: ink500, fontSize: 11)),
@@ -1201,7 +1201,7 @@ class _SettlementCard extends StatelessWidget {
                     style: TextStyle(color: ink500, fontSize: 11),
                   ),
                   const SizedBox(width: 4),
-                  Money(b.netCents,
+                  Money(cents: b.netCents,
                       sign: true,
                       style: TextStyle(
                         color: b.netCents > 0
@@ -1253,7 +1253,7 @@ class _SettlementCard extends StatelessWidget {
                 children: [
                   Text('${nameOf(t.fromId)} → ${nameOf(t.toId)}',
                       style: TextStyle(color: ink900, fontSize: 14)),
-                  Money(t.amountCents,
+                  Money(cents: t.amountCents,
                       style: TextStyle(
                           color: green,
                           fontSize: 14,
@@ -1763,9 +1763,9 @@ class _ExpenseSheetState extends State<_ExpenseSheet> {
     final ink400 = isDark ? AppColors.darkInk400 : AppColors.lightInk400;
     final surface = isDark ? AppColors.darkSurface : AppColors.lightSurface;
     final border = isDark ? AppColors.darkBorder : AppColors.lightBorder;
-    final base = state.ledger.baseCurrency.isEmpty
+    final base = (state.ledger.baseCurrency?.isEmpty ?? true)
         ? 'CNY'
-        : state.ledger.baseCurrency;
+        : state.ledger.baseCurrency!;
     final codes = _currencyCodes(base);
 
     final foreign = money.Money.parseToCents(_amount.text) ?? 0;
@@ -2777,9 +2777,9 @@ class _FunReportSheet extends StatelessWidget {
     final border = isDark ? AppColors.darkBorder : AppColors.lightBorder;
     final green =
         isDark ? AppColors.darkSemanticGreen : AppColors.lightSemanticGreen;
-    final base = state.ledger.baseCurrency.isEmpty
+    final base = (state.ledger.baseCurrency?.isEmpty ?? true)
         ? 'CNY'
-        : state.ledger.baseCurrency;
+        : state.ledger.baseCurrency!;
     final expenses =
         state.expenses.where((e) => e.deletedAt == null).toList();
     final total = expenses.fold(0, (s, e) => s + e.amountBaseCents);
@@ -2891,7 +2891,7 @@ class _FunReportSheet extends StatelessWidget {
                   Text('这次旅行总花费',
                       style: TextStyle(color: ink500, fontSize: 12)),
                   const SizedBox(height: 4),
-                  Money(total,
+                  Money(cents: total,
                       style: TextStyle(
                           color: ink900,
                           fontSize: 32,
@@ -3087,7 +3087,7 @@ class _FunReportSheet extends StatelessWidget {
                             Text('${nameOf(t.fromId)} → ${nameOf(t.toId)}',
                                 style: TextStyle(
                                     color: ink900, fontSize: 14)),
-                            Money(t.amountCents,
+                            Money(cents: t.amountCents,
                                 style: TextStyle(
                                     color: green,
                                     fontSize: 14,
@@ -3124,7 +3124,7 @@ class _FunReportSheet extends StatelessWidget {
                                 style: TextStyle(
                                     color: ink900, fontSize: 14)),
                             Money(
-                              b.netCents,
+                              cents: b.netCents,
                               sign: true,
                               style: TextStyle(
                                 color: b.netCents > 0
