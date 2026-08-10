@@ -5,13 +5,14 @@ import '../theme/app_theme.dart';
 import '../theme/design_tokens.dart';
 import 'register_page.dart';
 import 'widgets/app_text_field.dart';
-import 'widgets/app_primary_button.dart';
 
-/// 登录页（设计 2:76 重做）。
+/// 登录页（1:1 对齐网页端 src/app/login/page.tsx）。
 ///
-/// 居中卡片：品牌 Logo + 应用名「心愿便利贴」→ 用户名 / 密码输入框 →
-/// 「记住登录信息」勾选 → 主按钮 → 注册入口。保留现有登录流程：
-/// catch 到错误显示「用户名或密码错误」。
+/// 网页端是**顶部左对齐**的极简布局：标题「登录」(text-3xl=30px / semibold)
+/// + 用户名/密码输入框(rounded-2xl + 1px border) + 错误提示 + 中性主按钮
+/// (bg-ink-900/dark:bg-ink-100，登录中显示 spinner) + 「还没有账号？ 注册」链接。
+/// 网页端是浏览器会话模型，**没有「记住登录信息」勾选**（Flutter 本地优先的
+/// 记住凭据能力不在网页 UI 内），故严格 1:1 不渲染该勾选；仅预填记住的用户名。
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
   @override
@@ -23,37 +24,27 @@ class _LoginPageState extends State<LoginPage> {
   final _pass = TextEditingController();
   String? _error;
   bool _busy = false;
-  bool _remember = false;
 
   @override
   void initState() {
     super.initState();
-    final auth = context.read<AuthState>();
-    final remUser = auth.rememberedUsername;
-    if (remUser != null && remUser.isNotEmpty) {
-      _user.text = remUser;
-      // 若曾记住凭据，默认勾选「记住登录信息」，省去再次勾选。
-      _remember = true;
-    }
+    // 预填记住的用户名（仅用户名，不自动登录；与网页端无此 UI 但不冲突）。
+    final remUser = context.read<AuthState>().rememberedUsername;
+    if (remUser != null && remUser.isNotEmpty) _user.text = remUser;
   }
 
   Future<void> _submit() async {
-    setState(() => _busy = true);
-    _error = null;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
     final user = _user.text.trim();
     final pass = _pass.text;
     try {
       await context.read<AuthState>().login(user, pass);
-      // 登录成功后按勾选状态保存 / 清除记住的凭据。
-      final auth = context.read<AuthState>();
-      if (_remember) {
-        await auth.saveRememberMe(user, pass);
-      } else {
-        await auth.clearRememberPassword();
-      }
-      // 登录成功后 RootSwitcher 会自动切到首页，首页负责首次同步
+      // 登录成功后由 RootSwitcher 据 authed 切到首页，首页负责首次同步。
     } catch (_) {
-      setState(() => _error = '用户名或密码错误');
+      if (mounted) setState(() => _error = '用户名或密码错误');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -71,95 +62,94 @@ class _LoginPageState extends State<LoginPage> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
     final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
-    // 品牌粉：Logo 圆底填充（浅色下用 8% 透明度，避免抢眼）。
-    final brand = isDark ? AppColors.darkBrandPink : AppColors.lightBrandPink;
     final red = isDark ? AppColors.darkSemanticRed : AppColors.lightSemanticRed;
+    // 中性主按钮：浅色=ink-900 深底；深色=ink-100 浅底，文字反之。
+    final btnBg = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
+    final btnText = isDark ? AppColors.lightInk900 : Colors.white;
 
     return Scaffold(
       backgroundColor: AppTheme.scaffoldBackground(context),
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // ---- 品牌区：Logo + 应用名 ----
-              Column(
-                children: [
-                  Container(
-                    width: 64,
-                    height: 64,
-                    decoration: BoxDecoration(
-                      color: brand.withOpacity(0.08),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      Icons.account_balance_wallet,
-                      size: 32,
-                      color: brand,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Text('心愿便利贴',
-                      style: TextStyle(
-                          color: ink900, fontSize: 30, fontWeight: FontWeight.w700)),
-                  const SizedBox(height: 6),
-                  Text('登录以同步你的多账本',
-                      style: TextStyle(color: ink500, fontSize: 13)),
-                ],
-              ),
-              const SizedBox(height: 32),
-
-              // ---- 输入区 ----
-              AppTextField(hint: '用户名', controller: _user),
-              const SizedBox(height: 12),
-              AppTextField(hint: '密码', obscure: true, controller: _pass),
-              const SizedBox(height: 8),
-
-              // ---- 记住登录信息 ----
-              Row(
-                children: [
-                  SizedBox(
-                    height: 24,
-                    width: 24,
-                    child: Checkbox(
-                      value: _remember,
-                      onChanged: (v) => setState(() => _remember = v ?? false),
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  GestureDetector(
-                    onTap: () => setState(() => _remember = !_remember),
-                    child: Text('记住登录信息',
-                        style: TextStyle(color: ink500, fontSize: 13)),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-
-              if (_error != null) ...[
-                Text(_error!,
-                    style: TextStyle(color: red, fontSize: 14)),
-                const SizedBox(height: 8),
-              ],
-
-              AppPrimaryButton(
-                label: _busy ? '登录中…' : '登录',
-                onPressed: _busy ? null : _submit,
-              ),
-              const SizedBox(height: 12),
-              Center(
-                child: TextButton(
-                  onPressed: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const RegisterPage()),
-                  ),
-                  child: Text('还没有账号？ 注册',
-                      style: TextStyle(color: ink500, fontSize: 14)),
-                ),
-              ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(24, 64, 24, 24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text('登录',
+                style: TextStyle(
+                    color: ink900, fontSize: 30, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 32),
+            AppTextField(
+              hint: '用户名',
+              controller: _user,
+            ),
+            const SizedBox(height: 16),
+            AppTextField(
+              hint: '密码',
+              obscure: true,
+              controller: _pass,
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 16),
+              Text(_error!, style: TextStyle(color: red, fontSize: 14)),
             ],
-          ),
+            const SizedBox(height: 16),
+            SizedBox(
+              height: 52,
+              child: ElevatedButton(
+                onPressed: _busy ? null : _submit,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: btnBg,
+                  foregroundColor: btnText,
+                  disabledForegroundColor: btnText.withOpacity(0.6),
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+                child: _busy
+                    ? Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: btnText,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          const Text('登录中…',
+                              style: TextStyle(
+                                  fontSize: 16, fontWeight: FontWeight.w500)),
+                        ],
+                      )
+                    : const Text('登录',
+                        style: TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.w500)),
+              ),
+            ),
+            const SizedBox(height: 24),
+            Center(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('还没有账号？ ',
+                      style: TextStyle(color: ink500, fontSize: 14)),
+                  GestureDetector(
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const RegisterPage()),
+                    ),
+                    child: Text('注册',
+                        style: TextStyle(
+                            color: ink900,
+                            fontSize: 14,
+                            decoration: TextDecoration.underline)),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );
