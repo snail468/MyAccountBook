@@ -419,4 +419,40 @@ class AppDatabase {
       await db.delete(t);
     }
   }
+
+  /// 参与备份/还原的业务表（不含 pending_ops / users 等本地元信息）。
+  static const List<String> backupTables = [
+    'ledgers', 'general_entries', 'work_entries', 'taoyuan_events',
+    'event_amounts', 'trip_members', 'trip_expenses', 'trip_splits',
+    'bank_cards', 'recurring_rules', 'family_members',
+  ];
+
+  /// 导出全部业务数据为扁平 map（表名 → 行列表），供 JSON 备份。
+  Future<Map<String, List<Map<String, Object?>>>> exportAll() async {
+    final db = await database;
+    final out = <String, List<Map<String, Object?>>>{};
+    for (final t in backupTables) {
+      out[t] = await db.query(t);
+    }
+    return out;
+  }
+
+  /// 从备份 map 还原：逐表清空后整表重插（事务内），对齐网页端导入还原。
+  Future<void> importAll(Map<String, List<Map<String, Object?>>> data) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      for (final entry in data.entries) {
+        final table = entry.key;
+        if (!backupTables.contains(table)) continue;
+        await txn.delete(table);
+        for (final row in entry.value) {
+          await txn.insert(
+            table,
+            row,
+            conflictAlgorithm: ConflictAlgorithm.replace,
+          );
+        }
+      }
+    });
+  }
 }

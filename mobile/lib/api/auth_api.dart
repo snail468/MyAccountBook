@@ -37,4 +37,13 @@ class AuthApi {
       await _client.clearSession();
     }
   }
+
+  /// 修改密码（对齐网页端 ChangePasswordButton → PATCH /api/auth/password）。
+  /// 成功后其它设备的会话会失效，需要重新登录；当前设备不受影响。
+  Future<void> changePassword(String currentPassword, String newPassword) async {
+    await _client.patch('/api/auth/password', {
+      'currentPassword': currentPassword,
+      'newPassword': newPassword,
+    });
+  }
 }

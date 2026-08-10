@@ -23,6 +23,10 @@ class AuthState extends ChangeNotifier {
   bool get authed => _authed;
   String? get username => _username;
 
+  /// 角色。网页端从会话读 `user.role`；本地优先单用户应用等价于管理员
+  /// （拥有全部账本与数据），故固定为 'admin'，让首页「用户管理」卡片可见。
+  String get role => 'admin';
+
   /// 记住的用户名（非空才可用于预填登录页）。
   String? get rememberedUsername => _rememberedUsername;
 

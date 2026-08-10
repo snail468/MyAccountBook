@@ -10,14 +10,18 @@ class LedgerFeatureCard extends StatelessWidget {
   final String icon; // emoji 字符串
   final String title;
   final String subtitle;
+  final Widget? subtitleWidget; // 替代 subtitle 的自定义副标（如嵌入 Money）
   final VoidCallback? onTap;
+  final String? badge;
 
   const LedgerFeatureCard({
     super.key,
     required this.icon,
     required this.title,
-    required this.subtitle,
+    this.subtitle = '',
+    this.subtitleWidget,
     this.onTap,
+    this.badge,
   });
 
   @override
@@ -39,18 +43,46 @@ class LedgerFeatureCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    title,
-                    style: TextStyle(
-                      color: ink900,
-                      fontSize: 18,
-                    ),
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          title,
+                          style: TextStyle(
+                            color: ink900,
+                            fontSize: 18,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (badge != null) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: isDark
+                                ? AppColors.darkSemanticRed
+                                : AppColors.lightSemanticRed,
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            badge!,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                   const SizedBox(height: 2),
-                  Text(
-                    subtitle,
-                    style: TextStyle(color: ink500, fontSize: 12),
-                  ),
+                  subtitleWidget ??
+                      Text(
+                        subtitle,
+                        style: TextStyle(color: ink500, fontSize: 12),
+                      ),
                 ],
               ),
             ),

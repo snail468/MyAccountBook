@@ -21,7 +21,7 @@ extension AppThemeModeX on AppThemeMode {
   }
 }
 
-/// 全局外观状态：主题模式 / 界面风格 / 字号 / 光效 / 音效。
+/// 全局外观状态：主题模式 / 界面风格 / 字号 / 光效 / 音效 / 金额可见性。
 ///
 /// 持久化到 [SharedPreferences]，启动前由 `main()` 调用 [load]。
 class ThemeState extends ChangeNotifier {
@@ -30,18 +30,21 @@ class ThemeState extends ChangeNotifier {
   static const String _kFontScale = 'fontScale';
   static const String _kEffectOn = 'effectOn';
   static const String _kSoundOn = 'soundOn';
+  static const String _kAmountsVisible = 'amountsVisible';
 
   AppThemeMode _themeMode = AppThemeMode.light;
   AppStyle _style = AppStyle.classic;
   double _fontScale = 1.0;
   bool _effectOn = false;
   bool _soundOn = false;
+  bool _amountsVisible = false;
 
   AppThemeMode get themeMode => _themeMode;
   AppStyle get style => _style;
   double get fontScale => _fontScale;
   bool get effectOn => _effectOn;
   bool get soundOn => _soundOn;
+  bool get amountsVisible => _amountsVisible;
 
   /// 从持久化读取；失败则回退默认，不阻断启动（参照 [AuthState.init] 的健壮做法）。
   Future<void> load() async {
@@ -65,6 +68,7 @@ class ThemeState extends ChangeNotifier {
       if (fs != null) _fontScale = fs;
       _effectOn = prefs.getBool(_kEffectOn) ?? false;
       _soundOn = prefs.getBool(_kSoundOn) ?? false;
+      _amountsVisible = prefs.getBool(_kAmountsVisible) ?? false;
     } catch (_) {
       // 持久化异常：保持默认值即可
     }
@@ -80,6 +84,7 @@ class ThemeState extends ChangeNotifier {
       await prefs.setDouble(_kFontScale, _fontScale);
       await prefs.setBool(_kEffectOn, _effectOn);
       await prefs.setBool(_kSoundOn, _soundOn);
+      await prefs.setBool(_kAmountsVisible, _amountsVisible);
     } catch (_) {
       // 忽略写入失败
     }
@@ -116,6 +121,12 @@ class ThemeState extends ChangeNotifier {
   void setSoundOn(bool v) {
     if (_soundOn == v) return;
     _soundOn = v;
+    notifyListeners();
+    save();
+  }
+
+  void toggleAmountsVisible() {
+    _amountsVisible = !_amountsVisible;
     notifyListeners();
     save();
   }

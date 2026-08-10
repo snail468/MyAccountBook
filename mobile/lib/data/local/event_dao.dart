@@ -1,6 +1,29 @@
 import 'package:sqflite/sqflite.dart';
+import '../../core/reward_method.dart';
 import '../db/database.dart';
 import '../models/taoyuan_event.dart';
+
+/// 桃源奖励汇总（对齐网页端 src/app/page.tsx 的 paidAmounts 循环）。
+///
+/// - [cash] / [jdcard]：现金 / 京东卡面值（分），计入"总收入 A"的 C / D。
+/// - [other]：其它金额类奖励（自定义等），不计入 A，仅存档展示。
+/// - [count]：个数类奖励（Q币等），个数不是钱，不计入 A。
+/// - [text]：文字类奖励（周边等）的名目清单。
+class TaoyuanRewardTotals {
+  final int cash;
+  final int jdcard;
+  final Map<String, int> other;
+  final Map<String, int> count;
+  final Map<String, List<String>> text;
+
+  const TaoyuanRewardTotals({
+    this.cash = 0,
+    this.jdcard = 0,
+    this.other = const {},
+    this.count = const {},
+    this.text = const {},
+  });
+}
 
 /// 桃源账本：活动与金额本地读写。
 class EventDao {
@@ -95,5 +118,86 @@ class EventDao {
       orderBy: 'occurred_at ASC',
     );
     return rows.map(EventAmount.fromDb).toList();
+  }
+
+  /// 该账本已到账(paid)金额的汇总，按奖励计量方式拆分。
+  ///
+  /// 对齐网页端 `paidAmounts` 循环：现金→C、京东卡→D、其它金额→other、
+  /// 个数类→count、文字类→text（不计入 A）。
+  Future<TaoyuanRewardTotals> rewardTotals(String ledgerId) async {
+    final db = await _db.database;
+    final rows = await db.rawQuery(
+      '''SELECT a.cents AS cents, a.quantity AS quantity,
+                a.item_desc AS item_desc, a.reward_method AS reward_method,
+                a.stage AS stage,
+                e.reward_method AS event_reward_method,
+                e.reward_methods AS event_reward_methods
+         FROM event_amounts a
+         JOIN taoyuan_events e ON e.id = a.event_id
+         WHERE a.stage = 'paid' AND a.deleted_at IS NULL
+           AND e.ledger_id = ? AND e.deleted_at IS NULL''',
+      [ledgerId],
+    );
+    int cash = 0;
+    int jdcard = 0;
+    final other = <String, int>{};
+    final count = <String, int>{};
+    final text = <String, List<String>>{};
+    for (final r in rows) {
+      final cents = (r['cents'] as num?)?.toInt() ?? 0;
+      final quantity = (r['quantity'] as num?)?.toInt() ?? 0;
+      final itemDesc = r['item_desc'] as String?;
+      var method = r['reward_method'] as String?;
+      if (method == null || method.isEmpty) {
+        final methods = parseRewardMethods(
+          r['event_reward_methods'] as String?,
+          r['event_reward_method'] as String?,
+        );
+        method = methods.isNotEmpty ? methods.first : null;
+      }
+      final kind = rewardValueKind(method);
+      if (kind == RewardValueKind.count) {
+        if (method != null) {
+          count[method] = (count[method] ?? 0) + quantity;
+        }
+        continue;
+      }
+      if (kind == RewardValueKind.text) {
+        if (method != null && itemDesc != null && itemDesc.isNotEmpty) {
+          final list = text[method] ?? <String>[];
+          if (!list.contains(itemDesc)) list.add(itemDesc);
+          text[method] = list;
+        }
+        continue;
+      }
+      if (method == 'cash') {
+        cash += cents;
+      } else if (method == 'jdcard') {
+        jdcard += cents;
+      } else if (method != null) {
+        other[method] = (other[method] ?? 0) + cents;
+      } else {
+        cash += cents;
+      }
+    }
+    return TaoyuanRewardTotals(
+      cash: cash,
+      jdcard: jdcard,
+      other: other,
+      count: count,
+      text: text,
+    );
+  }
+
+  /// 待处理活动数（status ∈ published/predicted/announced）—— 桃源卡角标用。
+  Future<int> pendingCount(String ledgerId) async {
+    final db = await _db.database;
+    final rows = await db.rawQuery(
+      '''SELECT COUNT(*) AS c FROM taoyuan_events
+         WHERE ledger_id = ? AND deleted_at IS NULL
+           AND status IN ('published', 'predicted', 'announced')''',
+      [ledgerId],
+    );
+    return (rows.first['c'] as num?)?.toInt() ?? 0;
   }
 }

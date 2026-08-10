@@ -69,6 +69,31 @@ class WorkEntryDao {
     );
   }
 
+  /// 累计收入/支出合计（分），不限月份 —— 首页"总收入 A"里的 B 分量用。
+  Future<({int income, int expense})> cumulativeTotals(
+      String ledgerId) async {
+    final db = await _db.database;
+    final rows = await db.rawQuery(
+      '''SELECT direction, SUM(amount_cents) AS s
+         FROM work_entries
+         WHERE ledger_id = ? AND deleted_at IS NULL
+         GROUP BY direction''',
+      [ledgerId],
+    );
+    int income = 0;
+    int expense = 0;
+    for (final r in rows) {
+      final dir = r['direction'] as String;
+      final sum = (r['s'] as num?)?.toInt() ?? 0;
+      if (dir == 'income') {
+        income = sum;
+      } else {
+        expense = sum;
+      }
+    }
+    return (income: income, expense: expense);
+  }
+
   /// 各月合计（支出/收入），用于工作账本"按月卡片"。
   Future<Map<String, ({int income, int expense})>> totalsByMonth(
       String ledgerId) async {

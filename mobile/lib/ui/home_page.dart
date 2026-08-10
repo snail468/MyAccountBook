@@ -1,54 +1,74 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../core/constants.dart';
-import '../core/money.dart';
+import '../core/general_categories.dart';
+import '../core/money.dart' as money;
 import '../state/auth_state.dart';
 import '../state/ledger_list_state.dart';
 import '../theme/app_theme.dart';
 import '../theme/design_tokens.dart';
 import 'routes.dart';
+import 'work/work_summary_page.dart';
+import 'recurring/recurring_page.dart';
+import 'bank/bank_page.dart';
 import 'stats/stats_page.dart';
 import 'search/search_page.dart';
-import 'bank/bank_page.dart';
-import 'recurring/recurring_page.dart';
-import 'trash/trash_page.dart';
 import 'ledgers/manage_ledgers_page.dart';
+import 'trash/trash_page.dart';
 import 'users/users_page.dart';
 import 'widgets/ledger_feature_card.dart';
-import 'widgets/app_card.dart';
-import 'work/work_summary_page.dart';
 import 'widgets/floating_toolbar.dart';
+import 'widgets/money.dart';
+import 'home/income_components_card.dart';
+import 'home/overspend_card.dart';
+import 'home/backup_sheets.dart';
 import '../data/local/work_entry_dao.dart';
 import '../data/local/general_entry_dao.dart';
 import '../data/local/event_dao.dart';
 import '../data/local/trip_dao.dart';
 import '../data/models/ledger.dart';
 
-/// 首页（设计 2:3 重做）。
+/// 首页（1:1 对齐网页端 src/app/page.tsx）。
 ///
-/// 无底部 tab；右上悬浮钮（眼睛占位 / 设置）。复用 [LedgerListState] 的 load+sync。
+/// 无底部 tab；右上悬浮工具条（眼睛切换金额可见 + 设置）。
+/// 卡片顺序严格对齐网页端：
+/// 超支卡（按需）→ 总收入 A 卡 → 工作账本 / 工作出项汇总 / 桃源账本 /
+/// 普通·旅游账本 / 周期记账 / 银行卡备份 / 统计 / 搜索 / 添加删除账本(虚线) /
+/// 回收站 / 导出备份 / 导入还原 / 修改密码 / 用户管理(admin)。
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
   @override
   State<HomePage> createState() => _HomePageState();
 }
 
+/// 首页普通/旅游账本卡片的数据壳（带汇总文案 + 超支角标）。
+class _HomeLedgerCard {
+  final Ledger ledger;
+  final String summary;
+  final int overCount;
+  _HomeLedgerCard({
+    required this.ledger,
+    required this.summary,
+    this.overCount = 0,
+  });
+}
+
 class _HomePageState extends State<HomePage> {
-  // 首页汇总（真实数据，来自各账本 DAO）
-  int _monthIncome = 0;
-  List<({String name, int income})> _incomeLines = const [];
-  int _generalExpense = 0;
-  int _generalIncome = 0;
-  int _taoyuanEvents = 0;
-  int _tripMembers = 0;
-  int _tripSpent = 0;
-  int _overspend = 0;
-  bool _summaryLoading = true;
+  // 汇总数据
+  List<IncomeComponent> _components = const [];
+  Map<String, int> _otherReward = const {};
+  Map<String, int> _countReward = const {};
+  Map<String, List<String>> _textReward = const {};
+  List<OverLedger> _overLedgers = const [];
+  List<_HomeLedgerCard> _ledgerCards = const [];
+  int _workExpenseTotal = 0;
+  int _pendingCount = 0;
+  Ledger? _ownWork;
+  Ledger? _ownTaoyuan;
 
   @override
   void initState() {
     super.initState();
-    // 保留现有首次加载 + 同步逻辑与错误提示
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final s = context.read<LedgerListState>();
       await s.load();
@@ -65,101 +85,405 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  /// 汇总首页真实数据：跨账本算本月收入/支出/超支/活动数/行程。
+  /// 汇总首页真实数据（对齐网页端 loadDashboard 的口径）。
+  ///
+  /// 关键口径：
+  ///  - 「总收入 A」的分量用**累计**（不限月份）；
+  ///  - 普通/旅游账本卡片上的汇总用**本月**口径；
+  ///  - 超支检测用账本的分类预算（月 + 周）对比本月/本周类别支出。
   Future<void> _loadSummary() async {
     try {
       final ledgers = context.read<LedgerListState>().all;
+
+      final workLedgers =
+          ledgers.where((l) => l.kind == AppConfig.kindWork).toList();
+      final taoyuanLedgers =
+          ledgers.where((l) => l.kind == AppConfig.kindTaoyuan).toList();
+      final generalLedgers =
+          ledgers.where((l) => l.kind == AppConfig.kindGeneral).toList();
+      final travelLedgers =
+          ledgers.where((l) => l.kind == AppConfig.kindTravel).toList();
+
+      // 网页端只把"自己创建的第一本"工作/桃源计入首页综合视图。
+      _ownWork = workLedgers.isNotEmpty ? workLedgers.first : null;
+      _ownTaoyuan = taoyuanLedgers.isNotEmpty ? taoyuanLedgers.first : null;
+
+      // ---- 总收入 A 的分量 ----
+      final components = <IncomeComponent>[];
+      String letterFor() => String.fromCharCode(66 + components.length); // B,C,D…
+
+      int B = 0;
+      if (_ownWork != null) {
+        B = (await WorkEntryDao().cumulativeTotals(_ownWork!.id)).income;
+      }
+      int C = 0, D = 0;
+      if (_ownTaoyuan != null) {
+        final r = await EventDao().rewardTotals(_ownTaoyuan!.id);
+        C = r.cash;
+        D = r.jdcard;
+        _otherReward = r.other;
+        _countReward = r.count;
+        _textReward = r.text;
+        _pendingCount = await EventDao().pendingCount(_ownTaoyuan!.id);
+      }
+
+      if (_ownWork != null) {
+        components.add(IncomeComponent(
+          key: 'work',
+          letter: letterFor(),
+          name: '工作账本 · 进项',
+          cents: B,
+          sign: 1,
+        ));
+      }
+      if (_ownTaoyuan != null) {
+        components.add(IncomeComponent(
+          key: 'taoyuan:cash',
+          letter: letterFor(),
+          name: '桃源 · 现金奖励',
+          cents: C,
+          sign: 1,
+        ));
+        components.add(IncomeComponent(
+          key: 'taoyuan:jd',
+          letter: letterFor(),
+          name: '桃源 · 京东卡奖励',
+          cents: D,
+          sign: 1,
+        ));
+      }
+      for (final l in generalLedgers) {
+        final cum = await GeneralEntryDao().cumulativeTotals(l.id);
+        components.add(IncomeComponent(
+          key: 'general:${l.id}',
+          letter: letterFor(),
+          name: '${l.name} · 进项',
+          cents: cum.income,
+          sign: 1,
+        ));
+      }
+      for (final l in generalLedgers) {
+        final cum = await GeneralEntryDao().cumulativeTotals(l.id);
+        components.add(IncomeComponent(
+          key: 'general-expense:${l.id}',
+          letter: letterFor(),
+          name: '${l.name} · 出项',
+          cents: cum.expense,
+          sign: -1,
+        ));
+      }
+      for (final l in travelLedgers) {
+        final spent = await _travelCumulative(l.id);
+        components.add(IncomeComponent(
+          key: 'travel-expense:${l.id}',
+          letter: letterFor(),
+          name: '${l.name} · 出项',
+          cents: spent,
+          sign: -1,
+        ));
+      }
+
+      // ---- 工作出项汇总（累计） ----
+      if (_ownWork != null) {
+        _workExpenseTotal =
+            (await WorkEntryDao().cumulativeTotals(_ownWork!.id)).expense;
+      }
+
+      // ---- 超支检测（分类预算 月+周） ----
       final now = DateTime.now();
-      final ym = '${now.year}-${now.month.toString().padLeft(2, '0')}';
+      final monthStart = DateTime(now.year, now.month, 1).millisecondsSinceEpoch;
+      final monthEnd =
+          DateTime(now.year, now.month + 1, 1).millisecondsSinceEpoch;
+      final daysSinceMonday = now.weekday - 1;
+      final weekStart = DateTime(now.year, now.month, now.day - daysSinceMonday)
+          .millisecondsSinceEpoch;
+      final weekEnd = weekStart + 7 * 24 * 60 * 60 * 1000;
 
-      int monthIncome = 0;
-      final incomeLines = <({String name, int income})>[];
-      int generalExpense = 0;
-      int generalIncome = 0;
-      int taoyuanEvents = 0;
-      int tripMembers = 0;
-      int tripSpent = 0;
-      int overspend = 0;
-
-      for (final l in ledgers) {
-        switch (l.kind) {
-          case AppConfig.kindWork:
-            final m = await WorkEntryDao().totalsByMonth(l.id);
-            final cur = m[ym];
-            if (cur != null && cur.income > 0) {
-              monthIncome += cur.income;
-              incomeLines.add((name: l.name, income: cur.income));
-            }
-          case AppConfig.kindGeneral:
-            final t = await GeneralEntryDao().monthlyTotals(l.id, ym);
-            generalExpense += t.expense;
-            generalIncome += t.income;
-            if (t.income > 0) {
-              monthIncome += t.income;
-              incomeLines.add((name: l.name, income: t.income));
-            }
-            if (l.budgetCents != null && t.expense > l.budgetCents!) {
-              overspend += 1;
-            }
-          case AppConfig.kindTaoyuan:
-            final evs = await EventDao().listByLedger(l.id);
-            taoyuanEvents += evs.length;
-          case AppConfig.kindTravel:
-            final members = await TripDao().listMembers(l.id);
-            final expenses = await TripDao().listExpenses(l.id);
-            tripMembers += members.length;
-            for (final e in expenses) {
-              if (e.deletedAt == null) tripSpent += e.amountBaseCents;
-            }
+      final overByLedger = <String, OverLedger>{};
+      final overCountMap = <String, int>{};
+      for (final l in generalLedgers) {
+        final custom = CustomCategories.parse(l.customCategories);
+        if (custom.budgets.isEmpty && custom.budgetsWeekly.isEmpty) continue;
+        final monthSpend =
+            await GeneralEntryDao().categorySpend(l.id, monthStart, monthEnd);
+        final weekSpend =
+            await GeneralEntryDao().categorySpend(l.id, weekStart, weekEnd);
+        var overCount = 0;
+        for (final e in custom.budgets.entries) {
+          if ((monthSpend[e.key] ?? 0) > e.value) overCount += 1;
         }
+        for (final e in custom.budgetsWeekly.entries) {
+          if ((weekSpend[e.key] ?? 0) > e.value) overCount += 1;
+        }
+        if (overCount > 0) {
+          overByLedger[l.id] = OverLedger(
+            ledgerId: l.id,
+            ledgerName: l.name,
+            overCount: overCount,
+          );
+          overCountMap[l.id] = overCount;
+        }
+      }
+
+      // ---- 普通/旅游账本卡片（本月口径） ----
+      final ym = '${now.year}-${now.month.toString().padLeft(2, '0')}';
+      final cards = <_HomeLedgerCard>[];
+      for (final l in generalLedgers) {
+        final t = await GeneralEntryDao().monthlyTotals(l.id, ym);
+        var summary =
+            '本月支出 ${money.Money.formatPlain(t.expense)} · 收入 ${money.Money.formatPlain(t.income)}';
+        if (l.budgetCents != null && l.budgetCents! > 0) {
+          summary +=
+              ' · 预算 ${((t.expense / l.budgetCents!) * 100).round()}%';
+        }
+        cards.add(_HomeLedgerCard(
+          ledger: l,
+          summary: summary,
+          overCount: overCountMap[l.id] ?? 0,
+        ));
+      }
+      for (final l in travelLedgers) {
+        final members = await TripDao().listMembers(l.id);
+        final expenses = await TripDao().listExpenses(l.id);
+        var spent = 0;
+        for (final e in expenses) {
+          if (e.deletedAt == null) spent += e.amountBaseCents;
+        }
+        cards.add(_HomeLedgerCard(
+          ledger: l,
+          summary: '${members.length} 人 · 已花 '
+              '${money.Money.formatPlain(spent)} ${l.baseCurrency ?? ''}',
+        ));
       }
 
       if (!mounted) return;
       setState(() {
-        _monthIncome = monthIncome;
-        _incomeLines = incomeLines;
-        _generalExpense = generalExpense;
-        _generalIncome = generalIncome;
-        _taoyuanEvents = taoyuanEvents;
-        _tripMembers = tripMembers;
-        _tripSpent = tripSpent;
-        _overspend = overspend;
-        _summaryLoading = false;
+        _components = components;
+        _overLedgers = overByLedger.values.toList();
+        _ledgerCards = cards;
       });
     } catch (_) {
-      if (mounted) setState(() => _summaryLoading = false);
+      // 汇总失败仅静默，保留已有 UI。
     }
   }
 
-  /// 动态渲染用户真实账本（来自同步），替代原先硬编码的"家庭账本/东京之旅"测试卡。
-  /// 与网页端一致：首页展示用户实际拥有的账本。
-  List<Widget> _ledgerCards(List<Ledger> ledgers) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
-    if (ledgers.isEmpty) {
-      return [
-        AppCard(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Text('还没有账本，点下方「添加账本」创建一个',
-                style: TextStyle(color: ink500, fontSize: 13)),
-          ),
-        ),
-      ];
+  Future<int> _travelCumulative(String ledgerId) async {
+    final expenses = await TripDao().listExpenses(ledgerId);
+    var spent = 0;
+    for (final e in expenses) {
+      if (e.deletedAt == null) spent += e.amountBaseCents;
     }
-    return ledgers.map((l) {
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 12),
-        child: LedgerFeatureCard(
-          icon: l.icon ?? _kindIcon(l.kind),
-          title: l.name,
-          subtitle: _kindLabel(l.kind),
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => pageForLedger(l)),
-          ),
+    return spent;
+  }
+
+  void _openLedger(Ledger ledger) {
+    Navigator.of(context)
+        .push(MaterialPageRoute(builder: (_) => pageForLedger(ledger)));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final auth = context.watch<AuthState>();
+    final ledgers = context.watch<LedgerListState>().all;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
+    final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
+    final byId = {for (final l in ledgers) l.id: l};
+
+    return Scaffold(
+      backgroundColor: AppTheme.scaffoldBackground(context),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(24, 48, 24, 24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ---- 头部：用户名 + 退出 + 悬浮工具条 ----
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('${auth.username ?? ''} · 心愿便利贴',
+                          style: TextStyle(color: ink500, fontSize: 14)),
+                      const SizedBox(height: 8),
+                      GestureDetector(
+                        onTap: () async {
+                          context.read<LedgerListState>().resetSync();
+                          await context.read<AuthState>().logout();
+                        },
+                        child: Text('退出',
+                            style: TextStyle(color: ink900, fontSize: 14)),
+                      ),
+                    ],
+                  ),
+                ),
+                const FloatingToolbar(mode: ToolbarMode.home),
+              ],
+            ),
+
+            // ---- 超支卡（仅超支时显示，对齐网页端守卫） ----
+            if (_overLedgers.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              OverspendCard(
+                overLedgers: _overLedgers,
+                onTap: (id) {
+                  final l = byId[id];
+                  if (l != null) _openLedger(l);
+                },
+              ),
+            ],
+
+            // ---- 总收入 A 卡 ----
+            if (_components.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              IncomeComponentsCard(
+                components: _components,
+                otherReward: _otherReward,
+                countReward: _countReward,
+                textReward: _textReward,
+              ),
+            ],
+
+            // ---- 功能列表（对齐网页端卡片顺序；space-y-3=12 间距，首张无前导间距） ----
+            ...() {
+              final items = <Widget>[];
+              void add(Widget w) {
+                if (items.isNotEmpty) {
+                  items.add(const SizedBox(height: 12));
+                }
+                items.add(w);
+              }
+              if (_ownWork != null) {
+                add(LedgerFeatureCard(
+                  icon: '💼',
+                  title: '工作账本',
+                  subtitle: '按月记录进项与出项',
+                  onTap: () => _openLedger(_ownWork!),
+                ));
+              }
+              if (_ownWork != null) {
+                add(LedgerFeatureCard(
+                  icon: '📤',
+                  title: '工作出项汇总',
+                  subtitleWidget: Row(
+                    children: [
+                      Text('合计 ',
+                          style: TextStyle(color: ink500, fontSize: 12)),
+                      Money(
+                        cents: _workExpenseTotal,
+                        style: TextStyle(color: ink500, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                        builder: (_) => const WorkSummaryPage()),
+                  ),
+                ));
+              }
+              if (_ownTaoyuan != null) {
+                add(LedgerFeatureCard(
+                  icon: '🌸',
+                  title: '桃源账本',
+                  subtitle: '活动发布 → 预测 → 公示 → 发钱',
+                  badge: _pendingCount > 0 ? '$_pendingCount' : null,
+                  onTap: () => _openLedger(_ownTaoyuan!),
+                ));
+              }
+              for (final c in _ledgerCards) {
+                add(LedgerFeatureCard(
+                  icon: _kindIcon(c.ledger.kind),
+                  title: c.ledger.name,
+                  subtitle: c.summary,
+                  badge: c.overCount > 0 ? '超支 ${c.overCount}' : null,
+                  onTap: () => _openLedger(c.ledger),
+                ));
+              }
+              add(LedgerFeatureCard(
+                icon: '🔁',
+                title: '周期记账',
+                subtitle: '房租 · 订阅 · 工资，配一次自动记',
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const RecurringPage()),
+                ),
+              ));
+              add(LedgerFeatureCard(
+                icon: '💳',
+                title: '银行卡备份',
+                subtitle: '加密存储卡号 · 查看需验密码',
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const BankPage()),
+                ),
+              ));
+              add(LedgerFeatureCard(
+                icon: '📈',
+                title: '统计',
+                subtitle: '月度趋势 · 类别占比 · 环比同比',
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const StatsPage()),
+                ),
+              ));
+              add(LedgerFeatureCard(
+                icon: '🔍',
+                title: '搜索',
+                subtitle: '跨账本按关键字 · 金额 · 时间 · 类别',
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const SearchPage()),
+                ),
+              ));
+              add(_AddLedgerCard(
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                      builder: (_) => const ManageLedgersPage()),
+                ),
+              ));
+              add(LedgerFeatureCard(
+                icon: '🗑️',
+                title: '回收站',
+                subtitle: '删除的记录 · 60 天内可恢复',
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const TrashPage()),
+                ),
+              ));
+              add(LedgerFeatureCard(
+                icon: '📤',
+                title: '导出备份',
+                subtitle: '把全部本地数据导出为 JSON 文件',
+                onTap: () => showExportSheet(context),
+              ));
+              add(LedgerFeatureCard(
+                icon: '📥',
+                title: '导入还原',
+                subtitle: '从备份文件整库还原（覆盖当前）',
+                onTap: () => showImportSheet(context, onImported: () async {
+                  await context.read<LedgerListState>().load();
+                  await _loadSummary();
+                }),
+              ));
+              add(LedgerFeatureCard(
+                icon: '🔑',
+                title: '修改密码',
+                subtitle: '改完会让其它设备重新登录',
+                onTap: () => showChangePasswordSheet(context),
+              ));
+              if (auth.role == 'admin') {
+                add(LedgerFeatureCard(
+                  icon: '👥',
+                  title: '用户管理',
+                  subtitle: '家庭成员 · 角色与权限',
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const UsersPage()),
+                  ),
+                ));
+              }
+              return [const SizedBox(height: 32), Column(children: items)];
+            }(),
+          ],
         ),
-      );
-    }).toList();
+      ),
+    );
   }
 
   String _kindIcon(String kind) {
@@ -174,277 +498,9 @@ class _HomePageState extends State<HomePage> {
         return '📒';
     }
   }
-
-  String _kindLabel(String kind) {
-    switch (kind) {
-      case AppConfig.kindWork:
-        return '工作';
-      case AppConfig.kindTaoyuan:
-        return '桃源';
-      case AppConfig.kindTravel:
-        return '旅行';
-      default:
-        return '普通';
-    }
-  }
-
-  List<Widget> _incomeBreakdown(Color ink500) {
-    if (_summaryLoading) {
-      return [Text('加载中…', style: TextStyle(color: ink500, fontSize: 12))];
-    }
-    if (_incomeLines.isEmpty) {
-      return [
-        Text('本月暂无记账收入', style: TextStyle(color: ink500, fontSize: 12))
-      ];
-    }
-    return _incomeLines
-        .map((l) => Padding(
-              padding: const EdgeInsets.only(bottom: 2),
-              child: Text('${l.name} 进项 +${Money.formatCents(l.income)}',
-                  style: TextStyle(color: ink500, fontSize: 12)),
-            ))
-        .toList();
-  }
-
-  /// 按 kind 跳转到对应账本页（复用已有账本对象，避免引用不存在页面）。
-  void _openKind(BuildContext context, String kind, String name) {
-    final ledgers = context.read<LedgerListState>().byKind(kind);
-    if (ledgers.isNotEmpty) {
-      Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => pageForLedger(ledgers.first)),
-      );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('「$name」账本尚未创建')),
-      );
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final auth = context.watch<AuthState>();
-    final ledgers = context.watch<LedgerListState>().all;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
-    final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
-    final ink400 = isDark ? AppColors.darkInk400 : AppColors.lightInk400;
-    // 本月总收入配色：正值=品牌粉（1:1 对齐网页端），负值=语义红，零=主墨色。
-    final incomeColor = _monthIncome > 0
-        ? (isDark ? AppColors.darkBrandPink : AppColors.lightBrandPink)
-        : (_monthIncome < 0
-            ? (isDark ? AppColors.darkSemanticRed : AppColors.lightSemanticRed)
-            : ink900);
-
-    return Scaffold(
-      backgroundColor: AppTheme.scaffoldBackground(context),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(24, 48, 24, 24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // ---- 头部 ----
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '${auth.username ?? ''} · 心愿便利贴',
-                        style: TextStyle(color: ink500, fontSize: 14),
-                      ),
-                      const SizedBox(height: 8),
-                      GestureDetector(
-                        onTap: () async {
-                          // 退出登录前重置同步节流，确保重新登录能立即全量同步。
-                          context.read<LedgerListState>().resetSync();
-                          await context.read<AuthState>().logout();
-                        },
-                        child: Text('退出',
-                            style: TextStyle(color: ink900, fontSize: 14)),
-                      ),
-                    ],
-                  ),
-                ),
-                const FloatingToolbar(mode: ToolbarMode.home),
-              ],
-            ),
-            const SizedBox(height: 16),
-
-            // ---- 超支提示卡（即便玻璃主题也不磨砂） ----
-            _OverspendCard(overspendCount: _overspend),
-            const SizedBox(height: 12),
-
-            // ---- 本月总收入卡 ----
-            AppCard(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(minHeight: 150),
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('本月总收入',
-                          style: TextStyle(color: ink500, fontSize: 13)),
-                      const SizedBox(height: 6),
-                      Text(
-                        Money.formatCents(_monthIncome),
-                        style: TextStyle(
-                          color: incomeColor, fontSize: 28, fontWeight: FontWeight.w700),
-                      ),
-                      const SizedBox(height: 10),
-                      ..._incomeBreakdown(ink500),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // ---- 功能列表（1:1 对齐 Ardot：单列纵向，卡片 64 高，间距 12）----
-            Column(
-              children: [
-                ..._ledgerCards(ledgers),
-                const SizedBox(height: 12),
-                LedgerFeatureCard(
-                  icon: '📤',
-                  title: '工作出项汇总',
-                  subtitle: '按月垫款与回款汇总',
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const WorkSummaryPage()),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                LedgerFeatureCard(
-                  icon: '🔁',
-                  title: '周期记账',
-                  subtitle: '房租 · 订阅 · 工资，配一次自动记',
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const RecurringPage()),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                LedgerFeatureCard(
-                  icon: '💳',
-                  title: '银行卡备份',
-                  subtitle: '加密存储卡号 · 查看需验密码',
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const BankPage()),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                LedgerFeatureCard(
-                  icon: '📈',
-                  title: '统计',
-                  subtitle: '月度趋势 · 类别占比 · 环比同比',
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const StatsPage()),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                LedgerFeatureCard(
-                  icon: '🔍',
-                  title: '搜索',
-                  subtitle: '跨账本按关键字 · 金额 · 时间 · 类别',
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const SearchPage()),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                _AddLedgerCard(
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const ManageLedgersPage()),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                LedgerFeatureCard(
-                  icon: '🗑️',
-                  title: '回收站',
-                  subtitle: '删除的记录 · 60 天内可恢复',
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const TrashPage()),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                LedgerFeatureCard(
-                  icon: '👥',
-                  title: '用户管理',
-                  subtitle: '家庭成员 · 角色与权限',
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const UsersPage()),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-
-            // ---- 页脚 ----
-            Text('导出数据 · 导入数据 · 修改密码',
-                style: TextStyle(color: ink400, fontSize: 12)),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
-/// 超支提示卡：固定 overspendBg/overspendBorder，不磨砂。
-class _OverspendCard extends StatelessWidget {
-  final int overspendCount;
-  const _OverspendCard({required this.overspendCount});
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    // 暗色下用 surface/border/ink 镜像；浅色保持现有 lightOverspend* 语义色。
-    final bg = isDark ? AppColors.darkSurface : AppColors.lightOverspendBg;
-    final border =
-        isDark ? AppColors.darkBorder : AppColors.lightOverspendBorder;
-    final titleColor =
-        isDark ? AppColors.darkInk100 : AppColors.lightOverspendTitle;
-    final detailColor =
-        isDark ? AppColors.darkInk400 : AppColors.lightOverspendDetail;
-
-    final title =
-        overspendCount > 0 ? '⚠️ 分类预算超支' : '✅ 预算正常';
-    final detail = overspendCount > 0
-        ? '账本 · $overspendCount 项超支 ›'
-        : '本月账本均未超支';
-    return Container(
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: border, width: 1),
-      ),
-      constraints: const BoxConstraints(minHeight: 70),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      child: InkWell(
-        onTap: () {
-          // 暂 no-op：跳转超支详情
-        },
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title,
-                      style: TextStyle(color: titleColor, fontSize: 12)),
-                  const SizedBox(height: 2),
-                  Text(detail,
-                      style: TextStyle(color: detailColor, fontSize: 14)),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// 「添加 / 删除账本」卡片：surfaceSubtle 底 + 虚线 #CBD5E1 描边，标题副标 ink500。
+/// 「添加 / 删除账本」卡片：surfaceSubtle 底 + 虚线 2px 描边（对齐网页端 border-2 border-dashed）。
 class _AddLedgerCard extends StatelessWidget {
   final VoidCallback? onTap;
   const _AddLedgerCard({this.onTap});
@@ -452,11 +508,11 @@ class _AddLedgerCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
     final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
     final ink400 = isDark ? AppColors.darkInk400 : AppColors.lightInk400;
-    final dashed = isDark
-        ? AppColors.darkBorder
-        : AppColors.lightBorderDashed;
+    final dashed =
+        isDark ? AppColors.darkBorder : AppColors.lightBorderDashed;
     final fill = isDark ? AppColors.darkSurface : AppColors.lightSurfaceSubtle;
 
     return InkWell(
@@ -466,7 +522,7 @@ class _AddLedgerCard extends StatelessWidget {
         decoration: BoxDecoration(
           color: fill,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: dashed, width: 1),
+          border: Border.all(color: dashed, width: 2),
         ),
         padding: const EdgeInsets.all(16),
         child: Row(
@@ -478,14 +534,14 @@ class _AddLedgerCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text('添加 / 删除账本',
-                      style: TextStyle(color: ink500, fontSize: 18)),
+                      style: TextStyle(color: ink900, fontSize: 18)),
                   const SizedBox(height: 2),
                   Text('新增账本 · 恢复回收站 · 管理已有',
-                      style: TextStyle(color: ink400, fontSize: 12)),
+                      style: TextStyle(color: ink500, fontSize: 12)),
                 ],
               ),
             ),
-            Text('›', style: TextStyle(color: ink500, fontSize: 20)),
+            Text('›', style: TextStyle(color: ink400, fontSize: 20)),
           ],
         ),
       ),

@@ -17,12 +17,14 @@ class AppCard extends StatelessWidget {
   final Widget child;
   final VoidCallback? onTap;
   final bool frosted;
+  final double radius;
 
   const AppCard({
     super.key,
     required this.child,
     this.onTap,
     this.frosted = true,
+    this.radius = 16,
   });
 
   @override
@@ -41,7 +43,7 @@ class AppCard extends StatelessWidget {
     final container = Container(
       decoration: BoxDecoration(
         color: fillColor,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(radius),
         border: Border.all(color: borderColor, width: 1),
         // 玻璃态：柔和投影，对齐网页端 `0 8px 24px -12px rgba(31,38,135,0.2)`。
         boxShadow: glass
@@ -61,10 +63,10 @@ class AppCard extends StatelessWidget {
     );
 
     // 玻璃态：用 BackdropFilter 对卡片背后的渐变桌布做 24px 磨砂，叠加半透明填充
-    // = 网页端 frosted glass 观感。ClipRRect 保证模糊区域被裁成圆角 16。
+    // = 网页端 frosted glass 观感。ClipRRect 保证模糊区域被裁成圆角。
     final glassed = glass
         ? ClipRRect(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(radius),
             child: BackdropFilter(
               filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
               child: container,
