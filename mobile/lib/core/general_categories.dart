@@ -27,26 +27,13 @@ class CustomCategories {
     try {
       final p = jsonDecode(json);
       if (p is! Map) return const CustomCategories();
-      Map<String, int> parseBudgetMap(dynamic v) {
-        final map = <String, int>{};
-        if (v is Map) {
-          for (final e in v.entries) {
-            final val = e.value;
-            if (val is num && val.isFinite && val > 0) {
-              map[e.key.toString()] = val.toInt();
-            }
-          }
-        }
-        return map;
-      }
-
       return CustomCategories(
         added: p['added'] is List ? p['added'] as List : const [],
         hidden: p['hidden'] is List
             ? (p['hidden'] as List).map((e) => e.toString()).toList()
             : const [],
-        budgets: parseBudgetMap(p['budgets']),
-        budgetsWeekly: parseBudgetMap(p['budgetsWeekly']),
+        budgets: _parseBudgetMap(p['budgets']),
+        budgetsWeekly: _parseBudgetMap(p['budgetsWeekly']),
       );
     } catch (_) {
       return const CustomCategories();
@@ -60,6 +47,20 @@ class CustomCategories {
         'budgets': budgets,
         'budgetsWeekly': budgetsWeekly,
       };
+}
+
+/// 解析分类别预算 map（值为正数分）；异常或空都兜底成空 map。
+Map<String, int> _parseBudgetMap(dynamic v) {
+  final map = <String, int>{};
+  if (v is Map) {
+    for (final e in v.entries) {
+      final val = e.value;
+      if (val is num && val.isFinite && val > 0) {
+        map[e.key.toString()] = val.toInt();
+      }
+    }
+  }
+  return map;
 }
 
 /// 默认（内置）分类清单（1:1 对齐网页端常用分类）。
@@ -117,7 +118,7 @@ const Map<String, String> _categoryIcons = <String, String>{
   '孩子': '🍼',
   '捐赠': '🤝',
   '其他': '📦',
-];
+};
 
 /// 返回某分类的展示图标；未知分类回退到 📦。
 String iconOf(String category) => _categoryIcons[category] ?? '📦';

@@ -560,7 +560,7 @@ class _TrendChartState extends State<_TrendChart> {
                               behavior: HitTestBehavior.opaque,
                               onTap: () => setState(
                                   () => _active = _active == i ? null : i),
-                              child: const Container(
+                              child: Container(
                                   width: double.infinity, height: double.infinity),
                             ),
                           ),

@@ -14,9 +14,9 @@ class Money extends StatelessWidget {
   final String fallback;
   final TextStyle? style;
 
-  const Money({
+  const Money(
+    this.cents, {
     super.key,
-    required this.cents,
     this.sign = false,
     this.fallback = '·····',
     this.style,

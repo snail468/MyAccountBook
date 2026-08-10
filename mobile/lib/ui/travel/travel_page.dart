@@ -193,7 +193,9 @@ class _TravelBodyState extends State<_TravelBody> {
     final red = isDark ? AppColors.darkSemanticRed : AppColors.lightSemanticRed;
     final green = isDark ? AppColors.darkSemanticGreen : AppColors.lightSemanticGreen;
 
-    final base = state.ledger.baseCurrency.isEmpty ? 'CNY' : state.ledger.baseCurrency;
+    final base = (state.ledger.baseCurrency?.isEmpty ?? true)
+        ? 'CNY'
+        : state.ledger.baseCurrency!;
 
     // 阶段合计 / 每日 / 各币种原币合计
     var preTotal = 0;
@@ -247,7 +249,7 @@ class _TravelBodyState extends State<_TravelBody> {
     if (state.ledger.tripBudget != null) {
       try {
         final decoded = jsonDecode(state.ledger.tripBudget!);
-        if (decoded is Map) budget = decoded;
+        if (decoded is Map) budget = Map<String, dynamic>.from(decoded);
       } catch (_) {
         budget = null;
       }
@@ -355,8 +357,9 @@ class _TravelBodyState extends State<_TravelBody> {
                     radius: 24,
                     child: Padding(
                       padding: const EdgeInsets.all(16),
-                      child: _TripCalendar(
-                        daily: daily,
+                    child: _TripCalendar(
+                      baseCurrency: base,
+                      daily: daily,
                         startDate: state.ledger.startDate != null
                             ? _ymd(DateTime.fromMillisecondsSinceEpoch(
                                 state.ledger.startDate!))
@@ -570,7 +573,7 @@ class _PhaseButton extends StatelessWidget {
         ? (isDark ? AppColors.darkInk100 : AppColors.lightInk900)
         : (isDark ? AppColors.darkSurface : const Color(0xFFF1F5F9));
     final textColor = selected
-        ? (isDark ? AppColors.darkInk900 : Colors.white)
+        ? (isDark ? AppColors.darkInk100 : Colors.white)
         : ink500;
 
     return InkWell(
@@ -808,6 +811,7 @@ class _TripCalendar extends StatelessWidget {
     required this.endDate,
     required this.activeDate,
     required this.onPickDay,
+    required this.baseCurrency,
   });
 
   final Map<String, int> daily;
@@ -815,6 +819,7 @@ class _TripCalendar extends StatelessWidget {
   final String? endDate;
   final String? activeDate;
   final ValueChanged<String> onPickDay;
+  final String baseCurrency;
 
   @override
   Widget build(BuildContext context) {
@@ -1420,7 +1425,7 @@ class _MembersSheetState extends State<_MembersSheet> {
                     style: ElevatedButton.styleFrom(
                       backgroundColor: ink900,
                       foregroundColor:
-                          isDark ? AppColors.darkInk900 : Colors.white,
+                          isDark ? AppColors.darkInk100 : Colors.white,
                       elevation: 0,
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(16)),
@@ -1568,7 +1573,7 @@ class _SegBtn extends StatelessWidget {
         ? (isDark ? AppColors.darkInk100 : AppColors.lightInk900)
         : (isDark ? AppColors.darkSurface : const Color(0xFFF1F5F9));
     final textColor = selected
-        ? (isDark ? AppColors.darkInk900 : Colors.white)
+        ? (isDark ? AppColors.darkInk100 : Colors.white)
         : ink500;
 
     return InkWell(
@@ -1622,9 +1627,8 @@ class _ExpenseSheetState extends State<_ExpenseSheet> {
     final members =
         context.read<TravelState>().members;
     _currency = e?.currency ??
-        (context.read<TravelState>().ledger.baseCurrency.isEmpty
-            ? 'CNY'
-            : context.read<TravelState>().ledger.baseCurrency);
+        context.read<TravelState>().ledger.baseCurrency ??
+        'CNY';
     _title.text = e?.title ?? '';
     _category = e?.category ?? '餐饮';
     _phase = e?.phase ?? 'during';
@@ -1773,7 +1777,7 @@ class _ExpenseSheetState extends State<_ExpenseSheet> {
             amountBase, ids, ids.map((id) => _weights[id] ?? 0).toList())
         : <String, int>{};
 
-    final showForeign = _currency.toUpperCase() != base.toUpperCase();
+    final showForeign = _currency?.toUpperCase() != base.toUpperCase();
 
     return Container(
       decoration: BoxDecoration(
@@ -1862,7 +1866,7 @@ class _ExpenseSheetState extends State<_ExpenseSheet> {
                               style: TextStyle(
                                 color: _category == c
                                     ? (isDark
-                                        ? AppColors.darkInk900
+                                        ? AppColors.darkInk100
                                         : Colors.white)
                                     : ink500,
                                 fontSize: 13,
@@ -2009,7 +2013,7 @@ class _ExpenseSheetState extends State<_ExpenseSheet> {
                               style: TextStyle(
                                 color: _payerId == m.id
                                     ? (isDark
-                                        ? AppColors.darkInk900
+                                        ? AppColors.darkInk100
                                         : Colors.white)
                                     : ink500,
                                 fontSize: 13,
@@ -2086,7 +2090,7 @@ class _ExpenseSheetState extends State<_ExpenseSheet> {
                                   style: TextStyle(
                                     color: _selected.contains(m.id)
                                         ? (isDark
-                                            ? AppColors.darkInk900
+                                            ? AppColors.darkInk100
                                             : Colors.white)
                                         : ink500,
                                     fontSize: 13,
@@ -2250,7 +2254,7 @@ class _ExpenseSheetState extends State<_ExpenseSheet> {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: ink900,
                         foregroundColor:
-                            isDark ? AppColors.darkInk900 : Colors.white,
+                            isDark ? AppColors.darkInk100 : Colors.white,
                         elevation: 0,
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(16)),
@@ -2297,7 +2301,9 @@ class _SettingsSheetState extends State<_SettingsSheet> {
     final ledger = context.read<TravelState>().ledger;
     _name = TextEditingController(text: ledger.name);
     _icon = TextEditingController(text: ledger.icon ?? '✈️');
-    _baseCurrency = ledger.baseCurrency.isEmpty ? 'CNY' : ledger.baseCurrency;
+    _baseCurrency = (ledger.baseCurrency?.isEmpty ?? true)
+        ? 'CNY'
+        : ledger.baseCurrency!;
     _startDateMs = ledger.startDate;
     _endDateMs = ledger.endDate;
     _totalBase = TextEditingController();
@@ -2631,7 +2637,7 @@ class _SettingsSheetState extends State<_SettingsSheet> {
                           style: ElevatedButton.styleFrom(
                             backgroundColor: ink900,
                             foregroundColor:
-                                isDark ? AppColors.darkInk900 : Colors.white,
+                                isDark ? AppColors.darkInk100 : Colors.white,
                             elevation: 0,
                             shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(16)),
@@ -2672,7 +2678,7 @@ class _SettingsSheetState extends State<_SettingsSheet> {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: ink900,
                         foregroundColor:
-                            isDark ? AppColors.darkInk900 : Colors.white,
+                            isDark ? AppColors.darkInk100 : Colors.white,
                         elevation: 0,
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(16)),
@@ -3145,7 +3151,7 @@ class _FunReportSheet extends StatelessWidget {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: ink900,
                   foregroundColor:
-                      isDark ? AppColors.darkInk900 : Colors.white,
+                      isDark ? AppColors.darkInk100 : Colors.white,
                   elevation: 0,
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16)),
