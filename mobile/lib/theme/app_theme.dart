@@ -69,13 +69,13 @@ class AppTheme {
 
   /// 脚手架背景色。
   ///
-  /// 当 [ThemeState.style] 为玻璃且当前非深色时返回磨砂背景 [AppColors.glassPageBg]，
-  /// 否则返回当前主题对应的 pageBg。
+  /// 当 [ThemeState.style] 为玻璃时返回 [Colors.transparent]，透出 `main.dart`
+  /// 全局绘制的多径向渐变桌布（对齐 globals.css `.liquid body`）；其余返回当前主题
+  /// 对应的 pageBg（不透明，覆盖渐变层）。
   static Color scaffoldBackground(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
     final style = context.watch<ThemeState>().style;
-    if (style == AppStyle.glass && !isDark) return AppColors.glassPageBg;
+    if (style == AppStyle.glass) return Colors.transparent;
     return theme.scaffoldBackgroundColor;
   }
 }

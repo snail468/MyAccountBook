@@ -20,9 +20,8 @@ class AppearanceSheet extends StatelessWidget {
     final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
     final ink400 = isDark ? AppColors.darkInk400 : AppColors.lightInk400;
 
-    // 界面风格：显示双选项 [默认(可选) | 玻璃(置灰禁用+即将推出)]，玻璃不可选（Q3/A5）。
-    final styleValue =
-        ts.style == AppStyle.glass ? AppStyle.classic : ts.style;
+    // 界面风格：默认 / 玻璃 双选项，均可选（对齐 globals.css .liquid 液态玻璃主题）。
+    final styleValue = ts.style;
 
     return Container(
       padding: EdgeInsets.only(
@@ -76,8 +75,8 @@ class AppearanceSheet extends StatelessWidget {
                 ),
                 _StyleChip(
                   label: '玻璃',
-                  disabled: true,
-                  badge: '即将推出',
+                  selected: styleValue == AppStyle.glass,
+                  onTap: () => ts.setStyle(AppStyle.glass),
                 ),
               ],
             ),
@@ -167,7 +166,7 @@ class AppearanceSheet extends StatelessWidget {
   }
 }
 
-/// 界面风格选项 chip：默认可选；玻璃置灰禁用 + 「即将推出」。
+/// 界面风格选项 chip：默认 / 玻璃，均可选。
 class _StyleChip extends StatelessWidget {
   final String label;
   final bool selected;

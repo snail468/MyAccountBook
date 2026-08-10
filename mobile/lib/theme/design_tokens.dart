@@ -52,8 +52,13 @@ class AppColors {
   static const Color darkSemanticGreen = Color(0xFF049E69);
   static const Color darkSemanticBlue = Color(0xFF2557EB);
 
-  // ---------------- Glass（仅浅色生效） ----------------
-  static const Color glassPageBg = Color(0xFFFBF5FF); // (0.984, 0.961, 1)
-  static const Color glassCardFill = Color(0x80FFFFFF); // 白 0.5
+  // ---------------- Glass（液态玻璃，亮/暗两套，1:1 对齐 globals.css .liquid） ----------------
+  // 浅色玻璃
+  static const Color glassPageBg = Color(0xFFFBF5FF); // (0.984, 0.961, 1) 兜底纯色
+  static const Color glassCardFill = Color(0x80FFFFFF); // 白 0.5（backdrop-blur 磨砂）
   static const Color glassCardBorder = Color(0xB3FFFFFF); // 白 0.7
+  // 暗色玻璃：对齐 .liquid.dark .dark\:bg-ink-800 -> rgba(30,30,48,0.5) + 白 0.14 描边
+  static const Color darkGlassPageBg = Color(0xFF0B0518); // 兜底纯色（深紫黑）
+  static const Color darkGlassCardFill = Color(0x801E2130); // rgba(30,30,48,0.5)
+  static const Color darkGlassCardBorder = Color(0x24FFFFFF); // rgba(255,255,255,0.14)
 }

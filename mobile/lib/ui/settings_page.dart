@@ -53,17 +53,13 @@ class SettingsPage extends StatelessWidget {
                     Text('界面风格',
                         style: TextStyle(color: ink500, fontSize: 13)),
                     const SizedBox(height: 8),
-                    // 界面风格：显示双选项 [默认(可选) | 玻璃(置灰禁用+即将推出)]，玻璃不可选（Q3/A5/A9）。
-                    // 持久化的 glass 纠偏为 classic 显示。
+                    // 界面风格：默认 / 玻璃 双选项，均可选（对齐 globals.css .liquid 液态玻璃）。
                     _Segmented<AppStyle>(
                       options: const [
                         (label: '默认', value: AppStyle.classic),
                         (label: '玻璃', value: AppStyle.glass),
                       ],
-                      value: themeState.style == AppStyle.glass
-                          ? AppStyle.classic
-                          : themeState.style,
-                      disabled: const {AppStyle.glass},
+                      value: themeState.style,
                       onChanged: (v) => themeState.setStyle(v),
                     ),
                     const SizedBox(height: 16),

@@ -20,16 +20,15 @@ class AppFloatingButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final glass =
-        context.watch<ThemeState>().style == AppStyle.glass && !isDark;
+    final glass = context.watch<ThemeState>().style == AppStyle.glass;
 
     final bg = glass
-        ? AppColors.glassCardFill
+        ? (isDark ? AppColors.darkGlassCardFill : AppColors.glassCardFill)
         : (isDark
             ? AppColors.darkFloatingBtnBg
             : AppColors.lightFloatingBtnBg);
     final border = glass
-        ? AppColors.glassCardBorder
+        ? (isDark ? AppColors.darkGlassCardBorder : AppColors.glassCardBorder)
         : (isDark
             ? AppColors.darkFloatingBtnBorder
             : AppColors.lightFloatingBtnBorder);
