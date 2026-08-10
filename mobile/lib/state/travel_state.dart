@@ -14,8 +14,15 @@ class TravelState extends ChangeNotifier {
   final TripDao _dao = TripDao();
   final TripApi _api = TripApi(ApiClient.instance);
   final SyncService _sync = SyncService.instance;
-  final Ledger ledger;
-  TravelState(this.ledger);
+  Ledger _ledger;
+  Ledger get ledger => _ledger;
+  TravelState(Ledger ledger) : _ledger = ledger;
+
+  /// 设置保存后回写账本元信息（本位币/起止日期/预算），触发刷新。
+  void applyLedger(Ledger l) {
+    _ledger = l;
+    notifyListeners();
+  }
 
   List<TripMember> _members = [];
   List<TripExpense> _expenses = [];
@@ -23,6 +30,9 @@ class TravelState extends ChangeNotifier {
 
   List<TripMember> get members => _members;
   List<TripExpense> get expenses => _expenses;
+
+  /// 每笔花费的分摊明细（花费 id -> 分摊列表），供页面展示「分摊」与趣味报告。
+  Map<String, List<TripSplit>> get splitsByExpense => _splitsByExpense;
 
   Future<void> loadMembers() async {
     _members = await _dao.listMembers(ledger.id);
@@ -91,6 +101,7 @@ class TravelState extends ChangeNotifier {
     required int amountForeignCents,
     required double rate,
     required List<String> participantLocalIds,
+    Map<String, int>? weights,
     String? note,
   }) async {
     if (participantLocalIds.isEmpty) throw Exception('请选择参与分摊的成员');
@@ -101,7 +112,7 @@ class TravelState extends ChangeNotifier {
     for (final pid in participantLocalIds) {
       final sid = memberMap[pid];
       if (sid == null) throw Exception('有成员尚未同步，请先联网');
-      allocation.add({'memberId': sid, 'weight': 1});
+      allocation.add({'memberId': sid, 'weight': weights != null ? (weights[pid] ?? 0) : 1});
     }
 
     final amountBaseCents = (amountForeignCents * rate).round();
@@ -124,14 +135,15 @@ class TravelState extends ChangeNotifier {
     );
     await _dao.insertExpense(e);
 
-    // 乐观本地分摊（等额），联网同步后会被服务端权威值覆盖
-    final shares = _equalSplits(amountBaseCents, participantLocalIds.length);
-    for (var i = 0; i < participantLocalIds.length; i++) {
+    // 本地按权重分摊（等额或按比例），联网同步后会被服务端权威值覆盖
+    final ws = [for (final pid in participantLocalIds) weights != null ? (weights[pid] ?? 0) : 1];
+    final shares = allocate(amountBaseCents, participantLocalIds, ws);
+    for (final pid in participantLocalIds) {
       await _dao.insertSplit(TripSplit(
         id: const Uuid().v4(),
         expenseId: e.id,
-        memberId: participantLocalIds[i],
-        shareCents: shares[i],
+        memberId: pid,
+        shareCents: shares[pid] ?? 0,
       ));
     }
 
@@ -156,6 +168,108 @@ class TravelState extends ChangeNotifier {
       entityLocalId: e.id,
     );
     await loadExpenses();
+  }
+
+  /// 编辑已有花费：重写花费行 + 重建分摊（先清后插），[weights] 为空则等额分摊。
+  Future<void> updateExpense({
+    required String expenseId,
+    required String payerLocalId,
+    required String title,
+    required String category,
+    required String phase,
+    required String currency,
+    required int amountForeignCents,
+    required double rate,
+    required List<String> participantLocalIds,
+    Map<String, int>? weights,
+    String? note,
+    required int occurredAt,
+  }) async {
+    if (participantLocalIds.isEmpty) throw Exception('请选择参与分摊的成员');
+    final idx = _expenses.indexWhere((e) => e.id == expenseId);
+    if (idx < 0) return;
+    final old = _expenses[idx];
+    final amountBaseCents = (amountForeignCents * rate).round();
+    final updated = TripExpense(
+      id: old.id,
+      ledgerId: old.ledgerId,
+      serverId: old.serverId,
+      payerId: payerLocalId,
+      title: title,
+      category: category,
+      phase: phase,
+      currency: currency,
+      amountForeignCents: amountForeignCents,
+      rate: rate,
+      amountBaseCents: amountBaseCents,
+      note: note,
+      imageUrls: old.imageUrls,
+      occurredAt: occurredAt,
+      deletedAt: old.deletedAt,
+      synced: 0,
+      clientId: old.clientId,
+    );
+    await _dao.insertExpense(updated); // conflictAlgorithm.replace 覆盖原行
+    await _dao.deleteSplitsForExpense(updated.id);
+    final ws = [for (final pid in participantLocalIds) weights != null ? (weights[pid] ?? 0) : 1];
+    final shares = allocate(amountBaseCents, participantLocalIds, ws);
+    for (final pid in participantLocalIds) {
+      await _dao.insertSplit(TripSplit(
+        id: const Uuid().v4(),
+        expenseId: updated.id,
+        memberId: pid,
+        shareCents: shares[pid] ?? 0,
+      ));
+    }
+    if (updated.serverId != null) {
+      final memberMap = <String, String?>{for (var m in _members) m.id: m.serverId};
+      final allocation = <Map<String, dynamic>>[];
+      var allSynced = true;
+      for (final pid in participantLocalIds) {
+        final sid = memberMap[pid];
+        if (sid == null) {
+          allSynced = false;
+          break;
+        }
+        allocation.add({'memberId': sid, 'weight': weights != null ? (weights[pid] ?? 0) : 1});
+      }
+      if (allSynced) {
+        await _sync.enqueue(
+          method: 'PATCH',
+          path:
+              '/ledgers/${ledger.serverId ?? ledger.id}/expenses/${updated.serverId}',
+          body: {
+            'title': title,
+            'category': category,
+            'phase': phase,
+            'currency': currency,
+            'amountForeignCents': amountForeignCents,
+            'rate': rate,
+            'note': note,
+            'occurredAt':
+                DateTime.fromMillisecondsSinceEpoch(occurredAt).toUtc().toIso8601String(),
+            'allocation': allocation,
+          },
+          entity: _kExpenseEntity,
+          entityLocalId: updated.id,
+        );
+      }
+    }
+    await loadExpenses();
+  }
+
+  /// 检测历史数据分摊不守恒（sum(shares) != amountBaseCents），返回原因或 null。
+  String? settlementError() {
+    for (final e in _expenses) {
+      if (e.deletedAt != null) continue;
+      final sum = (_splitsByExpense[e.id] ?? const <TripSplit>[])
+          .fold(0, (s, sp) => s + sp.shareCents);
+      if (sum != e.amountBaseCents) {
+        return '「${e.title}」(${e.category})：分摊合计 $sum 分 ≠ 总额 ${e.amountBaseCents} 分。'
+            '逐笔打开「编辑」再保存一次即可修正。';
+      }
+    }
+    return null;
   }
 
   Future<void> deleteExpense(TripExpense e) async {
@@ -217,5 +331,35 @@ class TravelState extends ChangeNotifier {
       if (rem > 0) rem--;
       return base + extra;
     });
+  }
+
+  /// 按权重分摊 [total] 分，保证 sum(shares) == total（最大余数法）。
+  static Map<String, int> allocate(
+      int total, List<String> ids, List<int> weights) {
+    final n = ids.length;
+    if (n == 0) return const {};
+    if (total == 0) return {for (final id in ids) id: 0};
+    var totalW = 0;
+    for (final w in weights) totalW += w;
+    // 权重全为 0 时退化为等额
+    final eff = totalW == 0 ? [for (final _ in ids) 1] : weights;
+    if (totalW == 0) totalW = n;
+    final raw = <double>[];
+    final floor = <int>[];
+    for (var i = 0; i < n; i++) {
+      final r = total * eff[i] / totalW;
+      raw.add(r);
+      floor.add(r.floor());
+    }
+    var rem = total;
+    for (final f in floor) rem -= f;
+    final order = [for (var i = 0; i < n; i++) i]
+      ..sort((a, b) => (raw[b] - floor[b]).compareTo(raw[a] - floor[a]));
+    final result = <String, int>{};
+    for (var i = 0; i < n; i++) result[ids[i]] = floor[i];
+    for (var k = 0; k < rem && k < order.length; k++) {
+      result[ids[order[k]]] = result[ids[order[k]]]! + 1;
+    }
+    return result;
   }
 }

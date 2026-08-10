@@ -56,6 +56,37 @@ class GeneralEntryDao {
     );
   }
 
+  /// 回收站：返回所有已软删的条目（按删除时间倒序）。[ledgerId] 为空则跨全部账本。
+  Future<List<GeneralEntry>> listDeleted({String? ledgerId}) async {
+    final db = await _db.database;
+    final rows = await db.query(
+      'general_entries',
+      where: ledgerId == null
+          ? 'deleted_at IS NOT NULL'
+          : 'ledger_id = ? AND deleted_at IS NOT NULL',
+      whereArgs: ledgerId == null ? null : [ledgerId],
+      orderBy: 'deleted_at DESC',
+    );
+    return rows.map(GeneralEntry.fromDb).toList();
+  }
+
+  /// 恢复：清除删除标记（deleted_at 置 NULL）。
+  Future<void> restore(String id) async {
+    final db = await _db.database;
+    await db.update(
+      'general_entries',
+      {'deleted_at': null, 'synced': 0},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  /// 彻底删除（物理删除，不可恢复）。
+  Future<void> hardDelete(String id) async {
+    final db = await _db.database;
+    await db.delete('general_entries', where: 'id = ?', whereArgs: [id]);
+  }
+
   Future<void> markSynced(String localId, String serverId) async {
     final db = await _db.database;
     await db.update(

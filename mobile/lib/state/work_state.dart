@@ -75,4 +75,35 @@ class WorkState extends ChangeNotifier {
     }
     await load();
   }
+
+  /// 编辑已存在的条目（对齐网页 [EditEntryModal] 的 PATCH action=meta）。
+  ///
+  /// 复用 [WorkEntryDao.insert] 的 [ConflictAlgorithm.replace]（同 id 覆盖=更新），
+  /// 不新增 DAO 方法。已同步条目入队 PATCH /entries/:serverId；本地未同步条目
+  /// 用 [SyncService.enqueueCoalesced] 改写待发 POST（按 clientId 去重）。
+  Future<void> updateEntry(WorkEntry updated) async {
+    await _dao.insert(updated);
+    final body = updated.toApiBody();
+    body['ledgerId'] = ledger.serverId ?? ledger.id;
+    if (updated.serverId != null) {
+      body['action'] = 'meta';
+      await _sync.enqueue(
+        method: 'PATCH',
+        path: '/entries/${updated.serverId}',
+        body: body,
+        entity: _kEntity,
+        entityLocalId: updated.id,
+      );
+    } else {
+      await _sync.enqueueCoalesced(
+        method: 'POST',
+        path: '/entries',
+        body: body,
+        clientId: updated.clientId,
+        entity: _kEntity,
+        entityLocalId: updated.id,
+      );
+    }
+    await load();
+  }
 }

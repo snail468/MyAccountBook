@@ -17,12 +17,15 @@ class PageHeader extends StatelessWidget {
   final String icon;
   final String title;
   final String subtitle;
+  /// 标题行右侧的附加操作（如账本的协作/设置图标）。默认 null，向后兼容。
+  final List<Widget>? actions;
 
   const PageHeader({
     super.key,
     required this.icon,
     required this.title,
     required this.subtitle,
+    this.actions,
   });
 
   @override
@@ -65,6 +68,13 @@ class PageHeader extends StatelessWidget {
                 ],
               ),
             ),
+            if (actions != null) ...<Widget>[
+              const SizedBox(width: 8),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: actions!,
+              ),
+            ],
           ],
         ),
         const SizedBox(height: 16),

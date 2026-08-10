@@ -47,6 +47,12 @@ class TripDao {
     await db.delete('trip_members', where: 'id = ?', whereArgs: [id]);
   }
 
+  /// 按 id 更新成员（编辑姓名/状态后本地回写）。
+  Future<void> updateMember(TripMember m) async {
+    final db = await _db.database;
+    await db.update('trip_members', m.toDb(), where: 'id = ?', whereArgs: [m.id]);
+  }
+
   Future<void> markMemberSynced(String localId, String serverId) async {
     final db = await _db.database;
     await db.update(
@@ -63,6 +69,13 @@ class TripDao {
     final db = await _db.database;
     await db.insert('trip_expenses', e.toDb(),
         conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  /// 按 id 更新一笔花费（编辑后本地回写；sync 标记置 0 触发重新同步）。
+  Future<void> updateExpense(TripExpense e) async {
+    final db = await _db.database;
+    await db
+        .update('trip_expenses', e.toDb(), where: 'id = ?', whereArgs: [e.id]);
   }
 
   Future<List<TripExpense>> listExpenses(String ledgerId) async {

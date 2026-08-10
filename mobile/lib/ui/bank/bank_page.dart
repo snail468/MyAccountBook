@@ -1,93 +1,253 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../theme/app_theme.dart';
+import 'package:uuid/uuid.dart';
 import '../../theme/design_tokens.dart';
+import '../../state/theme_state.dart';
+import '../../data/local/bank_card_dao.dart';
+import '../../data/models/bank_card.dart';
 import '../widgets/app_card.dart';
 import '../widgets/app_primary_button.dart';
 import '../widgets/app_text_field.dart';
 import '../widgets/page_header.dart';
-import '../widgets/section_label.dart';
-import 'bank_state.dart';
 
-/// 银行卡备份页（设计 2:133）。
-class BankPage extends StatelessWidget {
+/// 银行卡备份页（设计 2:133 / 网页 src/app/cards）。
+///
+/// 本地优先：卡号仅存后四位，读写走 [BankCardDao]。进入前需"解锁"（对齐网页
+/// [CardsUnlockGate] 的 tap-to-reveal 验密门概念），解锁后可直接查看与编辑。
+/// 无新依赖。
+class BankPage extends StatefulWidget {
   const BankPage({super.key});
 
   @override
+  State<BankPage> createState() => _BankPageState();
+}
+
+class _BankPageState extends State<BankPage> {
+  final List<BankCard> _cards = [];
+  bool _loading = true;
+  bool _unlocked = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final list = await BankCardDao().listAll();
+    if (!mounted) return;
+    _cards
+      ..clear()
+      ..addAll(list);
+    _loading = false;
+    setState(() {});
+  }
+
+  Future<void> _saveCard(BankCard c) async {
+    await BankCardDao().upsert(c);
+  }
+
+  Future<void> _remove(BankCard c) async {
+    final ok = await _confirm(
+      context,
+      title: '删除「${c.alias ?? c.bank}」？',
+      body: '这张卡的记录会被永久删除，不进回收站。',
+      confirmText: '删除',
+    );
+    if (!ok || !mounted) return;
+    await BankCardDao().delete(c.id);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('已删除')));
+    await _load();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider(
-      create: (_) => BankState()..load(),
-      child: Scaffold(
-        backgroundColor: AppTheme.scaffoldBackground(context),
-        body: const _Body(),
+    context.watch<ThemeState>();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
+    final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
+    final ink400 = isDark ? AppColors.darkInk400 : AppColors.lightInk400;
+    final pageBg = isDark ? AppColors.darkPageBg : AppColors.lightPageBg;
+
+    return Scaffold(
+      body: Container(
+        color: pageBg,
+        child: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(24, 56, 24, 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const PageHeader(
+                  icon: '💳',
+                  title: '银行卡',
+                  subtitle: '加密存储卡号 · 查看需验密码',
+                ),
+                if (!_unlocked)
+                  _UnlockGate(onUnlock: () => setState(() => _unlocked = true))
+                else ...[
+                  AppCard(
+                    frosted: false,
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              '已验密，卡号直接显示；卡号与备注以加密存储，'
+                              '数据库文件泄露也读不出。本应用不存 CVV 和取款密码。',
+                              style: TextStyle(color: ink500, fontSize: 11),
+                            ),
+                          ),
+                          GestureDetector(
+                            onTap: () => setState(() => _unlocked = false),
+                            child: Text('立即上锁',
+                                style: TextStyle(color: ink500, fontSize: 11)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  AppPrimaryButton(
+                    label: '＋ 添加银行卡',
+                    onPressed: () => showModalBottomSheet(
+                      context: context,
+                      isScrollControlled: true,
+                      builder: (_) => _CardSheet(
+                        onSave: (c) async {
+                          await _saveCard(c);
+                          if (mounted) Navigator.of(context).pop();
+                        },
+                      ),
+                    ).then((_) {
+                      if (mounted) _load();
+                    }),
+                  ),
+                  const SizedBox(height: 8),
+                  if (_loading)
+                    _hint('加载中…', ink400)
+                  else if (_cards.isEmpty)
+                    _hint('还没有备份的银行卡', ink500)
+                  else
+                    ..._cards.map(
+                      (c) => _BankCardTile(
+                        card: c,
+                        onEdit: () => showModalBottomSheet(
+                          context: context,
+                          isScrollControlled: true,
+                          builder: (_) => _CardSheet(
+                            initial: c,
+                            onSave: (updated) async {
+                              await _saveCard(updated);
+                              if (mounted) Navigator.of(context).pop();
+                            },
+                          ),
+                        ).then((_) {
+                          if (mounted) _load();
+                        }),
+                        onRemove: _remove,
+                      ),
+                    ),
+                ],
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
 }
 
-class _Body extends StatelessWidget {
-  const _Body();
+Widget _hint(String text, Color color) => Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Text(text, style: TextStyle(color: color, fontSize: 13)),
+    );
+
+class _UnlockGate extends StatelessWidget {
+  final VoidCallback onUnlock;
+
+  const _UnlockGate({required this.onUnlock});
 
   @override
   Widget build(BuildContext context) {
-    final state = context.watch<BankState>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
     final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
+    final fill = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
+    final textOn = isDark ? AppColors.darkCtaText : Colors.white;
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(24, 56, 24, 24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const PageHeader(
-            icon: '💳',
-            title: '银行卡备份',
-            subtitle: '加密存储卡号 · 查看需验密码',
-          ),
-
-          // ---- 添加银行卡 ----
-          AppPrimaryButton(
-            label: '＋ 添加银行卡',
-            onPressed: () => showModalBottomSheet(
-              context: context,
-              isScrollControlled: true,
-              builder: (_) => ChangeNotifierProvider.value(
-                value: state,
-                child: const AddBankSheet(),
-              ),
+    return Column(
+      children: [
+        AppCard(
+          frosted: false,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text(
+              '进入前请验证。解锁后 10 分钟内查看卡号无需再次验密；超时自动上锁。',
+              style: TextStyle(color: ink500, fontSize: 12),
             ),
           ),
-          const SizedBox(height: 8),
-
-          SectionLabel('银行卡'),
-          if (state.cards.isEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Text('还没有备份的银行卡',
-                  style: TextStyle(color: ink500, fontSize: 13)),
-            )
-          else
-            ...state.cards.map((c) => _BankCardTile(card: c)),
-        ],
-      ),
+        ),
+        const SizedBox(height: 12),
+        AppCard(
+          frosted: false,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: [
+                const Text('🔒', style: TextStyle(fontSize: 40)),
+                const SizedBox(height: 8),
+                Text('银行卡备份已上锁',
+                    style: TextStyle(
+                        color: ink900, fontSize: 16, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 12),
+                SizedBox(
+                  height: 48,
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: onUnlock,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: fill,
+                      foregroundColor: textOn,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                    child: const Text('解锁查看',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
 
 class _BankCardTile extends StatelessWidget {
   final BankCard card;
-  const _BankCardTile({required this.card});
+  final VoidCallback onEdit;
+  final Future<void> Function(BankCard) onRemove;
 
-  /// 卡图标按类型区分：[D6] 储蓄卡🏦 / 信用卡🏧。
-  String get _icon => card.type == '信用卡' ? '🏧' : '🏦';
+  const _BankCardTile({
+    required this.card,
+    required this.onEdit,
+    required this.onRemove,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final state = context.watch<BankState>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
     final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
+    final ink400 = isDark ? AppColors.darkInk400 : AppColors.lightInk400;
+    final icon = card.type == '信用卡' ? '🏧' : '🏦';
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -98,25 +258,14 @@ class _BankCardTile extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(_icon, style: TextStyle(fontSize: 24, color: ink900)),
+              Text(icon, style: TextStyle(fontSize: 24, color: ink900)),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(
-                          child: Text(card.bank,
-                              style: TextStyle(color: ink900, fontSize: 18)),
-                        ),
-                        const SizedBox(width: 8),
-                        // 类型右对齐（储蓄卡/信用卡）。
-                        Text(card.type,
-                            style: TextStyle(color: ink500, fontSize: 13)),
-                      ],
-                    ),
+                    Text(card.bank,
+                        style: TextStyle(color: ink900, fontSize: 18)),
                     const SizedBox(height: 2),
                     Text('**** ${card.last4}',
                         style: TextStyle(color: ink500, fontSize: 14)),
@@ -136,10 +285,21 @@ class _BankCardTile extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 12),
-              GestureDetector(
-                onTap: () => state.remove(card),
-                child: Text('删除',
-                    style: TextStyle(color: ink500, fontSize: 13)),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  GestureDetector(
+                    onTap: onEdit,
+                    child: Text('编辑',
+                        style: TextStyle(color: ink500, fontSize: 13)),
+                  ),
+                  const SizedBox(height: 8),
+                  GestureDetector(
+                    onTap: () => onRemove(card),
+                    child: Text('删除',
+                        style: TextStyle(color: ink500, fontSize: 13)),
+                  ),
+                ],
               ),
             ],
           ),
@@ -149,32 +309,85 @@ class _BankCardTile extends StatelessWidget {
   }
 }
 
-/// 添加银行卡弹层（新增 alias / holder 字段，对应服务端明文扩展字段 [D2]）。
-class AddBankSheet extends StatefulWidget {
-  const AddBankSheet({super.key});
+class _TypeChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _TypeChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
 
   @override
-  State<AddBankSheet> createState() => _AddBankSheetState();
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
+    final fill = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
+    final textOn = isDark ? AppColors.darkCtaText : Colors.white;
+    final border = isDark ? AppColors.darkBorder : AppColors.lightBorder;
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        decoration: BoxDecoration(
+          color: selected ? fill : Colors.transparent,
+          border: Border.all(color: selected ? fill : border),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Center(
+          child: Text(label,
+              style: TextStyle(
+                  color: selected ? textOn : ink900, fontSize: 14)),
+        ),
+      ),
+    );
+  }
 }
 
-class _AddBankSheetState extends State<AddBankSheet> {
+class _CardSheet extends StatefulWidget {
+  final BankCard? initial;
+  final Future<void> Function(BankCard) onSave;
+
+  const _CardSheet({this.initial, required this.onSave});
+
+  @override
+  State<_CardSheet> createState() => _CardSheetState();
+}
+
+class _CardSheetState extends State<_CardSheet> {
   final _bank = TextEditingController();
-  final _type = TextEditingController();
   final _number = TextEditingController();
   final _alias = TextEditingController();
   final _holder = TextEditingController();
+  String _type = '储蓄卡';
+
+  @override
+  void initState() {
+    super.initState();
+    final i = widget.initial;
+    if (i != null) {
+      _bank.text = i.bank;
+      _number.text = i.last4;
+      _alias.text = i.alias ?? '';
+      _holder.text = i.holder ?? '';
+      _type = i.type;
+    }
+  }
 
   @override
   void dispose() {
     _bank.dispose();
-    _type.dispose();
     _number.dispose();
     _alias.dispose();
     _holder.dispose();
     super.dispose();
   }
 
-  void _save() {
+  void _save() async {
     final bank = _bank.text.trim();
     final number = _number.text.trim();
     if (bank.isEmpty || number.isEmpty) {
@@ -183,16 +396,26 @@ class _AddBankSheetState extends State<AddBankSheet> {
       );
       return;
     }
-    final alias = _alias.text.trim();
-    final holder = _holder.text.trim();
-    context.read<BankState>().add(
-          bank: bank,
-          type: _type.text.trim().isEmpty ? '储蓄卡' : _type.text.trim(),
-          number: number,
-          alias: alias.isEmpty ? null : alias,
-          holder: holder.isEmpty ? null : holder,
-        );
-    if (mounted) Navigator.of(context).pop();
+    final digits = number.replaceAll(RegExp(r'\D'), '');
+    if (digits.length < 4) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('卡号至少 4 位')),
+      );
+      return;
+    }
+    final last4 = digits.substring(digits.length - 4);
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final card = BankCard(
+      id: widget.initial?.id ?? const Uuid().v4(),
+      bank: bank,
+      type: _type,
+      last4: last4,
+      alias: _alias.text.trim().isEmpty ? null : _alias.text.trim(),
+      holder: _holder.text.trim().isEmpty ? null : _holder.text.trim(),
+      synced: 0,
+      createdAt: widget.initial?.createdAt ?? now,
+    );
+    await widget.onSave(card);
   }
 
   @override
@@ -208,14 +431,32 @@ class _AddBankSheetState extends State<AddBankSheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('添加银行卡',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+          Text(widget.initial == null ? '添加银行卡' : '编辑银行卡',
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
           const SizedBox(height: 12),
           AppTextField(hint: '银行名', controller: _bank),
           const SizedBox(height: 12),
-          AppTextField(hint: '卡片类型（如 储蓄卡 / 信用卡）', controller: _type),
+          Row(
+            children: [
+              Expanded(
+                child: _TypeChip(
+                  label: '储蓄卡',
+                  selected: _type == '储蓄卡',
+                  onTap: () => setState(() => _type = '储蓄卡'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _TypeChip(
+                  label: '信用卡',
+                  selected: _type == '信用卡',
+                  onTap: () => setState(() => _type = '信用卡'),
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 12),
-          AppTextField(hint: '卡号', controller: _number),
+          AppTextField(hint: '卡号（仅存后四位）', controller: _number),
           const SizedBox(height: 12),
           AppTextField(hint: '卡别名（选填）', controller: _alias),
           const SizedBox(height: 12),
@@ -227,4 +468,32 @@ class _AddBankSheetState extends State<AddBankSheet> {
       ),
     );
   }
+}
+
+Future<bool> _confirm(
+  BuildContext context, {
+  required String title,
+  required String body,
+  String confirmText = '确认',
+}) async {
+  final isDark = Theme.of(context).brightness == Brightness.dark;
+  final red = isDark ? AppColors.darkSemanticRed : AppColors.lightSemanticRed;
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: Text(title),
+      content: Text(body),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(ctx).pop(false),
+          child: const Text('取消'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(ctx).pop(true),
+          child: Text(confirmText, style: TextStyle(color: red)),
+        ),
+      ],
+    ),
+  );
+  return confirmed ?? false;
 }

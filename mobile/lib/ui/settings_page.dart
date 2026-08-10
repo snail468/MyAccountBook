@@ -1,238 +1,151 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import '../state/theme_state.dart';
 import '../theme/design_tokens.dart';
-import '../theme/app_theme.dart';
+import 'widgets/page_header.dart';
 import 'widgets/app_card.dart';
-import 'widgets/app_switch.dart';
-import 'widgets/app_primary_button.dart';
+import 'widgets/appearance_sheet.dart';
+import 'home/backup_sheets.dart';
 
-/// 设置页（设计 2:139）：外观 · 光效 · 音效。
+/// 设置页（对齐网页端设置入口）。
 ///
-/// 所有改动即时写入 [ThemeState] 并 [ThemeState.save] 持久化。
+/// 外观面板已抽离为 [AppearanceSheet]，本页只保留「入口行」：
+/// 外观 / 导出备份 / 导入还原 / 修改密码，逐行点开对应面板。
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final themeState = context.watch<ThemeState>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
     final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
-
-    return Scaffold(
-      backgroundColor: AppTheme.scaffoldBackground(context),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(24, 56, 24, 24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('外观 · 光效 · 音效',
-                style: TextStyle(
-                    color: ink900, fontSize: 22, fontWeight: FontWeight.w700)),
-            const SizedBox(height: 16),
-            AppCard(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('外观模式',
-                        style: TextStyle(color: ink500, fontSize: 13)),
-                    const SizedBox(height: 8),
-                    _Segmented<AppThemeMode>(
-                      options: const [
-                        (label: '白天', value: AppThemeMode.light),
-                        (label: '黑夜', value: AppThemeMode.dark),
-                        (label: '跟随系统', value: AppThemeMode.system),
-                      ],
-                      value: themeState.themeMode,
-                      onChanged: (v) => themeState.setThemeMode(v),
-                    ),
-                    const SizedBox(height: 16),
-                    Text('界面风格',
-                        style: TextStyle(color: ink500, fontSize: 13)),
-                    const SizedBox(height: 8),
-                    // 界面风格：默认 / 玻璃 双选项，均可选（对齐 globals.css .liquid 液态玻璃）。
-                    _Segmented<AppStyle>(
-                      options: const [
-                        (label: '默认', value: AppStyle.classic),
-                        (label: '玻璃', value: AppStyle.glass),
-                      ],
-                      value: themeState.style,
-                      onChanged: (v) => themeState.setStyle(v),
-                    ),
-                    const SizedBox(height: 16),
-                    Text('字号',
-                        style: TextStyle(color: ink500, fontSize: 13)),
-                    const SizedBox(height: 8),
-                    _Segmented<double>(
-                      options: const [
-                        (label: '小', value: 0.9),
-                        (label: '标准', value: 1.0),
-                        (label: '大', value: 1.15),
-                      ],
-                      value: themeState.fontScale,
-                      onChanged: (v) => themeState.setFontScale(v),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            AppCard(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  children: [
-                    _SettingRow(
-                      title: '光效',
-                      subtitle: '星空风格：紫色涟漪 + 星芒',
-                      trailing: AppSwitch(
-                        value: themeState.effectOn,
-                        onChanged: (v) => themeState.setEffectOn(v),
-                      ),
-                    ),
-                    const Divider(height: 1),
-                    _SettingRow(
-                      title: '音效',
-                      subtitle: '首页用一段声，其它页面用另一段',
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          TextButton(
-                            onPressed: () {
-                              // 第二阶段：试听/试看逻辑
-                            },
-                            child: Text('试听 / 试看',
-                                style: TextStyle(color: ink500, fontSize: 13)),
-                          ),
-                          AppSwitch(
-                            value: themeState.soundOn,
-                            onChanged: (v) => themeState.setSoundOn(v),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 24),
-            AppPrimaryButton(
-              label: '完成',
-              onPressed: () => Navigator.of(context).pop(),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// 设置行：标题 + 副标题 + 右侧控件。
-class _SettingRow extends StatelessWidget {
-  final String title;
-  final String subtitle;
-  final Widget trailing;
-
-  const _SettingRow({
-    required this.title,
-    required this.subtitle,
-    required this.trailing,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
-    final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title,
-                    style: TextStyle(
-                        color: ink900,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600)),
-                const SizedBox(height: 2),
-                Text(subtitle, style: TextStyle(color: ink500, fontSize: 13)),
-              ],
-            ),
-          ),
-          trailing,
-        ],
-      ),
-    );
-  }
-}
-
-/// 分段选择器：选中 = ink900 填充白字；未选 = surfaceSubtle 墨字。
-class _Segmented<T> extends StatelessWidget {
-  final List<({String label, T value})> options;
-  final T value;
-  final ValueChanged<T> onChanged;
-  final Set<T>? disabled;
-
-  const _Segmented({
-    required this.options,
-    required this.value,
-    required this.onChanged,
-    this.disabled,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final selectedBg = isDark ? AppColors.darkCtaFill : AppColors.lightInk900;
-    final selectedText = isDark ? AppColors.darkCtaText : Colors.white;
-    final unselBg =
-        isDark ? AppColors.darkSurface : AppColors.lightSurfaceSubtle;
-    final unselText = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
+    final ink400 = isDark ? AppColors.darkInk400 : AppColors.lightInk400;
+    final surface = isDark ? AppColors.darkSurface : AppColors.lightSurface;
+    final border = isDark ? AppColors.darkBorder : AppColors.lightBorder;
+    final pageBg = isDark ? AppColors.darkPageBg : AppColors.lightPageBg;
 
     return Container(
-      decoration: BoxDecoration(
-        color: unselBg,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
-          width: 1,
-        ),
-      ),
-      child: Row(
-        children: options.map((o) {
-          final sel = o.value == value;
-          final isDisabled = disabled?.contains(o.value) ?? false;
-          return Expanded(
-            child: GestureDetector(
-              onTap: isDisabled ? null : () => onChanged(o.value),
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                decoration: BoxDecoration(
-                  color: sel ? selectedBg : Colors.transparent,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Center(
-                  child: Text(
-                    isDisabled ? '${o.label} · 即将推出' : o.label,
-                    style: TextStyle(
-                      color: isDisabled
-                          ? (isDark ? AppColors.darkInk500 : AppColors.lightInk400)
-                          : (sel ? selectedText : unselText),
-                      fontWeight: FontWeight.w600,
-                      fontSize: 13,
+      color: pageBg,
+      child: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(24, 56, 24, 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const PageHeader(
+                icon: '🛠️',
+                title: '设置',
+                subtitle: '外观 · 账户 · 数据',
+              ),
+              AppCard(
+                child: Column(
+                  children: [
+                    _SettingRow(
+                      icon: '🎨',
+                      label: '外观',
+                      subtitle: '主题 · 字号 · 光效 · 音效',
+                      onTap: () async {
+                        await showModalBottomSheet(
+                          context: context,
+                          isScrollControlled: true,
+                          builder: (_) => const AppearanceSheet(),
+                        );
+                      },
                     ),
-                  ),
+                    Divider(height: 1, thickness: 1, color: border),
+                    _SettingRow(
+                      icon: '📤',
+                      label: '导出备份',
+                      subtitle: '把所有本地账本导出为文件',
+                      onTap: () async {
+                        await showExportSheet(context);
+                      },
+                    ),
+                    Divider(height: 1, thickness: 1, color: border),
+                    _SettingRow(
+                      icon: '📥',
+                      label: '导入还原',
+                      subtitle: '从备份文件恢复全部数据',
+                      onTap: () async {
+                        await showImportSheet(context, onImported: () {});
+                      },
+                    ),
+                    Divider(height: 1, thickness: 1, color: border),
+                    _SettingRow(
+                      icon: '🔑',
+                      label: '修改密码',
+                      subtitle: '修改登录密码',
+                      onTap: () async {
+                        await showChangePasswordSheet(context);
+                      },
+                    ),
+                  ],
                 ),
               ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 设置行：图标 + 标题 + 副标题 + 右侧箭头，整行可点。
+class _SettingRow extends StatelessWidget {
+  final String icon;
+  final String label;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  const _SettingRow({
+    required this.icon,
+    required this.label,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
+    final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
+    final ink400 = isDark ? AppColors.darkInk400 : AppColors.lightInk400;
+    final surface = isDark ? AppColors.darkSurface : AppColors.lightSurface;
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: surface,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(icon, style: const TextStyle(fontSize: 20)),
             ),
-          );
-        }).toList(),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label,
+                      style: TextStyle(
+                          color: ink900,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 2),
+                  Text(subtitle,
+                      style: TextStyle(color: ink500, fontSize: 13)),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, color: ink400, size: 20),
+          ],
+        ),
       ),
     );
   }

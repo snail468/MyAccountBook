@@ -52,4 +52,72 @@ class CustomCategories {
       return const CustomCategories();
     }
   }
+
+  /// 序列化回 JSON（分类管理页保存时用）。
+  Map<String, dynamic> toJson() => {
+        'added': added,
+        'hidden': hidden,
+        'budgets': budgets,
+        'budgetsWeekly': budgetsWeekly,
+      };
 }
+
+/// 默认（内置）分类清单（1:1 对齐网页端常用分类）。
+const List<String> defaultCategories = <String>[
+  '餐饮',
+  '交通',
+  '购物',
+  '娱乐',
+  '居家',
+  '居住',
+  '医疗',
+  '教育',
+  '通讯',
+  '工资',
+  '红包',
+  '理财',
+  '旅行',
+  '其他',
+];
+
+/// 分类 -> emoji 图标（1:1 对齐网页端分类图标）。
+const Map<String, String> _categoryIcons = <String, String>{
+  '餐饮': '🍜',
+  '早餐': '🥐',
+  '午餐': '🍱',
+  '晚餐': '🍲',
+  '交通': '🚌',
+  '打车': '🚕',
+  '地铁': '🚇',
+  '购物': '🛍️',
+  '服饰': '👕',
+  '数码': '📱',
+  '居家': '🧺',
+  '居住': '🏠',
+  '房租': '🏠',
+  '水电': '💡',
+  '娱乐': '🎮',
+  '运动': '🏀',
+  '旅行': '✈️',
+  '医疗': '💊',
+  '教育': '📚',
+  '书籍': '📖',
+  '通讯': '📞',
+  '工资': '💰',
+  '收入': '💵',
+  '奖金': '🎉',
+  '红包': '🧧',
+  '理财': '📈',
+  '投资': '📊',
+  '礼金': '🎁',
+  '社交': '🍻',
+  '宠物': '🐾',
+  '美容': '💄',
+  '烟酒': '🍺',
+  '孩子': '🍼',
+  '捐赠': '🤝',
+  '其他': '📦',
+];
+
+/// 返回某分类的展示图标；未知分类回退到 📦。
+String iconOf(String category) => _categoryIcons[category] ?? '📦';

@@ -3,23 +3,21 @@ import 'package:provider/provider.dart';
 
 import '../../core/constants.dart';
 import '../../data/local/work_entry_dao.dart';
+import '../../data/models/ledger.dart';
 import '../../state/ledger_list_state.dart';
-import '../../theme/app_theme.dart';
 import '../../theme/design_tokens.dart';
 import '../widgets/app_card.dart';
-import '../widgets/money_text.dart';
+import '../widgets/money.dart';
 import '../widgets/page_header.dart';
 import '../widgets/section_label.dart';
+import 'work_ledger_page.dart';
 
-/// 工作出项汇总页（首页"工作出项汇总"功能卡落地页）。
+/// 工作账本·多月总览（对齐网页 /work：work/page.tsx + WorkMonthsSection）。
 ///
-/// 聚合**所有**工作账本（`LedgerListState.byKind(AppConfig.kindWork)`）的
-/// 按月垫款/回款，按月份合并后展示：
-///   - 垫款总额 = Σ expense
-///   - 回款总额 = Σ income
-///   - 待回款   = 垫款 − 回款（净额；为负表示回款多于垫款）
-///
-/// 数据来自本地 DAO，异步加载；DB 异常按空数据处理，页面不崩溃。
+/// 聚合所有工作账本的按月垫款/回款，按月份合并后展示：
+///   · 顶部累计汇总：进项合计 / 出项合计 / 结余 / 回款率（= 进项/出项）。
+///   · 月份列表（最近 12 个月或自最早记录月起）：每张卡显示 进项/出项/结余，
+///     点击进入对应月份的 [WorkLedgerPage]。
 class WorkSummaryPage extends StatefulWidget {
   const WorkSummaryPage({super.key});
 
@@ -31,14 +29,12 @@ class _WorkSummaryPageState extends State<WorkSummaryPage> {
   /// 合并后的按月汇总；键为 'YYYY-MM'，值为 (income, expense)。
   Map<String, ({int income, int expense})> _byMonth = {};
 
-  /// 垫款总额（Σ expense）。
-  int _advance = 0;
+  /// 参与聚合的工作账本（用于点击进入单月页）。
+  List<Ledger> _workLedgers = [];
 
-  /// 回款总额（Σ income）。
-  int _refund = 0;
-
-  /// 待回款 = 垫款 − 回款（净额，可能为负）。
-  int _pending = 0;
+  /// 累计进项 / 出项。
+  int _totalIncome = 0;
+  int _totalExpense = 0;
 
   /// 是否正在加载。
   bool _loading = true;
@@ -46,16 +42,13 @@ class _WorkSummaryPageState extends State<WorkSummaryPage> {
   @override
   void initState() {
     super.initState();
-    // 首帧后再异步加载（与 [HomePage._loadSummary] 一致），避免 build 期间触碰 context。
+    // 首帧后再异步加载，避免 build 期间触碰 context。
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
 
-  /// 加载并合并所有工作账本的按月汇总。
-  ///
-  /// 整段包 try/catch：DB 异常时按空数据处理（仅停止 loading，不崩溃）。
+  /// 加载并合并所有工作账本的按月汇总（复用 [WorkEntryDao.totalsByMonth]）。
   Future<void> _load() async {
     try {
-      // 复用 App 级 LedgerListState（HomePage 已 load 过；此处再 load 一次保证最新）。
       final state = context.read<LedgerListState>();
       await state.load();
       final ledgers = state.byKind(AppConfig.kindWork);
@@ -72,19 +65,19 @@ class _WorkSummaryPageState extends State<WorkSummaryPage> {
         });
       }
 
-      int advance = 0;
-      int refund = 0;
-      for (final totals in merged.values) {
-        advance += totals.expense;
-        refund += totals.income;
+      int ti = 0;
+      int te = 0;
+      for (final t in merged.values) {
+        ti += t.income;
+        te += t.expense;
       }
 
       if (!mounted) return;
       setState(() {
         _byMonth = merged;
-        _advance = advance;
-        _refund = refund;
-        _pending = advance - refund;
+        _workLedgers = ledgers;
+        _totalIncome = ti;
+        _totalExpense = te;
         _loading = false;
       });
     } catch (_) {
@@ -93,181 +86,286 @@ class _WorkSummaryPageState extends State<WorkSummaryPage> {
     }
   }
 
+  /// 生成月份列表（对齐网页 makeMonthList）：当前月往前 11 个月，
+  /// 若最早记录更早则从最早月开始；倒序（最新在前）。
+  List<String> _monthList() {
+    final now = DateTime.now();
+    final curY = now.year;
+    final curM = now.month;
+    int startY = curY;
+    int startM = curM - 11;
+
+    String? earliest;
+    for (final k in _byMonth.keys) {
+      if (earliest == null || k.compareTo(earliest) < 0) earliest = k;
+    }
+    if (earliest != null) {
+      final ey = int.parse(earliest.split('-')[0]);
+      final em = int.parse(earliest.split('-')[1]);
+      if (ey < startY || (ey == startY && em < startM)) {
+        startY = ey;
+        startM = em;
+      }
+    }
+    while (startM <= 0) {
+      startM += 12;
+      startY -= 1;
+    }
+
+    final months = <String>[];
+    var y = startY;
+    var m = startM;
+    while (y < curY || (y == curY && m <= curM)) {
+      months.add('$y-${m.toString().padLeft(2, '0')}');
+      m += 1;
+      if (m > 12) {
+        m = 1;
+        y += 1;
+      }
+    }
+    return months.reversed.toList();
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
     final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
+    final ink400 = isDark ? AppColors.darkInk400 : AppColors.lightInk400;
+    final surface = isDark ? AppColors.darkSurface : AppColors.lightSurface;
+    final border = isDark ? AppColors.darkBorder : AppColors.lightBorder;
+    final pageBg = isDark ? AppColors.darkPageBg : AppColors.lightPageBg;
+    final red = isDark ? AppColors.darkSemanticRed : AppColors.lightSemanticRed;
+    final green = isDark ? AppColors.darkSemanticGreen : AppColors.lightSemanticGreen;
 
-    // 待回款为正（仍有垫款未回）才用红色提示；为负/零用主文本色。
-    final pendingColor = _pending > 0
-        ? AppColors.lightSemanticRed
-        : (isDark ? AppColors.darkInk100 : AppColors.lightInk900);
+    final balance = _totalIncome - _totalExpense;
+    final rate = _totalExpense > 0
+        ? (_totalIncome / _totalExpense * 100).round()
+        : (_totalIncome > 0 ? 100 : 0);
 
-    // 月份倒序（'YYYY-MM' 字符串可直接按字典序比较）。
-    final months = _byMonth.keys.toList()
-      ..sort((a, b) => b.compareTo(a));
+    final now = DateTime.now();
+    final currentMonth =
+        '${now.year}-${now.month.toString().padLeft(2, '0')}';
+    final months = _monthList();
 
-    return Scaffold(
-      backgroundColor: AppTheme.scaffoldBackground(context),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(24, 56, 24, 24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // ---- 头部 + 悬浮钮 ----
-            PageHeader(
-              icon: '📤',
-              title: '工作出项汇总',
-              subtitle: '按月垫款与回款汇总',
-            ),
-            const SizedBox(height: 16),
+    return Container(
+      color: pageBg,
+      child: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(24, 56, 24, 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              PageHeader(
+                icon: '💼',
+                title: '工作账本',
+                subtitle: '按月记录进项与出项',
+              ),
 
-            // ---- 三个汇总块 ----
-            Row(
-              children: [
-                Expanded(
-                  child: _SummaryTile(
-                    title: '垫款',
-                    cents: _advance,
-                    color: ink900,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _SummaryTile(
-                    title: '回款',
-                    cents: _refund,
-                    color: ink900,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _SummaryTile(
-                    title: '待回款',
-                    cents: _pending,
-                    color: pendingColor,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-
-            SectionLabel('按月查看'),
-
-            // ---- 加载中 / 空状态 / 月卡列表 ----
-            if (_loading)
-              Text('加载中…', style: TextStyle(color: ink500, fontSize: 13))
-            else if (_byMonth.isEmpty)
-              Text('还没有工作账本记录',
-                  style: TextStyle(color: ink500, fontSize: 13))
-            else
-              ...months.map((ym) {
-                final totals = _byMonth[ym]!;
-                final net = totals.expense - totals.income;
-                final parts = ym.split('-');
-                final label = '${parts[0]}年${int.parse(parts[1])}月';
-                final netColor = net > 0
-                    ? AppColors.lightSemanticRed
-                    : (isDark ? AppColors.darkInk100 : AppColors.lightInk900);
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: AppCard(
-                    frosted: false,
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+              // ---- 累计汇总 ----
+              AppCard(
+                radius: 24,
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('累计',
+                          style: TextStyle(color: ink500, fontSize: 12)),
+                      const SizedBox(height: 10),
+                      Row(
                         children: [
-                          Text(
-                            label,
-                            style: TextStyle(
-                              color: ink900,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
+                          Expanded(
+                            child: _Stat(
+                              label: '进项',
+                              cents: _totalIncome,
+                              sign: true,
+                              color: green,
                             ),
                           ),
-                          const SizedBox(height: 10),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: _MonthStat(
-                                  label: '垫款',
-                                  cents: totals.expense,
-                                  color: ink900,
-                                ),
-                              ),
-                              Expanded(
-                                child: _MonthStat(
-                                  label: '回款',
-                                  cents: totals.income,
-                                  color: ink900,
-                                ),
-                              ),
-                              Expanded(
-                                child: _MonthStat(
-                                  label: '待回款',
-                                  cents: net,
-                                  color: netColor,
-                                ),
-                              ),
-                            ],
+                          Expanded(
+                            child: _Stat(
+                              label: '出项',
+                              cents: -_totalExpense,
+                              sign: true,
+                              color: red,
+                            ),
                           ),
                         ],
                       ),
-                    ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _Stat(
+                              label: '结余',
+                              cents: balance,
+                              sign: true,
+                              color: balance >= 0 ? green : red,
+                            ),
+                          ),
+                          Expanded(
+                            child: _Stat(
+                              label: '回款率',
+                              text: _totalExpense > 0 ? '$rate%' : '—',
+                              color: ink900,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
-                );
-              }),
-          ],
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              SectionLabel('按月查看'),
+
+              if (_loading)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text('加载中…',
+                      style: TextStyle(color: ink500, fontSize: 13)),
+                )
+              else if (months.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text('还没有工作账本记录',
+                      style: TextStyle(color: ink500, fontSize: 13)),
+                )
+              else
+                ...months.map((ym) {
+                  final totals = _byMonth[ym] ?? (income: 0, expense: 0);
+                  final mIncome = totals.income;
+                  final mExpense = totals.expense;
+                  final mBalance = mIncome - mExpense;
+                  final hasData = mIncome + mExpense > 0;
+                  final parts = ym.split('-');
+                  final y = parts[0];
+                  final m = int.parse(parts[1]);
+                  final isCurrent = ym == currentMonth;
+
+                  final cardBg = isCurrent
+                      ? (isDark ? AppColors.darkInk100 : AppColors.lightInk900)
+                      : surface;
+                  final fg = isCurrent
+                      ? (isDark ? AppColors.darkPageBg : Colors.white)
+                      : ink900;
+                  final fgSoft = isCurrent
+                      ? (isDark ? AppColors.darkPageBg : Colors.white)
+                          .withOpacity(0.7)
+                      : ink500;
+
+                  final ledgerForMonth =
+                      _workLedgers.isNotEmpty ? _workLedgers.first : null;
+
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: AppCard(
+                      radius: 24,
+                      onTap: ledgerForMonth == null
+                          ? null
+                          : () => Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => WorkLedgerPage(
+                                    ledger: ledgerForMonth!,
+                                    month: ym,
+                                  ),
+                                ),
+                              ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(20),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('$y 年',
+                                        style: TextStyle(
+                                            color: fgSoft, fontSize: 12)),
+                                    const SizedBox(height: 2),
+                                    Text('$m 月',
+                                        style: TextStyle(
+                                            color: fg,
+                                            fontSize: 28,
+                                            fontWeight: FontWeight.w600)),
+                                  ],
+                                ),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    Money(
+                                      cents: mIncome,
+                                      style: TextStyle(
+                                          color: fg,
+                                          fontSize: 22,
+                                          fontWeight: FontWeight.w600),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    if (!hasData)
+                                      Text('点击记账',
+                                          style: TextStyle(
+                                              color: fgSoft, fontSize: 12)),
+                                  ],
+                                ),
+                              ],
+                            ),
+                            if (hasData)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 10),
+                                child: Row(
+                                  children: [
+                                    Text('进 ',
+                                        style: TextStyle(
+                                            color: fgSoft, fontSize: 12)),
+                                    Money(
+                                        cents: mIncome,
+                                        style: TextStyle(
+                                            color: fgSoft, fontSize: 12)),
+                                    const SizedBox(width: 16),
+                                    Text('出 ',
+                                        style: TextStyle(
+                                            color: fgSoft, fontSize: 12)),
+                                    Money(
+                                        cents: mExpense,
+                                        style: TextStyle(
+                                            color: fgSoft, fontSize: 12)),
+                                  ],
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-/// 顶部三汇总块（参考 [WorkLedgerPage._SummaryTile] 风格）。
-class _SummaryTile extends StatelessWidget {
-  final String title;
-  final int cents;
-  final Color color;
-
-  const _SummaryTile({
-    required this.title,
-    required this.cents,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
-    return AppCard(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title, style: TextStyle(color: ink500, fontSize: 12)),
-            const SizedBox(height: 6),
-            MoneyText(cents,
-                fontSize: 17, fontWeight: FontWeight.w700, color: color),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// 月卡内的单项统计（标签 + 金额）。
-class _MonthStat extends StatelessWidget {
+/// 汇总小块（标签 + 金额 / 文本）。
+class _Stat extends StatelessWidget {
   final String label;
   final int cents;
+  final String? text;
+  final bool sign;
   final Color color;
 
-  const _MonthStat({
+  const _Stat({
     required this.label,
-    required this.cents,
+    this.cents = 0,
+    this.text,
+    this.sign = false,
     required this.color,
   });
 
@@ -280,8 +378,16 @@ class _MonthStat extends StatelessWidget {
       children: [
         Text(label, style: TextStyle(color: ink500, fontSize: 12)),
         const SizedBox(height: 4),
-        MoneyText(cents,
-            fontSize: 15, fontWeight: FontWeight.w600, color: color),
+        text != null
+            ? Text(text!,
+                style: TextStyle(
+                    color: color, fontSize: 18, fontWeight: FontWeight.w700))
+            : Money(
+                cents: cents,
+                sign: sign,
+                style: TextStyle(
+                    color: color, fontSize: 18, fontWeight: FontWeight.w700),
+              ),
       ],
     );
   }

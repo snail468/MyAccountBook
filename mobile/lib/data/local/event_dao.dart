@@ -66,6 +66,23 @@ class EventDao {
     );
   }
 
+  /// 更新活动全部字段（按 id 覆盖）。status 推进 / 元信息编辑共用。
+  Future<void> update(TaoyuanEvent e) async {
+    final db = await _db.database;
+    await db.update('taoyuan_events', e.toDb(), where: 'id = ?', whereArgs: [e.id]);
+  }
+
+  /// 软删单条金额（标记 deleted_at），本地删除与拉取对账共用。
+  Future<void> softDeleteAmount(String id) async {
+    final db = await _db.database;
+    await db.update(
+      'event_amounts',
+      {'deleted_at': DateTime.now().millisecondsSinceEpoch, 'synced': 0},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
   Future<void> markEventSynced(String localId, String serverId) async {
     final db = await _db.database;
     await db.update(
