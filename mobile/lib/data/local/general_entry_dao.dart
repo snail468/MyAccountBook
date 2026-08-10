@@ -2,6 +2,19 @@ import 'package:sqflite/sqflite.dart';
 import '../db/database.dart';
 import '../models/general_entry.dart';
 
+/// 环比同比所需的「当前月 / 上月 / 去年同月」收入与支出聚合（全账本，单位分）。
+class PeriodComparison {
+  final int curIncome, curExpense, prevIncome, prevExpense, yoyIncome, yoyExpense;
+  const PeriodComparison({
+    required this.curIncome,
+    required this.curExpense,
+    required this.prevIncome,
+    required this.prevExpense,
+    required this.yoyIncome,
+    required this.yoyExpense,
+  });
+}
+
 /// 普通账本条目本地读写。
 class GeneralEntryDao {
   final AppDatabase _db = AppDatabase.instance;
@@ -183,5 +196,53 @@ class GeneralEntryDao {
     final y = int.parse(parts[0]);
     final m = int.parse(parts[1]);
     return DateTime(y, m + 1, 1).millisecondsSinceEpoch;
+  }
+
+  /// 当前月 / 上月 / 去年同月的收入与支出（分）。环比同比卡用。
+  ///
+  /// 单次 rawQuery 用 CASE 同时聚合三个月，避免三次查询。
+  /// 当前月 = 本地日历当月；上月 = 上一月（Dart 自动处理跨年）；同比 = 去年同月。
+  Future<PeriodComparison> periodComparison() async {
+    final db = await _db.database;
+    final now = DateTime.now();
+    final cur = DateTime(now.year, now.month, 1);
+    final prev = DateTime(now.year, now.month - 1, 1);
+    final yoy = DateTime(now.year - 1, now.month, 1);
+    String ym(DateTime d) => '${d.year}-${d.month.toString().padLeft(2, '0')}';
+    final c0 = _monthStart(ym(cur)), c1 = _monthEnd(ym(cur));
+    final p0 = _monthStart(ym(prev)), p1 = _monthEnd(ym(prev));
+    final y0 = _monthStart(ym(yoy)), y1 = _monthEnd(ym(yoy));
+    final rows = await db.rawQuery('''
+      SELECT
+        CASE
+          WHEN occurred_at >= ? AND occurred_at < ? THEN 'cur'
+          WHEN occurred_at >= ? AND occurred_at < ? THEN 'prev'
+          WHEN occurred_at >= ? AND occurred_at < ? THEN 'yoy'
+        END AS period,
+        direction, SUM(amount_cents) AS s
+      FROM general_entries
+      WHERE deleted_at IS NULL
+        AND ((occurred_at >= ? AND occurred_at < ?)
+          OR (occurred_at >= ? AND occurred_at < ?)
+          OR (occurred_at >= ? AND occurred_at < ?))
+      GROUP BY period, direction
+    ''', [c0, c1, p0, p1, y0, y1, c0, c1, p0, p1, y0, y1]);
+    int acc(String period, String dir) {
+      for (final r in rows) {
+        if (r['period'] == period && r['direction'] == dir) {
+          return (r['s'] as num?)?.toInt() ?? 0;
+        }
+      }
+      return 0;
+    }
+
+    return PeriodComparison(
+      curIncome: acc('cur', 'income'),
+      curExpense: acc('cur', 'expense'),
+      prevIncome: acc('prev', 'income'),
+      prevExpense: acc('prev', 'expense'),
+      yoyIncome: acc('yoy', 'income'),
+      yoyExpense: acc('yoy', 'expense'),
+    );
   }
 }

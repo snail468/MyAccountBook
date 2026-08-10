@@ -22,6 +22,12 @@ class StatsState extends ChangeNotifier {
   /// 类别占比（单位分）。初始为空，load() 后填充。
   List<({String label, int cents})> categories = <({String label, int cents})>[];
 
+  /// 环比同比基准（单位分）。当前月 = 本地日历当月；prev = 上月；yoy = 去年同月。
+  /// 由 [GeneralEntryDao.periodComparison] 填充。
+  int curIncome = 0, curExpense = 0;
+  int prevIncome = 0, prevExpense = 0;
+  int yoyIncome = 0, yoyExpense = 0;
+
   Future<void> load() async {
     try {
       final dao = GeneralEntryDao();
@@ -30,12 +36,25 @@ class StatsState extends ChangeNotifier {
       income = totals.income;
       trend = await dao.monthlyTrend();
       categories = await dao.categoryBreakdown();
+      final cmp = await dao.periodComparison();
+      curIncome = cmp.curIncome;
+      curExpense = cmp.curExpense;
+      prevIncome = cmp.prevIncome;
+      prevExpense = cmp.prevExpense;
+      yoyIncome = cmp.yoyIncome;
+      yoyExpense = cmp.yoyExpense;
     } catch (_) {
       // 出错时保持空态，不抛出，保证页面可渲染。
       expense = 0;
       income = 0;
       trend = <({String month, int income, int expense})>[];
       categories = <({String label, int cents})>[];
+      curIncome = 0;
+      curExpense = 0;
+      prevIncome = 0;
+      prevExpense = 0;
+      yoyIncome = 0;
+      yoyExpense = 0;
     }
     notifyListeners();
   }

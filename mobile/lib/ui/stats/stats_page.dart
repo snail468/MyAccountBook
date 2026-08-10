@@ -179,6 +179,108 @@ class _Body extends StatelessWidget {
               ),
             ),
           ),
+
+          // ---- 环比同比 ----
+          SectionLabel('环比同比'),
+          AppCard(
+            frosted: false,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('环比（较上月）',
+                      style: TextStyle(color: ink500, fontSize: 13)),
+                  const SizedBox(height: 10),
+                  _CompareRow(
+                      label: '收入',
+                      cur: state.curIncome,
+                      prev: state.prevIncome,
+                      isIncome: true),
+                  _CompareRow(
+                      label: '支出',
+                      cur: state.curExpense,
+                      prev: state.prevExpense,
+                      isIncome: false),
+                  const SizedBox(height: 16),
+                  Text('同比（较去年同期）',
+                      style: TextStyle(color: ink500, fontSize: 13)),
+                  const SizedBox(height: 10),
+                  _CompareRow(
+                      label: '收入',
+                      cur: state.curIncome,
+                      prev: state.yoyIncome,
+                      isIncome: true),
+                  _CompareRow(
+                      label: '支出',
+                      cur: state.curExpense,
+                      prev: state.yoyExpense,
+                      isIncome: false),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 环比/同比单行：[标签] [金额] [↑/↓ x.x% 语义色]。
+///
+/// 颜色按「好/坏」着色（个人记账语义，非股票涨跌色）：
+/// 收入增加或支出减少 => 绿(semanticGreen)；收入减少或支出增加 => 红(semanticRed)；
+/// 无对比基数(上月/去年同期为 0)或持平 => 中性灰(ink500)。
+class _CompareRow extends StatelessWidget {
+  final String label;
+  final int cur;
+  final int prev;
+  final bool isIncome;
+
+  const _CompareRow({
+    required this.label,
+    required this.cur,
+    required this.prev,
+    required this.isIncome,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
+    final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
+    final green =
+        isDark ? AppColors.darkSemanticGreen : AppColors.lightSemanticGreen;
+    final red =
+        isDark ? AppColors.darkSemanticRed : AppColors.lightSemanticRed;
+
+    final hasBase = prev != 0;
+    final diff = cur - prev;
+    final up = diff > 0;
+    final down = diff < 0;
+    final good = isIncome ? up : down; // 收入增 / 支出减 = 好
+    final color =
+        !hasBase ? ink500 : (diff == 0 ? ink500 : (good ? green : red));
+    final arrow = !hasBase ? '—' : (up ? '↑' : down ? '↓' : '—');
+    final pctText = !hasBase
+        ? '—'
+        : '${diff >= 0 ? '+' : ''}${(diff / prev * 100).toStringAsFixed(1)}%';
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        children: [
+          SizedBox(
+              width: 36,
+              child: Text(label,
+                  style: TextStyle(color: ink900, fontSize: 13))),
+          const SizedBox(width: 8),
+          MoneyText(cur,
+              fontSize: 15, fontWeight: FontWeight.w600, color: ink900),
+          const Spacer(),
+          Text('$arrow $pctText',
+              style: TextStyle(
+                  color: color, fontSize: 13, fontWeight: FontWeight.w600)),
         ],
       ),
     );
