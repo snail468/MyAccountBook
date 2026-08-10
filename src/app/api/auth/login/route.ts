@@ -6,6 +6,7 @@ import { issueSession } from '@/lib/session';
 import { checkLock, lockMessage, recordFailure, recordSuccess } from '@/lib/loginThrottle';
 import { ensureUserSetup, runStartupTasks } from '@/lib/bootstrap';
 import { badRequest, tooManyRequests, unauthorized } from '@/lib/apiError';
+import { parsePrefs, stringifyPrefs } from '@/lib/userPrefs';
 import { createLogger, errorFields } from '@/lib/logger';
 
 const log = createLogger('auth');
@@ -77,7 +78,24 @@ export async function POST(req: Request) {
 
   // 老用户升级路径：补齐 work/taoyuan 的 Ledger 元数据（幂等，只在登录时跑）
   await ensureUserSetup(user.id);
+
+  // 管理员直接添加的新用户：首次登录弹「使用引导」，并清掉一次性标记。
+  let needsOnboarding = false;
+  const prefRow = await prisma.user.findUnique({
+    where: { id: user.id },
+    select: { preferences: true },
+  });
+  const prefs = parsePrefs(prefRow?.preferences ?? null);
+  if (prefs.needsOnboarding === true) {
+    needsOnboarding = true;
+    const cleared = { ...prefs, needsOnboarding: false };
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { preferences: stringifyPrefs(cleared) },
+    });
+  }
+
   await issueSession(user);
 
-  return NextResponse.json({ ok: true, username: user.username });
+  return NextResponse.json({ ok: true, username: user.username, needsOnboarding });
 }

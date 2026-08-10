@@ -39,7 +39,8 @@ export default function LoginPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || '登录失败');
       // 用 location 全量跳转，确保浏览器携带刚 Set-Cookie 的会话
-      window.location.href = next;
+      // 管理员直接添加的新用户首次登录：带 ?welcome=1 触发使用引导弹窗
+      window.location.href = data.needsOnboarding ? '/?welcome=1' : next;
     } catch (err) {
       setError(err instanceof Error ? err.message : '登录失败');
     } finally {

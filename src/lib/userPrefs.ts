@@ -41,6 +41,13 @@ export type UserPrefs = {
    * 缺省（undefined / false）仍按老逻辑补建默认账本。
    */
   skipDefaultLedgers?: boolean;
+  /**
+   * 由管理员直接添加（而非自行注册/受邀）的新用户：首次登录后应弹出「使用引导」。
+   * 登录接口读到该标记为 true 时，会在本次响应里带上 needsOnboarding 并告知前端
+   * 跳 `/?welcome=1`，同时把该标记清掉（一次性，避免每次登录都弹）。
+   * 缺省 undefined / false 视为不需要。
+   */
+  needsOnboarding?: boolean;
 };
 
 const DEFAULT_PREFS: UserPrefs = {};

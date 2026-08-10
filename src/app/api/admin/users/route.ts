@@ -6,6 +6,7 @@ import { requireAdmin } from '@/lib/ownership';
 import { badRequest, conflict } from '@/lib/apiError';
 import { assessPassword, PASSWORD_MIN_LENGTH } from '@/lib/passwordPolicy';
 import { ensureUserSetup } from '@/lib/bootstrap';
+import { stringifyPrefs } from '@/lib/userPrefs';
 
 const createSchema = z.object({
   username: z.string().trim().min(2).max(32),
@@ -35,10 +36,13 @@ export async function POST(req: Request) {
       username,
       passwordHash: await hashPassword(password),
       role,
+      // 管理员直接添加的新用户：默认不建任何账本（连 work/taoyuan 都跳过），
+      // 并标记首次登录弹「使用引导」。
+      preferences: stringifyPrefs({ skipDefaultLedgers: true, needsOnboarding: true }),
     },
     select: { id: true, username: true, role: true, createdAt: true },
   });
-  // 新号立刻补齐 work/taoyuan 的 Ledger 元数据，用户首次登录就能看到入口
+  // 幂等补齐账本元数据：skipDefaultLedgers=true 时不会建默认账本，故该用户零账本。
   await ensureUserSetup(user.id);
   return NextResponse.json({ ok: true, user });
 }
