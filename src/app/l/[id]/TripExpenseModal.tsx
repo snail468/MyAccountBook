@@ -43,6 +43,7 @@ export default function TripExpenseModal({
   ledgerId,
   baseCurrency,
   members,
+  currentUserId,
   defaultPhase,
   editing,
   onClose,
@@ -51,6 +52,8 @@ export default function TripExpenseModal({
   ledgerId: string;
   baseCurrency: string;
   members: Member[];
+  /** 当前登录用户 id。默认付款人优先取本人对应的同伴，避免每次手动改 */
+  currentUserId?: string | null;
   defaultPhase: 'pre' | 'during';
   editing?: EditingExpense;
   onClose: () => void;
@@ -66,7 +69,12 @@ export default function TripExpenseModal({
   );
   const [rate, setRate] = useState(editing ? String(editing.rate) : '1');
   const [rateLoading, setRateLoading] = useState(false);
-  const [payerId, setPayerId] = useState(editing?.payerId ?? members[0]?.id ?? '');
+  // 默认付款人：编辑时取原值；新建时优先「当前用户自己对应的同伴」，
+  // 否则退回成员列表第一个。这样每个成员各自记账时付款人默认是自己。
+  const myMemberId = currentUserId
+    ? members.find((m) => m.userId != null && m.userId === currentUserId)?.id
+    : undefined;
+  const [payerId, setPayerId] = useState(editing?.payerId ?? myMemberId ?? members[0]?.id ?? '');
   // 从初始 splits 推导模式
   const initialSplitMode: SplitMode = editing ? 'ratio' : 'even';
   const [splitMode, setSplitMode] = useState<SplitMode>(initialSplitMode);

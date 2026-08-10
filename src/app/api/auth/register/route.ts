@@ -5,6 +5,7 @@ import { hashPassword } from '@/lib/auth';
 import { issueSession, requireUserWithRole } from '@/lib/session';
 import { assessPassword, PASSWORD_MIN_LENGTH } from '@/lib/passwordPolicy';
 import { ensureUserSetup } from '@/lib/bootstrap';
+import { stringifyPrefs } from '@/lib/userPrefs';
 import { badRequest, conflict, forbidden } from '@/lib/apiError';
 
 const schema = z.object({
@@ -75,6 +76,8 @@ export async function POST(req: Request) {
       passwordHash: await hashPassword(password),
       // bootstrap 时首个用户自动 admin，其它一律普通用户
       role: isBootstrap ? 'admin' : 'user',
+      // 受邀注册：标记跳过默认工作/桃源账本，只保留受邀协同的账本
+      ...(viaInvite ? { preferences: stringifyPrefs({ skipDefaultLedgers: true }) } : {}),
     },
   });
 

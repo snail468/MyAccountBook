@@ -28,7 +28,8 @@ export default function RegisterForm({ inviteToken }: { inviteToken?: string }) 
       // 邀请路径：注册成功服务端已签发 session，回到 /invite/<token> 让用户点接受
       // 首次 bootstrap：也已签发 session，直接进首页
       // 其它（admin 开号，一般不会走这个前端表单）也回首页
-      window.location.href = inviteToken ? `/invite/${inviteToken}` : '/';
+      // 都带 ?welcome=1，落地页据此弹出新用户引导
+      window.location.href = inviteToken ? `/invite/${inviteToken}?welcome=1` : '/?welcome=1';
     } catch (err) {
       setError(err instanceof Error ? err.message : '注册失败');
     } finally {

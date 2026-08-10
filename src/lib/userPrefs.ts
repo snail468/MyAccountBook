@@ -36,6 +36,11 @@ export type IncomeComponentKey =
 
 export type UserPrefs = {
   incomeComponents?: Record<string, boolean>;
+  /**
+   * 受邀注册的新用户：跳过自动建"工作账本 / 桃源账本"，只保留受邀协同的账本。
+   * 缺省（undefined / false）仍按老逻辑补建默认账本。
+   */
+  skipDefaultLedgers?: boolean;
 };
 
 const DEFAULT_PREFS: UserPrefs = {};

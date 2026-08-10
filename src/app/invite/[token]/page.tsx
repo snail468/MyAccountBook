@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { requireUser } from '@/lib/session';
 import { prisma } from '@/lib/db';
 import AcceptButton from './AcceptButton';
+import OnboardingGuide from '@/components/OnboardingGuide';
 
 export const dynamic = 'force-dynamic';
 
@@ -118,6 +119,7 @@ export default async function InviteAcceptPage({
 
   return (
     <div className="mx-auto max-w-md px-6 pt-24 text-center">
+      <OnboardingGuide inviteLedgerName={invite.ledger.name} />
       <div className="mb-4 text-5xl">{invite.ledger.icon ?? '📒'}</div>
       <h1 className="mb-2 text-2xl font-semibold">{invite.ledger.name}</h1>
       <p className="mb-6 text-ink-500">

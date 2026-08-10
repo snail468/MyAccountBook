@@ -6,12 +6,12 @@ import { displaySharedLedgerName } from '@/lib/ledgerRole';
 import Prefetcher from '@/components/ui/Prefetcher';
 import { parseImageUrls } from '@/lib/imageCleanup';
 import { DEFAULT_PAGE_SIZE, slicePage, TIME_DESC_ORDER } from '@/lib/pagination';
-import { computeSettlementSafe } from '@/lib/settlement';
 import { NOT_DELETED } from '@/lib/softDelete';
 import { RECENCY_WINDOW } from '@/lib/categoryOrder';
 import { parseCustom } from '@/lib/generalCategories';
 import GeneralView from './GeneralView';
 import TravelView from './TravelView';
+import { loadTravel } from '@/lib/travelData';
 
 export const dynamic = 'force-dynamic';
 
@@ -131,159 +131,6 @@ async function loadGeneral(ledgerId: string, customCategoriesJson: string | null
   };
 }
 
-async function loadTravel(ledgerId: string) {
-  const expenseInclude = {
-    splits: true,
-    payer: { select: { id: true, displayName: true } },
-  } as const;
-
-  const [
-    members,
-    phaseSums,
-    paidByPayer,
-    owedByMember,
-    prePage,
-    duringPage,
-    // C11 旅游打磨：按天 / 按币种聚合。一次性只取 4 个轻字段，在内存里分桶 ——
-    // 与 /stats 的 JS 分桶一致（避免依赖 Prisma 内部日期存法做 SQL trunc）。
-    // **必须带 NOT_DELETED**，否则软删的支出会被算进每日/每币种总额。
-    allExpenses,
-  ] = await Promise.all([
-    prisma.tripMember.findMany({
-      where: { ledgerId },
-      orderBy: { createdAt: 'asc' },
-    }),
-    prisma.tripExpense.groupBy({
-      by: ['phase'],
-      where: { ledgerId, ...NOT_DELETED },
-      _sum: { amountBaseCents: true },
-    }),
-    // 每人垫付了多少 —— **软删的支出必须排除**，否则净额和最优结算算错
-    prisma.tripExpense.groupBy({
-      by: ['payerId'],
-      where: { ledgerId, ...NOT_DELETED },
-      _sum: { amountBaseCents: true },
-    }),
-    // 每人该承担多少 —— 同样只算未删的支出对应的分摊
-    prisma.tripSplit.groupBy({
-      by: ['memberId'],
-      where: { expense: { ledgerId, ...NOT_DELETED } },
-      _sum: { shareCents: true },
-    }),
-    prisma.tripExpense.findMany({
-      where: { ledgerId, ...NOT_DELETED, phase: 'pre' },
-      include: expenseInclude,
-      orderBy: TIME_DESC_ORDER,
-      take: DEFAULT_PAGE_SIZE + 1,
-    }),
-    prisma.tripExpense.findMany({
-      where: { ledgerId, ...NOT_DELETED, phase: 'during' },
-      include: expenseInclude,
-      orderBy: TIME_DESC_ORDER,
-      take: DEFAULT_PAGE_SIZE + 1,
-    }),
-    prisma.tripExpense.findMany({
-      where: { ledgerId, ...NOT_DELETED },
-      select: {
-        occurredAt: true,
-        amountBaseCents: true,
-        amountForeignCents: true,
-        currency: true,
-      },
-    }),
-  ]);
-
-  // 按天分桶（本位币）
-  const dailyMap = new Map<string, { cents: number; count: number }>();
-  // 按币种分桶（外币原币，用于多币种预算）
-  const currencyMap = new Map<string, number>();
-  for (const e of allExpenses) {
-    const day = e.occurredAt.toISOString().slice(0, 10);
-    const cur = dailyMap.get(day) ?? { cents: 0, count: 0 };
-    cur.cents += e.amountBaseCents;
-    cur.count += 1;
-    dailyMap.set(day, cur);
-    currencyMap.set(e.currency, (currencyMap.get(e.currency) ?? 0) + e.amountForeignCents);
-  }
-  const daily = Array.from(dailyMap.entries())
-    .map(([date, v]) => ({ date, cents: v.cents, count: v.count }))
-    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
-  const currencyTotals = Array.from(currencyMap.entries()).map(([currency, foreignCents]) => ({
-    currency,
-    foreignCents,
-  }));
-
-  const paidMap = new Map(
-    paidByPayer.map((r) => [r.payerId, r._sum.amountBaseCents ?? 0]),
-  );
-  const owedMap = new Map(owedByMember.map((r) => [r.memberId, r._sum.shareCents ?? 0]));
-
-  const balances = members.map((m) => ({
-    memberId: m.id,
-    name: m.displayName,
-    netCents: (paidMap.get(m.id) ?? 0) - (owedMap.get(m.id) ?? 0),
-  }));
-  // 用容错版本：老账本可能在旧的宽容校验下存了不守恒的分摊，
-  // 那种历史数据不该让整页 500，而应该在界面上提示用户去修那笔账
-  const { transfers, error: settlementError } = computeSettlementSafe(balances);
-
-  const serialize = (e: {
-    id: string;
-    title: string;
-    category: string;
-    phase: string;
-    currency: string;
-    amountForeignCents: number;
-    rate: number;
-    amountBaseCents: number;
-    note: string | null;
-    imageUrls: string | null;
-    occurredAt: Date;
-    payerId: string;
-    payer: { displayName: string };
-    splits: { memberId: string; shareCents: number }[];
-  }) => ({
-    id: e.id,
-    title: e.title,
-    category: e.category,
-    phase: e.phase as 'pre' | 'during',
-    currency: e.currency,
-    amountForeignCents: e.amountForeignCents,
-    rate: e.rate,
-    amountBaseCents: e.amountBaseCents,
-    note: e.note,
-    imageUrls: parseImageUrls(e.imageUrls),
-    occurredAt: e.occurredAt.toISOString(),
-    payerId: e.payerId,
-    payerName: e.payer.displayName,
-    splits: e.splits.map((s) => ({ memberId: s.memberId, shareCents: s.shareCents })),
-  });
-
-  const pre = slicePage(prePage, DEFAULT_PAGE_SIZE);
-  const during = slicePage(duringPage, DEFAULT_PAGE_SIZE);
-  const sumOfPhase = (p: string) =>
-    phaseSums.find((r) => r.phase === p)?._sum.amountBaseCents ?? 0;
-
-  return {
-    members: members.map((m) => ({
-      id: m.id,
-      userId: m.userId,
-      displayName: m.displayName,
-      settled: m.settled,
-    })),
-    preTotal: sumOfPhase('pre'),
-    duringTotal: sumOfPhase('during'),
-    balances,
-    transfers,
-    settlementError,
-    preExpenses: pre.items.map(serialize),
-    preCursor: pre.nextCursor,
-    duringExpenses: during.items.map(serialize),
-    duringCursor: during.nextCursor,
-    daily,
-    currencyTotals,
-  };
-}
 
 export default async function LedgerPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireUser();
@@ -358,6 +205,7 @@ export default async function LedgerPage({ params }: { params: Promise<{ id: str
             endDate: ledger.endDate?.toISOString() ?? null,
             tripBudget: ledger.tripBudget ?? null,
           }}
+          currentUserId={user.id}
           members={data.members}
           preTotal={data.preTotal}
           duringTotal={data.duringTotal}

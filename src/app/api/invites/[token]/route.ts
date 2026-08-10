@@ -98,9 +98,10 @@ export async function POST(
         where: { token },
         data: { acceptedByUserId: user.id, acceptedAt: new Date() },
       });
-      // 旅游账本自动 link：如果有一个 TripMember.displayName 恰好等于该用户名
-      // 且 userId 为空，把它 link 上。多 match 的时候不动 —— 交给用户在 UI 里
-      // 手动选（当前 UI 未做，可以后续 iter）。
+      // 旅游账本：接受邀请即自动成为「同伴」（付款人/分摊人占位）。
+      // 两步：① 先把建者事先用「纯名字」占位的 TripMember（displayName 恰好等于
+      //    用户名且未绑定用户）绑到本人；② 再确保本人作为同伴存在（幂等）。
+      // 顺序不能反 —— 先 link 占位，再查 existing 才不会凭空多出一个重名同伴。
       if (invite.ledger.kind === 'travel') {
         const orphan = await tx.tripMember.findMany({
           where: { ledgerId: invite.ledgerId, userId: null, displayName: user.username },
@@ -110,6 +111,15 @@ export async function POST(
           await tx.tripMember.update({
             where: { id: orphan[0]!.id },
             data: { userId: user.id },
+          });
+        }
+        const mine = await tx.tripMember.findFirst({
+          where: { ledgerId: invite.ledgerId, userId: user.id },
+          select: { id: true },
+        });
+        if (!mine) {
+          await tx.tripMember.create({
+            data: { ledgerId: invite.ledgerId, userId: user.id, displayName: user.username },
           });
         }
       }

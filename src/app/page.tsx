@@ -22,6 +22,7 @@ import ChangePasswordButton from '@/components/ChangePasswordButton';
 import Money from '@/components/ui/Money';
 import Prefetcher from '@/components/ui/Prefetcher';
 import OfflineWarmer, { type WarmableLedger } from '@/components/ui/OfflineWarmer';
+import OnboardingGuide from '@/components/OnboardingGuide';
 import IncomeComponentsCard from './IncomeComponentsCard';
 import type { IncomeComponent } from './IncomeComponentsCard';
 
@@ -710,6 +711,8 @@ export default async function HomePage() {
         <ImportButton />
 
         <ChangePasswordButton />
+
+        <OnboardingGuide />
 
         {user.role === 'admin' && (
           <Link

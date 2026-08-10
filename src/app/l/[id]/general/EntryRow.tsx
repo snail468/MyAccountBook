@@ -16,7 +16,7 @@ export default function EntryRow({
   customCategoriesJson: string | null;
   onEdit: () => void;
   onDelete: () => void;
-  onZoomImage: (url: string) => void;
+  onZoomImage: (urls: string[], index: number) => void;
 }) {
   const isIncome = entry.direction === 'income';
   return (
@@ -36,7 +36,7 @@ export default function EntryRow({
             {entry.imageUrls.map((url, i) => (
               <button
                 key={i}
-                onClick={() => onZoomImage(url)}
+                onClick={() => onZoomImage(entry.imageUrls, i)}
                 className="w-8 h-8 rounded overflow-hidden bg-ink-100 dark:bg-ink-700"
                 aria-label={`查看图 ${i + 1}`}
               >

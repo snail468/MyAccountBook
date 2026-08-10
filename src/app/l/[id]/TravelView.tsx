@@ -89,6 +89,7 @@ type TripBudget = {
 
 export default function TravelView({
   ledger,
+  currentUserId,
   members,
   preTotal,
   duringTotal,
@@ -101,8 +102,12 @@ export default function TravelView({
   duringCursor,
   daily,
   currencyTotals,
+  readOnly,
+  initialAllExpenses,
 }: {
   ledger: LedgerMeta;
+  /** 当前登录用户 id（只读分享页传 null）。用于「记账默认付款人 = 自己」。 */
+  currentUserId: string | null;
   members: Member[];
   /** 阶段合计、成员净额、最优结算全部由服务端聚合算好 ——
    *  结算必须基于全量数据，客户端分页后手里只有片段，算出来是错的 */
@@ -118,6 +123,11 @@ export default function TravelView({
   duringCursor: string | null;
   daily: DailyPoint[];
   currencyTotals: CurrencyTotal[];
+  /** 只读分享页：隐藏所有写操作（记一笔/编辑/删除/成员管理/设置），
+   *  报告与结算单改用服务端预拉全量数据，不依赖登录态 */
+  readOnly?: boolean;
+  /** readOnly 时直接用于报告/结算单的全量支出，省去客户端登录态拉取 */
+  initialAllExpenses?: Expense[];
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -130,7 +140,7 @@ export default function TravelView({
   const [showSheet, setShowSheet] = useState(false);
   const [sheetExpenses, setSheetExpenses] = useState<Expense[] | null>(null);
   const [sheetLoading, setSheetLoading] = useState(false);
-  const [zoomImg, setZoomImg] = useState<string | null>(null);
+  const [zoomImg, setZoomImg] = useState<{ urls: string[]; index: number } | null>(null);
   // C11 行程日历：展开开关 + 当前按天筛选的日期
   const [showCalendar, setShowCalendar] = useState(false);
   const [dateFilter, setDateFilter] = useState<string | null>(null);
@@ -163,6 +173,12 @@ export default function TravelView({
   });
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadError, setLoadError] = useState('');
+
+  // 只读分享链接（owner 生成）：弹出一个带链接 + 复制的小面板
+  const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const [shareLoading, setShareLoading] = useState(false);
+  const [shareError, setShareError] = useState('');
+  const [shareCopied, setShareCopied] = useState(false);
 
   // 服务端重新给了首页 → 丢弃已加载的后续页，避免与新增/删除后的数据打架
   const firstPageSig =
@@ -238,11 +254,16 @@ export default function TravelView({
   }
 
   // 趣味报告要算"最烧钱的一天""恩格尔系数"这类跨全量的统计 ——
-  // 打开弹窗时才按需拉全量，不拖慢列表首屏
+  // 打开弹窗时才按需拉全量，不拖慢列表首屏。只读分享页直接用服务端预拉的全量。
   const [reportExpenses, setReportExpenses] = useState<Expense[] | null>(null);
   const [reportLoading, setReportLoading] = useState(false);
 
   async function openReport() {
+    if (readOnly && initialAllExpenses) {
+      setReportExpenses(initialAllExpenses);
+      setShowReport(true);
+      return;
+    }
     setReportLoading(true);
     setLoadError('');
     try {
@@ -261,7 +282,13 @@ export default function TravelView({
   }
 
   // 结算单要列每一笔账目，需全量（分页后客户端手里只有片段）——打开时按需拉全量。
+  // 只读分享页直接用服务端预拉的全量。
   async function openSheet() {
+    if (readOnly && initialAllExpenses) {
+      setSheetExpenses(initialAllExpenses);
+      setShowSheet(true);
+      return;
+    }
     setSheetLoading(true);
     setLoadError('');
     try {
@@ -293,7 +320,7 @@ export default function TravelView({
     if (res.ok) startTransition(() => router.refresh());
   }
 
-  const canRecord = members.length > 0;
+  const canRecord = !readOnly && members.length > 0;
 
   return (
     <>
@@ -303,28 +330,36 @@ export default function TravelView({
           <span>{ledger.icon ?? '✈️'}</span>
           <span className="truncate">{ledger.name}</span>
         </h1>
-        <Link
-          href={`/l/${ledger.id}/collaborators`}
-          className="text-ink-400 text-sm"
-          aria-label="协作成员"
-          title="协作成员"
-        >
-          👥
-        </Link>
-        <button
-          onClick={() => setShowSettings(true)}
-          className="text-ink-400 text-sm"
-          aria-label="设置"
-          title="设置"
-        >
-          ⚙
-        </button>
-        <button
-          onClick={() => setShowMembers(true)}
-          className="text-ink-500 text-sm underline"
-        >
-          同伴
-        </button>
+        {readOnly ? (
+          <span className="text-[11px] px-2 py-1 rounded-full bg-ink-100 dark:bg-ink-700 text-ink-500 shrink-0">
+            只读
+          </span>
+        ) : (
+          <>
+            <Link
+              href={`/l/${ledger.id}/collaborators`}
+              className="text-ink-400 text-sm"
+              aria-label="协作成员"
+              title="协作成员"
+            >
+              👥
+            </Link>
+            <button
+              onClick={() => setShowSettings(true)}
+              className="text-ink-400 text-sm"
+              aria-label="设置"
+              title="设置"
+            >
+              ⚙
+            </button>
+            <button
+              onClick={() => setShowMembers(true)}
+              className="text-ink-500 text-sm underline"
+            >
+              同伴
+            </button>
+          </>
+        )}
       </div>
 
       <PendingBadge kind="travel" ledgerId={ledger.id} />
@@ -440,13 +475,73 @@ export default function TravelView({
         </button>
       )}
 
-      <button
-        onClick={() => canRecord && setShowAdd(true)}
-        disabled={!canRecord}
-        className="mt-3 w-full py-4 rounded-2xl bg-ink-900 dark:bg-ink-100 text-white dark:text-ink-900 text-base font-medium disabled:opacity-50"
-      >
-        {canRecord ? '+ 记一笔' : '请先添加成员'}
-      </button>
+      {!readOnly && (
+        <>
+          <button
+            onClick={() => canRecord && setShowAdd(true)}
+            disabled={!canRecord}
+            className="mt-3 w-full py-4 rounded-2xl bg-ink-900 dark:bg-ink-100 text-white dark:text-ink-900 text-base font-medium disabled:opacity-50"
+          >
+            {canRecord ? '+ 记一笔' : '请先添加成员'}
+          </button>
+
+          <button
+            onClick={async () => {
+              setShareError('');
+              setShareLoading(true);
+              try {
+                const res = await fetch(`/api/ledgers/${ledger.id}/share`, { method: 'POST' });
+                const j = await res.json();
+                if (!res.ok) throw new Error(j.error || '生成失败');
+                setShareUrl(j.url as string);
+                setShareCopied(false);
+              } catch (e) {
+                setShareError(e instanceof Error ? e.message : '生成失败');
+              } finally {
+                setShareLoading(false);
+              }
+            }}
+            disabled={shareLoading}
+            className="mt-2 w-full py-3 rounded-2xl bg-ink-50 dark:bg-ink-800 border border-ink-200 dark:border-ink-700 text-sm text-ink-600 dark:text-ink-300 disabled:opacity-60"
+          >
+            {shareLoading ? '生成中…' : '🔗 分享只读链接'}
+          </button>
+
+          {shareError && <p className="text-red-500 text-xs text-center mt-2">{shareError}</p>}
+
+          {shareUrl && (
+            <div className="mt-2 rounded-2xl bg-ink-50 dark:bg-ink-800 border border-ink-200 dark:border-ink-700 p-3">
+              <div className="text-xs text-ink-500 mb-1.5">
+                把链接发给同伴，对方无需登录即可查看本账本的趣味报告与结算单：
+              </div>
+              <div className="flex gap-2">
+                <input
+                  readOnly
+                  value={typeof window !== 'undefined' ? window.location.origin + shareUrl : shareUrl}
+                  className="flex-1 min-w-0 px-2 py-1.5 text-xs rounded-lg bg-white dark:bg-ink-900 border border-ink-200 dark:border-ink-700"
+                  onFocus={(e) => e.currentTarget.select()}
+                />
+                <button
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(
+                        (typeof window !== 'undefined' ? window.location.origin : '') + shareUrl,
+                      );
+                      setShareCopied(true);
+                      setTimeout(() => setShareCopied(false), 1500);
+                    } catch {
+                      /* 忽略：输入框已可选中，用户可手动复制 */
+                    }
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-ink-900 dark:bg-ink-100 text-white dark:text-ink-900 text-xs shrink-0"
+                >
+                  {shareCopied ? '已复制' : '复制'}
+                </button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
 
       <div className="mt-6 space-y-2">
         {phaseList.length === 0 && (
@@ -460,9 +555,10 @@ export default function TravelView({
             expense={e}
             baseCurrency={ledger.baseCurrency}
             members={members}
+            readOnly={!!readOnly}
             onEdit={() => setEditing(e)}
             onDelete={() => del(e)}
-            onZoomImage={setZoomImg}
+            onZoomImage={(urls, index) => setZoomImg({ urls, index })}
           />
         ))}
 
@@ -524,17 +620,19 @@ export default function TravelView({
                   >
                     {label} <Money cents={Math.abs(b.netCents)} /> {ledger.baseCurrency}
                   </span>
-                  <button
-                    onClick={() => m && toggleSettled(m.id, !settled)}
-                    className={`text-[11px] px-2 py-1 rounded-lg whitespace-nowrap shrink-0 ${
-                      settled
-                        ? 'bg-emerald-600 text-white'
-                        : 'bg-ink-200 dark:bg-ink-700 text-ink-600 dark:text-ink-300'
-                    }`}
-                    title={settled ? '取消已结清' : '标记已结清'}
-                  >
-                    {settled ? '✓ 已结清' : '标记结清'}
-                  </button>
+                  {!readOnly && (
+                    <button
+                      onClick={() => m && toggleSettled(m.id, !settled)}
+                      className={`text-[11px] px-2 py-1 rounded-lg whitespace-nowrap shrink-0 ${
+                        settled
+                          ? 'bg-emerald-600 text-white'
+                          : 'bg-ink-200 dark:bg-ink-700 text-ink-600 dark:text-ink-300'
+                      }`}
+                      title={settled ? '取消已结清' : '标记已结清'}
+                    >
+                      {settled ? '✓ 已结清' : '标记结清'}
+                    </button>
+                  )}
                 </div>
               );
             })}
@@ -575,6 +673,7 @@ export default function TravelView({
           ledgerId={ledger.id}
           baseCurrency={ledger.baseCurrency}
           members={members}
+          currentUserId={currentUserId}
           defaultPhase={phase}
           onClose={() => setShowAdd(false)}
           onSaved={() => {
@@ -589,6 +688,7 @@ export default function TravelView({
           ledgerId={ledger.id}
           baseCurrency={ledger.baseCurrency}
           members={members}
+          currentUserId={currentUserId}
           defaultPhase={editing.phase}
           editing={{
             id: editing.id,
@@ -663,7 +763,9 @@ export default function TravelView({
         />
       )}
 
-      {zoomImg && <Lightbox src={zoomImg} onClose={() => setZoomImg(null)} />}
+      {zoomImg && (
+        <Lightbox images={zoomImg.urls} index={zoomImg.index} onClose={() => setZoomImg(null)} />
+      )}
     </>
   );
 }
@@ -710,6 +812,7 @@ function ExpenseRow({
   expense,
   baseCurrency,
   members,
+  readOnly,
   onEdit,
   onDelete,
   onZoomImage,
@@ -717,9 +820,10 @@ function ExpenseRow({
   expense: Expense;
   baseCurrency: string;
   members: Member[];
+  readOnly?: boolean;
   onEdit: () => void;
   onDelete: () => void;
-  onZoomImage: (url: string) => void;
+  onZoomImage: (urls: string[], index: number) => void;
 }) {
   const shareByMember = expense.splits
     .map((s) => {
@@ -748,7 +852,7 @@ function ExpenseRow({
               {expense.imageUrls.map((url, i) => (
                 <button
                   key={i}
-                  onClick={() => onZoomImage(url)}
+                  onClick={() => onZoomImage(expense.imageUrls, i)}
                   className="w-8 h-8 rounded overflow-hidden bg-ink-100 dark:bg-ink-700"
                   aria-label={`查看图 ${i + 1}`}
                 >
@@ -771,21 +875,25 @@ function ExpenseRow({
             </div>
           )}
         </div>
-        <button
-          onClick={onEdit}
-          className="text-ink-400 hover:text-ink-700 dark:hover:text-ink-100 text-xs px-1"
-          aria-label="编辑"
-          title="编辑"
-        >
-          ✎
-        </button>
-        <button
-          onClick={onDelete}
-          className="text-ink-300 hover:text-red-500 text-xs px-1"
-          aria-label="删除"
-        >
-          ✕
-        </button>
+        {!readOnly && (
+          <>
+            <button
+              onClick={onEdit}
+              className="text-ink-400 hover:text-ink-700 dark:hover:text-ink-100 text-xs px-1"
+              aria-label="编辑"
+              title="编辑"
+            >
+              ✎
+            </button>
+            <button
+              onClick={onDelete}
+              className="text-ink-300 hover:text-red-500 text-xs px-1"
+              aria-label="删除"
+            >
+              ✕
+            </button>
+          </>
+        )}
       </div>
     </div>
   );

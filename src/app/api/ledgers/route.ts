@@ -122,6 +122,12 @@ export async function POST(req: Request) {
       startDate: p.startDate ? new Date(p.startDate) : null,
       endDate: p.endDate ? new Date(p.endDate) : null,
       members: { create: { userId: user.id, role: 'owner' } },
+      // 旅游账本：建者自动成为「同伴」（付款人/分摊人占位），否则新建账本
+      // 没有任何 TripMember，连「记一笔」都点不了（canRecord 依赖成员数）。
+      // TripMember.userId 绑定本人，与 LedgerMember(owner) 是两套独立关系。
+      ...(p.kind === 'travel'
+        ? { tripMembers: { create: { userId: user.id, displayName: user.username } } }
+        : {}),
     },
   });
   return NextResponse.json({ ok: true, id: created.id, kind: created.kind });

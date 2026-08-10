@@ -50,7 +50,7 @@ export default function EventCard({
   const [openStage, setOpenStage] = useState<Stage | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [zoomImg, setZoomImg] = useState<string | null>(null);
+  const [zoomImg, setZoomImg] = useState<{ urls: string[]; index: number } | null>(null);
   const [editing, setEditing] = useState(false);
   const confirm = useConfirm();
 
@@ -169,7 +169,7 @@ export default function EventCard({
               {event.contentImages.map((url, i) => (
                 <button
                   key={i}
-                  onClick={() => setZoomImg(url)}
+                  onClick={() => setZoomImg({ urls: event.contentImages, index: i })}
                   className="aspect-square rounded-lg overflow-hidden bg-ink-100 dark:bg-ink-700"
                   aria-label={`查看图片 ${i + 1}`}
                 >
@@ -283,7 +283,9 @@ export default function EventCard({
         />
       )}
 
-      {zoomImg && <Lightbox src={zoomImg} onClose={() => setZoomImg(null)} />}
+      {zoomImg && (
+        <Lightbox images={zoomImg.urls} index={zoomImg.index} onClose={() => setZoomImg(null)} />
+      )}
 
       {editing && (
         <EditEventModal

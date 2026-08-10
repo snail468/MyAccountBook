@@ -75,7 +75,7 @@ export default function GeneralView({
   const [, startTransition] = useTransition();
   const [showRecord, setShowRecord] = useState(false);
   const [editing, setEditing] = useState<Entry | null>(null);
-  const [zoomImg, setZoomImg] = useState<string | null>(null);
+  const [zoomImg, setZoomImg] = useState<{ urls: string[]; index: number } | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showCategoryManager, setShowCategoryManager] = useState(false);
   // 离线队列：本页会展示"待同步 N 条"，同步成功后触发刷新让新条目出现在列表
@@ -443,7 +443,7 @@ export default function GeneralView({
                     customCategoriesJson={ledger.customCategories}
                     onEdit={() => setEditing(e)}
                     onDelete={() => del(e)}
-                    onZoomImage={setZoomImg}
+                    onZoomImage={(urls, index) => setZoomImg({ urls, index })}
                   />
                 ))}
               </div>
@@ -527,7 +527,9 @@ export default function GeneralView({
         />
       )}
 
-      {zoomImg && <Lightbox src={zoomImg} onClose={() => setZoomImg(null)} />}
+      {zoomImg && (
+        <Lightbox images={zoomImg.urls} index={zoomImg.index} onClose={() => setZoomImg(null)} />
+      )}
     </>
   );
 }
