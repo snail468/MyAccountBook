@@ -22,7 +22,7 @@ class AppSwitch extends StatelessWidget {
       onChanged: onChanged,
       activeTrackColor: activeTrack,
       activeColor: Colors.white,
-      inactiveTrackColor: const Color(0xFFCBD5E1),
+      inactiveTrackColor: isDark ? AppColors.darkBorder : AppColors.lightBorderDashed,
       inactiveThumbColor: Colors.white,
     );
   }

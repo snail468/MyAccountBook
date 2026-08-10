@@ -1,4 +1,5 @@
 import 'api_client.dart';
+import '../core/exceptions.dart';
 
 /// 周期记账规则服务端接口。
 ///
@@ -18,9 +19,15 @@ class RecurringApi {
   }
 
   /// POST /api/recurring -> { ok, id }（本期不使用，预留）。[D1]
+  ///
+  /// 预留路径：补 null 守卫，服务端未返 id 时抛明确异常而非崩溃。
   Future<String> create(Map<String, dynamic> body) async {
     final data = await _client.post('/recurring', body);
-    return (data['id'] as String);
+    final id = data is Map ? data['id']?.toString() : null;
+    if (id == null || id.isEmpty) {
+      throw ApiException('创建周期规则失败：服务端未返回 id');
+    }
+    return id;
   }
 
   /// PATCH /api/recurring/[id] -> { ok }（active? / autoCreate? / 其它字段预留）。

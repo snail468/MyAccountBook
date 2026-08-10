@@ -330,10 +330,12 @@ class SyncService {
 
     // server_id -> local_id 映射（来自本地库，保证复用同一 local id）。
     final localByServer = <String, String>{};
+    final existingCreatedAt = <String, int?>{}; // server_id -> 原始 created_at[R2]
     final existing = await _bankDao.listAllIncludingDeleted();
     for (final c in existing) {
       if (c.serverId != null && c.serverId!.isNotEmpty) {
         localByServer[c.serverId!] = c.id;
+        existingCreatedAt[c.serverId!] = c.createdAt;
       }
     }
 
@@ -342,7 +344,9 @@ class SyncService {
       final sid = (j['id'] as String?) ?? '';
       if (sid.isEmpty) continue;
       final localId = localByServer[sid] ?? _uuid.v4();
-      await _bankDao.upsert(BankCard.fromApi(j, localId: localId));
+      // 已存在行复用原有 created_at，避免 pull 重置时间戳打乱创建顺序[R2]。
+      final prevCreated = localByServer[sid] != null ? existingCreatedAt[sid] : null;
+      await _bankDao.upsert(BankCard.fromApi(j, localId: localId, createdAt: prevCreated));
       localByServer[sid] = localId;
       pulled.add(sid);
     }
@@ -361,10 +365,12 @@ class SyncService {
     final pendingDel = await _pendingDeleteServerIds(['recurring_rule']);
 
     final localByServer = <String, String>{};
+    final existingCreatedAt = <String, int?>{}; // server_id -> 原始 created_at[R2]
     final existing = await _ruleDao.listAllIncludingDeleted();
     for (final r in existing) {
       if (r.serverId != null && r.serverId!.isNotEmpty) {
         localByServer[r.serverId!] = r.id;
+        existingCreatedAt[r.serverId!] = r.createdAt;
       }
     }
 
@@ -373,7 +379,9 @@ class SyncService {
       final sid = (j['id'] as String?) ?? '';
       if (sid.isEmpty) continue;
       final localId = localByServer[sid] ?? _uuid.v4();
-      await _ruleDao.upsert(RecurringRule.fromApi(j, localId: localId));
+      // 已存在行复用原有 created_at，避免 pull 重置时间戳打乱创建顺序[R2]。
+      final prevCreated = localByServer[sid] != null ? existingCreatedAt[sid] : null;
+      await _ruleDao.upsert(RecurringRule.fromApi(j, localId: localId, createdAt: prevCreated));
       localByServer[sid] = localId;
       pulled.add(sid);
     }

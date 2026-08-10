@@ -1,0 +1,31 @@
+sequenceDiagram
+    participant UI as BankPage/RecurringPage
+    participant SS as SyncService.syncAll
+    participant CA as CardApi / RecurringApi
+    participant BD as BankCardDao / RecurringRuleDao
+    participant Net as 服务端 REST
+
+    Note over UI,Net: —— 拉取（首页打开即触发）——
+    UI->>SS: syncAll()
+    SS->>SS: drainQueue()（推本地改动）
+    SS->>SS: _pullAll()（含 ledger 既有逻辑）
+    SS->>CA: list()  (GET /api/cards 或 /api/recurring)
+    CA->>Net: GET /api/cards
+    Net-->>CA: { cards:[...] } / { rules:[...] }
+    CA-->>SS: List~Map~
+    SS->>BD: listAllIncludingDeleted()  // server_id->local_id 映射
+    BD-->>SS: 现有本地行
+    loop 每条 j
+        SS->>BD: upsert(fromApi(j, localId))  // replace 按 id；server_id 唯一索引保证更新
+    end
+    SS->>BD: deleteSyncedNotIn(keepSet)  // keep = 拉回 ∪ pendingDelete
+
+    Note over UI,Net: —— 银行卡新增（写路径，离线优先）——
+    UI->>BD: insert(BankCard serverId=null)
+    UI->>SS: enqueue(POST /cards, entity='bank_card')
+    Note over SS: 联网后 drainQueue 重放
+    SS->>CA: create(body)
+    CA->>Net: POST /api/cards
+    Net-->>CA: { ok, id, last4 }
+    CA-->>SS: id
+    SS->>BD: markSynced(localId, serverId)

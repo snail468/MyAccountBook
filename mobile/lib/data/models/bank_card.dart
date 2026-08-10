@@ -11,6 +11,7 @@ class BankCard {
   final String? alias; // 卡片别名（服务端明文）
   final String? holder; // 持卡人（服务端明文）
   final int synced; // 0=待同步 / 1=已同步
+  final int? createdAt; // 创建时间戳（ms）；pull 复用本地已有值，避免创建顺序被打乱[R2]
 
   const BankCard({
     required this.id,
@@ -21,6 +22,7 @@ class BankCard {
     this.alias,
     this.holder,
     this.synced = 1,
+    this.createdAt,
   });
 
   factory BankCard.fromDb(Map<String, dynamic> m) => BankCard(
@@ -32,6 +34,7 @@ class BankCard {
         alias: m['alias'] as String?,
         holder: m['holder'] as String?,
         synced: (m['synced'] as int? ?? 1),
+        createdAt: m['created_at'] as int?,
       );
 
   Map<String, dynamic> toDb() => {
@@ -43,7 +46,7 @@ class BankCard {
         'alias': alias,
         'holder': holder,
         'synced': synced,
-        'created_at': DateTime.now().millisecondsSinceEpoch,
+        'created_at': createdAt ?? DateTime.now().millisecondsSinceEpoch,
       };
 
   /// 不可变更新副本（用于本地写路径乐观更新）。
@@ -57,6 +60,7 @@ class BankCard {
     String? alias,
     String? holder,
     int? synced,
+    int? createdAt,
   }) =>
       BankCard(
         id: id ?? this.id,
@@ -67,6 +71,7 @@ class BankCard {
         alias: alias ?? this.alias,
         holder: holder ?? this.holder,
         synced: synced ?? this.synced,
+        createdAt: createdAt ?? this.createdAt,
       );
 
   /// 服务端 cardType('debit'|'credit') -> 本地中文（pull 用）。
@@ -81,7 +86,8 @@ class BankCard {
   ///
   /// [localId] 来自本地库已有映射（已同步行复用）或新 UUID（首次拉到）。
   /// 仅消费未解锁路径的明文/尾号字段（[D2] 不调 unlock、不显完整卡号）。
-  factory BankCard.fromApi(Map<String, dynamic> j, {required String localId}) {
+  factory BankCard.fromApi(Map<String, dynamic> j,
+      {required String localId, int? createdAt}) {
     final rawLast4 = j['last4'];
     final rawBank = j['bankName'];
     return BankCard(
@@ -93,6 +99,7 @@ class BankCard {
       alias: j['alias']?.toString(),
       holder: j['holder']?.toString(),
       synced: 1,
+      createdAt: createdAt,
     );
   }
 }

@@ -1,40 +1,25 @@
 sequenceDiagram
-    participant App as Flutter SyncService._pullAll
-    participant List as GET /ledgers
-    participant Srv as 各账本读路由（服务端）
+    participant Nav as Navigator
+    participant Shell as SubPageShell
+    participant GH as GlobalControls(HomeButton/FloatingToolbar)
+    participant PH as PageHeader(‹返回)
+    participant S as 子页内容
 
-    App->>List: GET /ledgers (limit=200, cursor)
-    List-->>App: 全部成员账本 (owner/editor/viewer 都返回)
+    Nav->>Shell: push(子页)
+    Shell->>GH: 渲染 HomeButton(左上)+FloatingToolbar(右上)
+    Shell->>PH: 渲染 ‹返回 + 标题
+    PH->>Nav: onBack → pop()
+    GH->>Nav: HomeButton → pop()/回首页
+    GH->>Shell: FloatingToolbar ⚙️ → push(SettingsPage) / 👁 → AppearanceSheet
+    Shell->>S: 渲染内容(padding 24,56,24,24)
 
-    loop 每个账本 j
-        alt kind = general
-            App->>Srv: GET /ledgers/{id}/entries
-            Srv-->>App: entries (minRole viewer ✓)
-        else kind = work
-            App->>Srv: GET /entries?ledgerId={id}
-            Srv-->>App: entries (minRole viewer ✓)
-        else kind = taoyuan
-            App->>Srv: GET /events?ledgerId={id}
-            Note over Srv: resolveTaoyuanLedger 硬编码 editor
-            alt 当前用户为 viewer（共享只读）
-                Srv-->>App: 404 ❌ (现已 try/catch 兜底跳过)
-            else editor / owner
-                Srv-->>App: events ✓
-            end
-            App->>Srv: GET /events/{id}
-            Note over Srv: requireOwnedEvent 默认 editor
-            alt viewer
-                Srv-->>App: 404 ❌
-            else editor/owner
-                Srv-->>App: event + amounts ✓
-            end
-        else kind = travel
-            App->>Srv: GET /ledgers/{id}/members
-            Srv-->>App: members (viewer ✓)
-            App->>Srv: GET /ledgers/{id}/expenses?all=1
-            Srv-->>App: expenses (viewer ✓)
-        end
-    end
+    Note over Nav,S: ---- AppearanceSheet 打开（D-C） ----
 
-    Note over App,Srv: 修复后：桃源两读接口 minRole='viewer'，
-    viewer 参与者不再 404，逐账本同步全部成功
+    participant Home as HomePage(👁)
+    participant Sheet as AppearanceSheet
+    participant TS as ThemeState
+    Home->>Sheet: showModalBottomSheet(AppearanceSheet)
+    Sheet->>TS: watch(themeMode/style/fontScale/effectOn/soundOn)
+    Sheet->>TS: setStyle(glass) 禁用 / setEffectOn / setSoundOn
+    Note over Sheet: 玻璃置灰+"即将推出"；光效/音效/试听仅 UI 占位
+    Sheet->>Home: 完成 → pop()

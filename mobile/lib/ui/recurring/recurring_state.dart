@@ -33,7 +33,7 @@ class RecurringState extends ChangeNotifier {
       nextDate: nextDate,
       greenAmount: false,
       serverId: null,
-      synced: 1,
+      synced: 0, // 本地新建、尚未推送服务端；与银行卡本地新建语义一致[R4]
     );
     await RecurringRuleDao().insert(rule);
     _rules.add(rule);

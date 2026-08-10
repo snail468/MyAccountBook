@@ -8,10 +8,8 @@ import '../../state/general_state.dart';
 import '../../state/ledger_list_state.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/design_tokens.dart';
-import '../home_page.dart';
-import '../settings_page.dart';
 import '../widgets/app_card.dart';
-import '../widgets/app_floating_button.dart';
+import '../widgets/page_header.dart';
 import '../widgets/app_primary_button.dart';
 import '../widgets/money_text.dart';
 
@@ -41,52 +39,14 @@ class _Body extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ledger = context.watch<GeneralState>().ledger;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
-    final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(16, 48, 16, 24),
+      padding: const EdgeInsets.fromLTRB(24, 56, 24, 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ---- 头部 + 悬浮钮 ----
-          Row(
-            children: [
-              Text('📒', style: const TextStyle(fontSize: 24)),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(ledger.name,
-                        style: TextStyle(
-                            color: ink900,
-                            fontSize: 20,
-                            fontWeight: FontWeight.w700)),
-                    const SizedBox(height: 2),
-                    Text('本月 · 3 人共享',
-                        style: TextStyle(color: ink500, fontSize: 13)),
-                  ],
-                ),
-              ),
-              AppFloatingButton(
-                icon: const Text('🏠', style: TextStyle(fontSize: 20)),
-                onPressed: () => Navigator.of(context).pushAndRemoveUntil(
-                  MaterialPageRoute(builder: (_) => const HomePage()),
-                  (route) => false,
-                ),
-              ),
-              const SizedBox(width: 10),
-              AppFloatingButton(
-                icon: const Text('⚙️', style: TextStyle(fontSize: 20)),
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const SettingsPage()),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
+          // ---- 统一头部：左上回家 + 右上眼/设置 + 左侧返回 + 标题 ----
+          PageHeader(icon: '📒', title: ledger.name, subtitle: '本月 · 3 人共享'),
 
           // ---- 本月收入 / 支出 / 结余 ----
           const _SummaryCards(),

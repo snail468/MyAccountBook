@@ -8,21 +8,13 @@ import '../../state/auth_state.dart';
 import '../../state/travel_state.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/design_tokens.dart';
-import '../home_page.dart';
-import '../settings_page.dart';
 import '../widgets/app_card.dart';
-import '../widgets/app_floating_button.dart';
 import '../widgets/app_primary_button.dart';
 import '../widgets/money_text.dart';
+import '../widgets/page_header.dart';
 import '../widgets/section_label.dart';
 
-/// 旅游账本页（设计 2:130 重做）：头部 + 悬浮钮 + 成员管理 + 汇总/每日曲线/结算单。
-/// 眼睛钮占位：未上线功能提示。定义为文件级函数，供内部 _Body 调用。
-void _comingSoon(BuildContext context) {
-  ScaffoldMessenger.of(context).showSnackBar(
-    const SnackBar(content: Text('第二阶段上线')),
-  );
-}
+/// 旅游账本页（设计 2:130 重做）：头部 + 成员管理 + 汇总/每日曲线/结算单。
 
 class TravelPage extends StatelessWidget {
   final Ledger ledger;
@@ -96,13 +88,36 @@ class _Body extends StatelessWidget {
     final meta = '$people 人 · $startStr-$endStr';
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(16, 48, 16, 24),
+      padding: const EdgeInsets.fromLTRB(24, 56, 24, 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ---- 头部 + 悬浮钮 + 成员管理 ----
+          // ---- 顶部悬浮控件：左上回家，右上 成员管理 + 眼/设置 ----
           Row(
             children: [
+              const HomeButton(),
+              const Spacer(),
+              IconButton(
+                icon: const Icon(Icons.people_outline),
+                tooltip: '成员管理',
+                onPressed: () => showDialog(
+                  context: context,
+                  builder: (_) => ChangeNotifierProvider.value(
+                    value: state,
+                    child: const MembersDialog(),
+                  ),
+                ),
+              ),
+              const FloatingToolbar(),
+            ],
+          ),
+          const SizedBox(height: 12),
+          // ---- 返回 + 标题 ----
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              const PageBackButton(),
+              const SizedBox(width: 6),
               Text('✈️', style: const TextStyle(fontSize: 24)),
               const SizedBox(width: 10),
               Expanded(
@@ -115,36 +130,6 @@ class _Body extends StatelessWidget {
                     const SizedBox(height: 2),
                     Text(meta, style: TextStyle(color: ink500, fontSize: 13)),
                   ],
-                ),
-              ),
-              IconButton(
-                icon: const Icon(Icons.people_outline),
-                tooltip: '成员管理',
-                onPressed: () => showDialog(
-                  context: context,
-                  builder: (_) => ChangeNotifierProvider.value(
-                    value: state,
-                    child: const MembersDialog(),
-                  ),
-                ),
-              ),
-              AppFloatingButton(
-                icon: const Text('🏠', style: TextStyle(fontSize: 20)),
-                onPressed: () => Navigator.of(context).pushAndRemoveUntil(
-                  MaterialPageRoute(builder: (_) => const HomePage()),
-                  (route) => false,
-                ),
-              ),
-              const SizedBox(width: 10),
-              AppFloatingButton(
-                icon: const Text('👁', style: TextStyle(fontSize: 20)),
-                onPressed: () => _comingSoon(context),
-              ),
-              const SizedBox(width: 10),
-              AppFloatingButton(
-                icon: const Text('⚙️', style: TextStyle(fontSize: 20)),
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const SettingsPage()),
                 ),
               ),
             ],

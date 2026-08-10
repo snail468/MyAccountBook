@@ -1,0 +1,84 @@
+classDiagram
+    class BankCard {
+        +String id
+        +String bank
+        +String type   %% 储蓄卡/信用卡
+        +String last4
+        +String? serverId
+        +String? alias
+        +String? holder
+        +int synced
+        +fromApi(j, localId) BankCard
+        +toDb() Map
+        +copyWith(...) BankCard
+    }
+    class RecurringRule {
+        +String id
+        +String category
+        +int cents
+        +String? serverId
+        +String? target
+        +String? ledgerId
+        +String? ledgerName
+        +String? direction
+        +String? frequency
+        +int? dayOfMonth
+        +int? dayOfWeek
+        +String? startDate
+        +String? endDate
+        +String? lastGeneratedAt
+        +bool active
+        +bool autoCreate
+        +String? note
+        +int synced
+        +nextDueDisplay String
+        +fromApi(j, localId) RecurringRule
+        +toDb() Map
+        +copyWith(...) RecurringRule
+    }
+    class BankCardDao {
+        +upsert(BankCard)
+        +listAllIncludingDeleted() List~BankCard~
+        +deleteSyncedNotIn(Set~String~)
+        +markSynced(String, String)
+        +delete(String)
+    }
+    class RecurringRuleDao {
+        +upsert(RecurringRule)
+        +listAllIncludingDeleted() List~RecurringRule~
+        +deleteSyncedNotIn(Set~String~)
+        +markSynced(String, String)
+        +delete(String)
+    }
+    class CardApi {
+        +list() List~Map~
+        +create(Map) String
+        +delete(String)
+    }
+    class RecurringApi {
+        +list() List~Map~
+        +create(Map) String
+        +update(String, Map)
+        +delete(String)
+        +runDue()
+    }
+    class SyncService {
+        -CardApi _cards
+        -RecurringApi _recurring
+        -BankCardDao _bankDao
+        -RecurringRuleDao _ruleDao
+        +syncAll() bool
+        +_pullAll()
+        +_pullCards()
+        +_pullRecurring()
+        +_pendingDeleteServerIds(List~String~) Set~String~
+        +_markLocalSynced(PendingOp, String?)
+    }
+    BankCardDao ..> BankCard : persists
+    RecurringRuleDao ..> RecurringRule : persists
+    SyncService --> CardApi
+    SyncService --> RecurringApi
+    SyncService --> BankCardDao
+    SyncService --> RecurringRuleDao
+    SyncService ..> BankCard : fromApi/upsert
+    SyncService ..> RecurringRule : fromApi/upsert

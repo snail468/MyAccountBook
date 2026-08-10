@@ -29,6 +29,7 @@ class RecurringRule {
   final bool autoCreate; // 是否自动记账（false=仅提醒）
   final String? note;
   final int synced; // 0=待同步 / 1=已同步
+  final int? createdAt; // 创建时间戳（ms）；pull 复用本地已有值，避免创建顺序被打乱[R2]
 
   const RecurringRule({
     required this.id,
@@ -52,6 +53,7 @@ class RecurringRule {
     this.autoCreate = true,
     this.note,
     this.synced = 1,
+    this.createdAt,
   });
 
   factory RecurringRule.fromDb(Map<String, dynamic> m) => RecurringRule(
@@ -76,6 +78,7 @@ class RecurringRule {
         autoCreate: (m['auto_create'] as int? ?? 1) == 1,
         note: m['note'] as String?,
         synced: (m['synced'] as int? ?? 1),
+        createdAt: m['created_at'] as int?,
       );
 
   Map<String, dynamic> toDb() => {
@@ -100,7 +103,7 @@ class RecurringRule {
         'auto_create': autoCreate ? 1 : 0,
         'note': note,
         'synced': synced,
-        'created_at': DateTime.now().millisecondsSinceEpoch,
+        'created_at': createdAt ?? DateTime.now().millisecondsSinceEpoch,
       };
 
   /// 不可变更新副本（用于本地写路径乐观更新）。
@@ -127,6 +130,7 @@ class RecurringRule {
     bool? autoCreate,
     String? note,
     int? synced,
+    int? createdAt,
   }) =>
       RecurringRule(
         id: id ?? this.id,
@@ -150,6 +154,7 @@ class RecurringRule {
         autoCreate: autoCreate ?? this.autoCreate,
         note: note ?? this.note,
         synced: synced ?? this.synced,
+        createdAt: createdAt ?? this.createdAt,
       );
 
   /// 从服务端 JSON 构造本地行。
@@ -157,7 +162,7 @@ class RecurringRule {
   /// [localId] 来自本地库已有映射（已同步行复用）或新 UUID（首次拉到）。
   /// 服务端不返 nextDate，展示用 [nextDueDisplay] 客户端推算。
   factory RecurringRule.fromApi(Map<String, dynamic> j,
-      {required String localId}) {
+      {required String localId, int? createdAt}) {
     final direction = j['direction'] as String?;
     final frequency = j['frequency'] as String?;
     final ledger = j['ledger'] as Map<String, dynamic>?;
@@ -183,6 +188,7 @@ class RecurringRule {
       autoCreate: (j['autoCreate'] as bool?) ?? true,
       note: j['note'] as String?,
       synced: 1,
+      createdAt: createdAt,
     );
   }
 
@@ -210,15 +216,23 @@ class RecurringRule {
       return nextDate;
     }
 
-    // 若上次生成日已 >= 推算日，则后推一个周期。
+    // 推算候选日已过期则需后推一个周期：
+    // · 有 lastGeneratedAt：以其为准（它 >= 候选日说明已生成过，后推）。
+    // · 无 lastGeneratedAt（新建规则从未生成）：候选日若已 < 今天也后推，避免显示历史日期。[R1]
+    final bool advance;
     if (lastGeneratedAt != null) {
       final lg = DateTime.tryParse(lastGeneratedAt!);
       if (lg != null) {
         final lgDay = DateTime(lg.year, lg.month, lg.day);
-        if (!lgDay.isBefore(candidate)) {
-          candidate = _addCycle(candidate, frequency!);
-        }
+        advance = !lgDay.isBefore(candidate);
+      } else {
+        advance = candidate.isBefore(today);
       }
+    } else {
+      advance = candidate.isBefore(today);
+    }
+    if (advance) {
+      candidate = _addCycle(candidate, frequency!);
     }
 
     // 起始日未到则取起始日。

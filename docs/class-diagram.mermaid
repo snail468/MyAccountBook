@@ -1,38 +1,52 @@
 classDiagram
-    class LedgerRole {
-        <<enumeration>>
-        viewer
-        editor
-        owner
+    %% 共享前置（T0-1 / T0-3）
+    class GlobalControls {
+        +HomeButton
+        +FloatingToolbar(mode: ToolbarMode)
+        +SubPageShell(showHome, child)
     }
-
-    class LedgerOptions {
-        +kind: LedgerKind
-        +kindMessage: string
-        +minRole: LedgerRole
+    class PageHeader {
+        +String icon
+        +String title
+        +String subtitle
+        +VoidCallback? onBack
+        +build()  %% ‹返回 + 图标 + 标题 flex-1；无悬浮钮
     }
-
-    class OwnershipGuards {
-        +requireOwnedLedger(id, opts) LedgerOptions
-        +requireOwnedEvent(id, opts) LedgerOptions
-        +requireOwnedEntry(id, opts)
-        +requireOwnedGeneralEntry(ledgerId, entryId, opts)
-        +requireOwnedTripExpense(ledgerId, expenseId, opts)
-        +requireOwnedEventAmount(eventId, amountId, opts)
-        +requireSessionUser()
-        +requireAdmin()   %% 仅用于 /api/admin/users 账户管理，绝不碰账本数据
+    class AppearanceSheet {
+        +build()  %% 主题模式 / 界面风格(玻璃置灰) / 字号 / 光效 / 音效 / 试听 / 完成
     }
-    OwnershipGuards ..> LedgerOptions : opts.minRole
-
-    class ReadGuardDefaults {
-        requireOwnedLedger: 默认 owner
-        requireOwnedEvent: 默认 editor  ← 本次改 viewer(仅 GET)
+    class ThemeState {
+        +AppThemeMode themeMode
+        +AppStyle style
+        +double fontScale
+        +bool effectOn
+        +bool soundOn
+        +setEffectOn(v) setSoundOn(v) setStyle(v)
     }
+    AppearanceSheet ..> ThemeState : watch
 
-    note for OwnershipGuards "读接口显式传 minRole:'viewer'；\n写接口维持 editor/owner（默认或不传）"
-
-    class ChangedEndpoints {
-        GET /events?ledgerId  editor→viewer
-        GET /events/{id}      editor→viewer
+    %% D-B 用户管理（T-P1-04）
+    class AppUser {
+        +String id
+        +String name
+        +String role   %% 'admin' | 'member'
+        +String joinedDate
+        +bool isSelf
     }
-    ChangedEndpoints ..> OwnershipGuards : 调用
+    class UsersState {
+        +List~AppUser~ users
+        +bool currentUserIsAdmin   %% 新增 getter（依赖 AuthState.role）
+        +load() add() remove()
+        +cycleRole(u)   %% admin<->member 本地真实切换
+        +resetPassword(u)
+    }
+    class AuthState {
+        +String? username
+        +bool authed
+        +String? role   %% 新增：当前用户角色(admin|user)，来自后端
+    }
+    UsersState ..> AppUser : 管理
+    UsersState ..> AuthState : 读 currentUserIsAdmin
+
+    GlobalControls <|-- SubPageShell
+    PageHeader --o SubPageShell : 子页头部
