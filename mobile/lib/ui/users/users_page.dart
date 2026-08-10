@@ -35,8 +35,9 @@ class _Body extends StatelessWidget {
     final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
     final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
     final ink400 = isDark ? AppColors.darkInk400 : AppColors.lightInk400;
-    final blue = AppColors.lightSemanticBlue;
-    final red = AppColors.lightSemanticRed;
+    // 管理员徽章：语义蓝（浅/深同值，仍走镜像令牌保持一致性）。
+    final blue = isDark ? AppColors.darkSemanticBlue : AppColors.lightSemanticBlue;
+    final red = isDark ? AppColors.darkSemanticRed : AppColors.lightSemanticRed;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(24, 56, 24, 24),
@@ -158,6 +159,9 @@ class _UserTile extends StatelessWidget {
                         style: TextStyle(color: ink500, fontSize: 13)),
                   ),
                   const SizedBox(width: 16),
+                  // 本地真实权限切换（admin <-> member，落 family_members）。
+                  // 客户端管理员门禁（仅管理员可编辑）待 AuthState.role 落地后补：
+                  // 当前 AuthState 无 role 字段，编辑入口对所有用户可见，不伪造假权限。
                   GestureDetector(
                     onTap: () => state.cycleRole(user),
                     child: Text(isAdmin ? '降级' : '升级',

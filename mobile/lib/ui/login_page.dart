@@ -73,7 +73,7 @@ class _LoginPageState extends State<LoginPage> {
     final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
     // 品牌粉：Logo 圆底填充（浅色下用 8% 透明度，避免抢眼）。
     final brand = isDark ? AppColors.darkBrandPink : AppColors.lightBrandPink;
-    final red = AppColors.lightSemanticRed;
+    final red = isDark ? AppColors.darkSemanticRed : AppColors.lightSemanticRed;
 
     return Scaffold(
       backgroundColor: AppTheme.scaffoldBackground(context),
@@ -102,7 +102,7 @@ class _LoginPageState extends State<LoginPage> {
                   const SizedBox(height: 16),
                   Text('心愿便利贴',
                       style: TextStyle(
-                          color: ink900, fontSize: 24, fontWeight: FontWeight.w700)),
+                          color: ink900, fontSize: 30, fontWeight: FontWeight.w700)),
                   const SizedBox(height: 6),
                   Text('登录以同步你的多账本',
                       style: TextStyle(color: ink500, fontSize: 13)),
@@ -140,7 +140,7 @@ class _LoginPageState extends State<LoginPage> {
 
               if (_error != null) ...[
                 Text(_error!,
-                    style: TextStyle(color: red, fontSize: 13)),
+                    style: TextStyle(color: red, fontSize: 14)),
                 const SizedBox(height: 8),
               ],
 
@@ -155,7 +155,7 @@ class _LoginPageState extends State<LoginPage> {
                     MaterialPageRoute(builder: (_) => const RegisterPage()),
                   ),
                   child: Text('还没有账号？ 注册',
-                      style: TextStyle(color: ink500, fontSize: 13)),
+                      style: TextStyle(color: ink500, fontSize: 14)),
                 ),
               ),
             ],

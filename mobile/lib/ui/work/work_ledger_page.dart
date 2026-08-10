@@ -70,37 +70,8 @@ class _Body extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ---- 顶部悬浮控件：左上回家，右上 眼/设置 ----
-          const Row(
-            children: [
-              HomeButton(),
-              Spacer(),
-              FloatingToolbar(),
-            ],
-          ),
-          const SizedBox(height: 12),
-          // ---- 返回 + 标题 ----
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              const PageBackButton(),
-              const SizedBox(width: 6),
-              Text('💼', style: const TextStyle(fontSize: 24)),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(ledger.name,
-                        style: TextStyle(
-                            color: ink900, fontSize: 18, fontWeight: FontWeight.w700)),
-                    const SizedBox(height: 2),
-                    Text(meta, style: TextStyle(color: ink500, fontSize: 13)),
-                  ],
-                ),
-              ),
-            ],
-          ),
+          // ---- 统一头部：左上回家 + 右上眼/设置 + 左侧返回 + 标题（内含于 PageHeader）----
+          PageHeader(icon: '💼', title: ledger.name, subtitle: meta),
           const SizedBox(height: 16),
 
           // ---- 汇总卡 ----
@@ -328,7 +299,9 @@ class _EntryTile extends StatelessWidget {
         trailing: Text(
           '${income ? '+' : '-'}${Money.formatCents(e.amountCents)}',
           style: TextStyle(
-            color: income ? AppColors.lightSemanticRed : ink900,
+            color: income
+                ? (isDark ? AppColors.darkSemanticRed : AppColors.lightSemanticRed)
+                : ink900,
             fontWeight: FontWeight.bold,
           ),
         ),

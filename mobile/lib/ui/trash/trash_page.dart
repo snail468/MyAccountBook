@@ -34,7 +34,7 @@ class _Body extends StatelessWidget {
     final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
     final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
     final ink400 = isDark ? AppColors.darkInk400 : AppColors.lightInk400;
-    final red = AppColors.lightSemanticRed;
+    final red = isDark ? AppColors.darkSemanticRed : AppColors.lightSemanticRed;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(24, 56, 24, 24),
@@ -92,7 +92,7 @@ class _TrashTile extends StatelessWidget {
     final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
     final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
     final ink400 = isDark ? AppColors.darkInk400 : AppColors.lightInk400;
-    final red = AppColors.lightSemanticRed;
+    final red = isDark ? AppColors.darkSemanticRed : AppColors.lightSemanticRed;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),

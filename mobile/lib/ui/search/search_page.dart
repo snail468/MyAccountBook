@@ -36,7 +36,7 @@ class _Body extends StatelessWidget {
     final ink400 = isDark ? AppColors.darkInk400 : AppColors.lightInk400;
     final surface = isDark ? AppColors.darkSurface : AppColors.lightSurface;
     final border = isDark ? AppColors.darkBorder : AppColors.lightBorder;
-    final red = AppColors.lightSemanticRed;
+    final red = isDark ? AppColors.darkSemanticRed : AppColors.lightSemanticRed;
 
     final results = state.filtered;
 

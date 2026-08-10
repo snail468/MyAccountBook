@@ -79,37 +79,11 @@ class _BodyState extends State<_Body> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ---- 顶部悬浮控件：左上回家，右上 眼/设置 ----
-          const Row(
-            children: [
-              HomeButton(),
-              Spacer(),
-              FloatingToolbar(),
-            ],
-          ),
-          const SizedBox(height: 12),
-          // ---- 返回 + 标题 ----
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              const PageBackButton(),
-              const SizedBox(width: 6),
-              Text('🌸', style: const TextStyle(fontSize: 24)),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(state.ledger.name,
-                        style: TextStyle(
-                            color: ink900, fontSize: 18, fontWeight: FontWeight.w700)),
-                    const SizedBox(height: 2),
-                    Text('活动发布 → 预测 → 公示 → 发钱',
-                        style: TextStyle(color: ink500, fontSize: 13)),
-                  ],
-                ),
-              ),
-            ],
+          // ---- 统一头部：左上回家 + 右上眼/设置 + 左侧返回 + 标题（内含于 PageHeader）----
+          PageHeader(
+            icon: '🌸',
+            title: state.ledger.name,
+            subtitle: '活动发布 → 预测 → 公示 → 发钱',
           ),
           const SizedBox(height: 16),
 

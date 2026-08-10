@@ -55,7 +55,7 @@ class _Body extends StatelessWidget {
     final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
     final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
     final ink400 = isDark ? AppColors.darkInk400 : AppColors.lightInk400;
-    final red = AppColors.lightSemanticRed;
+    final red = isDark ? AppColors.darkSemanticRed : AppColors.lightSemanticRed;
 
     // 汇总
     final total = state.expenses
@@ -92,47 +92,11 @@ class _Body extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ---- 顶部悬浮控件：左上回家，右上 成员管理 + 眼/设置 ----
-          Row(
-            children: [
-              const HomeButton(),
-              const Spacer(),
-              IconButton(
-                icon: const Icon(Icons.people_outline),
-                tooltip: '成员管理',
-                onPressed: () => showDialog(
-                  context: context,
-                  builder: (_) => ChangeNotifierProvider.value(
-                    value: state,
-                    child: const MembersDialog(),
-                  ),
-                ),
-              ),
-              const FloatingToolbar(),
-            ],
-          ),
-          const SizedBox(height: 12),
-          // ---- 返回 + 标题 ----
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              const PageBackButton(),
-              const SizedBox(width: 6),
-              Text('✈️', style: const TextStyle(fontSize: 24)),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(state.ledger.name,
-                        style: TextStyle(
-                            color: ink900, fontSize: 18, fontWeight: FontWeight.w700)),
-                    const SizedBox(height: 2),
-                    Text(meta, style: TextStyle(color: ink500, fontSize: 13)),
-                  ],
-                ),
-              ),
-            ],
+          // ---- 统一头部：左上回家 + 右上眼/设置 + 左侧返回 + 标题（内含于 PageHeader）----
+          PageHeader(
+            icon: '✈️',
+            title: state.ledger.name,
+            subtitle: meta,
           ),
           const SizedBox(height: 16),
 
@@ -165,7 +129,22 @@ class _Body extends StatelessWidget {
             onPressed: () => _showSettlement(context, state),
           ),
           const SizedBox(height: 16),
-          SectionLabel('旅行记录'),
+          Row(
+            children: [
+              Expanded(child: SectionLabel('旅行记录')),
+              IconButton(
+                icon: const Icon(Icons.people_outline),
+                tooltip: '成员管理',
+                onPressed: () => showDialog(
+                  context: context,
+                  builder: (_) => ChangeNotifierProvider.value(
+                    value: state,
+                    child: const MembersDialog(),
+                  ),
+                ),
+              ),
+            ],
+          ),
 
           // ---- 记录列表 ----
           if (state.expenses.isEmpty)

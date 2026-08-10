@@ -47,8 +47,8 @@ class _RegisterPageState extends State<RegisterPage> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
     final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
-    // 错误文案用语义红（暗色下仍清晰，不套 isDark 分支）。
-    final red = AppColors.lightSemanticRed;
+    // 错误文案用语义红，深色镜像（darkSemanticRed 与浅色同值，保持令牌一致）。
+    final red = isDark ? AppColors.darkSemanticRed : AppColors.lightSemanticRed;
 
     return Scaffold(
       backgroundColor: AppTheme.scaffoldBackground(context),
@@ -60,7 +60,7 @@ class _RegisterPageState extends State<RegisterPage> {
             children: [
               Text('创建账号',
                   style: TextStyle(
-                      color: ink900, fontSize: 28, fontWeight: FontWeight.w700)),
+                      color: ink900, fontSize: 30, fontWeight: FontWeight.w700)),
               const SizedBox(height: 6),
               Text('记录每一笔，理清生活的账',
                   style: TextStyle(color: ink500, fontSize: 13)),
@@ -70,7 +70,7 @@ class _RegisterPageState extends State<RegisterPage> {
               AppTextField(hint: '密码', obscure: true, controller: _pass),
               const SizedBox(height: 16),
               if (_error != null) ...[
-                Text(_error!, style: TextStyle(color: red, fontSize: 13)),
+                Text(_error!, style: TextStyle(color: red, fontSize: 14)),
                 const SizedBox(height: 8),
               ],
               AppPrimaryButton(
@@ -82,7 +82,7 @@ class _RegisterPageState extends State<RegisterPage> {
                 child: TextButton(
                   onPressed: () => Navigator.of(context).pop(),
                   child: Text('已有账号？ 登录',
-                      style: TextStyle(color: ink500, fontSize: 13)),
+                      style: TextStyle(color: ink500, fontSize: 14)),
                 ),
               ),
             ],

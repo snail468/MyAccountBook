@@ -31,7 +31,8 @@ class AppPrimaryButton extends StatelessWidget {
             borderRadius: BorderRadius.circular(16),
           ),
         ),
-        child: Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
+        child: Text(label,
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
       ),
     );
   }

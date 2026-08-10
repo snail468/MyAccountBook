@@ -19,7 +19,7 @@ class AppTextField extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final fill = isDark ? AppColors.darkSurface : AppColors.lightSurface;
     final border = isDark ? AppColors.darkBorder : AppColors.lightBorder;
-    final hintColor = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
+    final hintColor = isDark ? AppColors.darkInk400 : AppColors.lightInk400;
 
     return TextField(
       controller: controller,
@@ -30,6 +30,7 @@ class AppTextField extends StatelessWidget {
         filled: true,
         fillColor: fill,
         contentPadding: const EdgeInsets.all(16),
+        constraints: const BoxConstraints(minHeight: 52),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
           borderSide: BorderSide(color: border, width: 1),

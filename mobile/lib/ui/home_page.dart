@@ -7,7 +7,6 @@ import '../state/ledger_list_state.dart';
 import '../theme/app_theme.dart';
 import '../theme/design_tokens.dart';
 import 'routes.dart';
-import 'settings_page.dart';
 import 'stats/stats_page.dart';
 import 'search/search_page.dart';
 import 'bank/bank_page.dart';
@@ -18,8 +17,7 @@ import 'users/users_page.dart';
 import 'widgets/ledger_feature_card.dart';
 import 'widgets/app_card.dart';
 import 'work/work_summary_page.dart';
-import 'widgets/app_floating_button.dart';
-import 'widgets/appearance_sheet.dart';
+import 'widgets/floating_toolbar.dart';
 import '../data/local/work_entry_dao.dart';
 import '../data/local/general_entry_dao.dart';
 import '../data/local/event_dao.dart';
@@ -269,23 +267,7 @@ class _HomePageState extends State<HomePage> {
                     ],
                   ),
                 ),
-                AppFloatingButton(
-                  icon: const Text('👁',
-                      style: TextStyle(fontSize: 20)),
-                  onPressed: () => showModalBottomSheet(
-                    context: context,
-                    backgroundColor: Colors.transparent,
-                    builder: (_) => const AppearanceSheet(),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                AppFloatingButton(
-                  icon: const Text('✨',
-                      style: TextStyle(fontSize: 20)),
-                  onPressed: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const SettingsPage()),
-                  ),
-                ),
+                const FloatingToolbar(mode: ToolbarMode.home),
               ],
             ),
             const SizedBox(height: 16),
@@ -296,22 +278,25 @@ class _HomePageState extends State<HomePage> {
 
             // ---- 本月总收入卡 ----
             AppCard(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('本月总收入',
-                        style: TextStyle(color: ink500, fontSize: 13)),
-                    const SizedBox(height: 6),
-                    Text(
-                      Money.formatCents(_monthIncome),
-                      style: TextStyle(
-                        color: incomeColor, fontSize: 28, fontWeight: FontWeight.w700),
-                    ),
-                    const SizedBox(height: 10),
-                    ..._incomeBreakdown(ink500),
-                  ],
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(minHeight: 150),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('本月总收入',
+                          style: TextStyle(color: ink500, fontSize: 13)),
+                      const SizedBox(height: 6),
+                      Text(
+                        Money.formatCents(_monthIncome),
+                        style: TextStyle(
+                          color: incomeColor, fontSize: 28, fontWeight: FontWeight.w700),
+                      ),
+                      const SizedBox(height: 10),
+                      ..._incomeBreakdown(ink500),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -432,6 +417,7 @@ class _OverspendCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(24),
         border: Border.all(color: border, width: 1),
       ),
+      constraints: const BoxConstraints(minHeight: 70),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       child: InkWell(
         onTap: () {

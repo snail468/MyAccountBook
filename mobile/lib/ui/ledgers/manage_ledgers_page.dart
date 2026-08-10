@@ -51,8 +51,8 @@ class _Body extends StatelessWidget {
     final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
     final ink400 = isDark ? AppColors.darkInk400 : AppColors.lightInk400;
     final headColor = isDark ? AppColors.darkInk500 : AppColors.lightInk700;
-    final red = AppColors.lightSemanticRed;
-    final green = AppColors.lightSemanticGreen;
+    final red = isDark ? AppColors.darkSemanticRed : AppColors.lightSemanticRed;
+    final green = isDark ? AppColors.darkSemanticGreen : AppColors.lightSemanticGreen;
 
     final all = state.allIncludingDeleted;
     final active = all.where((l) => l.deletedAt == null).toList();

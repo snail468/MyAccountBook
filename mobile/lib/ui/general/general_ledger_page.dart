@@ -180,7 +180,9 @@ class _EntryList extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
     final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
-    final red = AppColors.lightSemanticRed;
+    // 金额收入绿 / 支出红，深色镜像（对齐设计稿 2:87）。
+    final green = isDark ? AppColors.darkSemanticGreen : AppColors.lightSemanticGreen;
+    final red = isDark ? AppColors.darkSemanticRed : AppColors.lightSemanticRed;
 
     if (state.entries.isEmpty) {
       return Center(
@@ -218,7 +220,7 @@ class _EntryList extends StatelessWidget {
                   ),
                   MoneyText(
                     e.amountCents,
-                    color: income ? ink900 : red,
+                    color: income ? green : red,
                     fontSize: 16,
                     fontWeight: FontWeight.w700,
                   ),
