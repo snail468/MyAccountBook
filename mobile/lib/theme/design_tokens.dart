@@ -17,6 +17,7 @@ class AppColors {
   static const Color lightInk800 = Color(0xFF1E293B);
   static const Color lightInk700 = Color(0xFF334155);
   static const Color lightInk100 = Color(0xFFF1F5F9);
+  static const Color lightInk50 = Color(0xFFF8FAFC); // 镜像 web ink-50（图标盒底色）
   static const Color lightInk400 = Color(0xFF94A3B8);
   static const Color lightInk500 = Color(0xFF64748B);
   static const Color lightSemanticRed = Color(0xFFEF4444);

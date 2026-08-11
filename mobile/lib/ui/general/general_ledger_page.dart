@@ -87,11 +87,6 @@ class _GeneralLedgerScaffold extends StatelessWidget {
               const _AddButton(),
               const SizedBox(height: 16),
               const _EntryList(),
-              const SizedBox(height: 8),
-              const Center(
-                child: Text('已经到底了',
-                    style: TextStyle(color: Colors.grey, fontSize: 12)),
-              ),
             ],
           ),
         ),
@@ -138,10 +133,7 @@ class _SyncCard extends StatelessWidget {
     final amberBorder =
         isDark ? const Color(0x66F59E0B) : const Color(0xFFFDE68A);
 
-    if (state.pendingCount == 0) {
-      return Text('✅ 已全部同步',
-          style: TextStyle(color: amberText, fontSize: 13));
-    }
+    if (state.pendingCount == 0) return const SizedBox.shrink();
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
@@ -399,7 +391,7 @@ class _WeekCategoryCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('本周类别预算',
+            Text('本周类别预算（周一起算）',
                 style: TextStyle(
                     color: ink900, fontSize: 15, fontWeight: FontWeight.w700)),
             const SizedBox(height: 12),
@@ -444,7 +436,9 @@ class _CategoryRow extends StatelessWidget {
         : (totalExpense > 0 ? (spent / totalExpense).clamp(0, 1) : 0.0);
     final pct = (ratio * 100).round();
     final over = hasBudget && spent > budget!;
-    final color = over ? red : (hasBudget && ratio >= 0.8 ? amber : green);
+    final neutral = isDark ? AppColors.darkInk400 : AppColors.lightInk500;
+    final color =
+        over ? red : (hasBudget ? (ratio >= 0.8 ? amber : green) : neutral);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
@@ -484,22 +478,20 @@ class _CategoryRow extends StatelessWidget {
               ],
             ],
           ),
-          if (hasBudget) ...<Widget>[
-            const SizedBox(height: 8),
-            _Bar(widthPct: ratio * 100, color: color),
-            if (over) ...<Widget>[
-              const SizedBox(height: 6),
-              Row(
-                children: [
-                  Text('超支 ', style: TextStyle(color: red, fontSize: 12)),
-                  Money(
-                    cents: spent - budget!,
-                    style: TextStyle(
-                        color: red, fontSize: 12, fontWeight: FontWeight.w700),
-                  ),
-                ],
-              ),
-            ],
+          const SizedBox(height: 8),
+          _Bar(widthPct: ratio * 100, color: color, height: 6),
+          if (over) ...<Widget>[
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Text('超支 ', style: TextStyle(color: red, fontSize: 12)),
+                Money(
+                  cents: spent - budget!,
+                  style: TextStyle(
+                      color: red, fontSize: 12, fontWeight: FontWeight.w700),
+                ),
+              ],
+            ),
           ],
         ],
       ),
@@ -574,7 +566,6 @@ class _EntryList extends StatelessWidget {
   Widget build(BuildContext context) {
     final state = context.watch<GeneralState>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
     final entries = state.entries;
 
     if (entries.isEmpty) {
@@ -582,7 +573,9 @@ class _EntryList extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.only(top: 24),
           child: Text('还没有记录，点击上方 + 开始',
-              style: TextStyle(color: ink500, fontSize: 13)),
+              style: TextStyle(
+                  color: isDark ? AppColors.darkInk400 : AppColors.lightInk400,
+                  fontSize: 13)),
         ),
       );
     }
@@ -616,8 +609,17 @@ class _EntryList extends StatelessWidget {
       children.add(_DayHeader(date: g.date, income: inc, expense: exp));
       for (final e in g.entries) {
         children.add(_EntryRowTile(entry: e));
-        children.add(const SizedBox(height: 12));
+        children.add(const SizedBox(height: 8));
       }
+    }
+    if (entries.isNotEmpty) {
+      children.add(const SizedBox(height: 8));
+      children.add(Center(
+        child: Text('已经到底了',
+            style: TextStyle(
+                color: isDark ? AppColors.darkInk400 : AppColors.lightInk400,
+                fontSize: 11)),
+      ));
     }
     return Column(children: children);
   }
@@ -634,8 +636,6 @@ class _DayHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
-    final green = isDark ? AppColors.darkSemanticGreen : AppColors.lightSemanticGreen;
-    final red = isDark ? AppColors.darkSemanticRed : AppColors.lightSemanticRed;
 
     return Padding(
       padding: const EdgeInsets.only(top: 8, bottom: 8),
@@ -647,22 +647,22 @@ class _DayHeader extends StatelessWidget {
           if (income > 0)
             Row(
               children: [
-                Text('收 ', style: TextStyle(color: ink500, fontSize: 12)),
+                Text('入 ', style: TextStyle(color: ink500, fontSize: 12)),
                 Money(
                   cents: income,
                   style: TextStyle(
-                      color: green, fontSize: 12, fontWeight: FontWeight.w600),
+                      color: ink500, fontSize: 12, fontWeight: FontWeight.w600),
                 ),
               ],
             ),
           if (expense > 0)
             Row(
               children: [
-                Text(' 支 ', style: TextStyle(color: ink500, fontSize: 12)),
+                Text(' 出 ', style: TextStyle(color: ink500, fontSize: 12)),
                 Money(
                   cents: expense,
                   style: TextStyle(
-                      color: red, fontSize: 12, fontWeight: FontWeight.w600),
+                      color: ink500, fontSize: 12, fontWeight: FontWeight.w600),
                 ),
               ],
             ),
@@ -684,47 +684,125 @@ class _EntryRowTile extends StatelessWidget {
     final ink400 = isDark ? AppColors.darkInk400 : AppColors.lightInk400;
     final green = isDark ? AppColors.darkSemanticGreen : AppColors.lightSemanticGreen;
     final red = isDark ? AppColors.darkSemanticRed : AppColors.lightSemanticRed;
+    final iconBg = isDark ? AppColors.darkBorder : AppColors.lightInk50;
 
     final income = entry.direction == 'income';
     final color = income ? green : red;
-    final time =
-        DateFormat('HH:mm').format(DateTime.fromMillisecondsSinceEpoch(entry.occurredAt));
+    final time = DateFormat('HH:mm')
+        .format(DateTime.fromMillisecondsSinceEpoch(entry.occurredAt));
+
+    final subParts = <String>[time];
+    if (entry.tags != null && entry.tags!.isNotEmpty) subParts.add(entry.tags!);
+    if (entry.note != null && entry.note!.isNotEmpty) subParts.add(entry.note!);
+    final sub = subParts.join(' · ');
 
     return AppCard(
       child: InkWell(
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(16),
         onTap: () => _openEntryForm(context, entry: entry),
-        onLongPress: () => _confirmDelete(context, entry),
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(12),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: iconBg,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                alignment: Alignment.center,
+                child: Text(iconOf(entry.category),
+                    style: const TextStyle(fontSize: 18)),
+              ),
+              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('$time · ${entry.category}',
-                        style: TextStyle(color: ink500, fontSize: 13)),
-                    const SizedBox(height: 4),
-                    Text(entry.note ?? '',
-                        style: TextStyle(color: ink900, fontSize: 15)),
+                    Text(entry.category,
+                        style: TextStyle(
+                            color: ink900,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis),
+                    const SizedBox(height: 2),
+                    Text(sub,
+                        style: TextStyle(color: ink500, fontSize: 11),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis),
+                    if (entry.imageUrls.isNotEmpty) ...<Widget>[
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          for (var i = 0; i < entry.imageUrls.length; i++)
+                            Padding(
+                              padding: const EdgeInsets.only(right: 4),
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(4),
+                                onTap: () =>
+                                    _zoomImage(context, entry.imageUrls, i),
+                                child: Container(
+                                  width: 32,
+                                  height: 32,
+                                  clipBehavior: Clip.antiAlias,
+                                  decoration: BoxDecoration(
+                                    color: iconBg,
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Image.network(
+                                    entry.imageUrls[i],
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => const Icon(
+                                        Icons.broken_image_outlined,
+                                        size: 18),
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ],
                   ],
                 ),
               ),
-              Money(
-                cents: entry.amountCents,
-                sign: true,
-                style: TextStyle(
-                    color: color, fontSize: 16, fontWeight: FontWeight.w700),
-              ),
               const SizedBox(width: 8),
-              InkWell(
-                borderRadius: BorderRadius.circular(8),
-                onTap: () => _confirmDelete(context, entry),
-                child: Padding(
-                  padding: const EdgeInsets.all(4),
-                  child: Icon(Icons.delete_outline, color: ink400, size: 20),
-                ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Money(
+                    cents: entry.amountCents,
+                    sign: true,
+                    style: TextStyle(
+                        color: color,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      InkWell(
+                        borderRadius: BorderRadius.circular(8),
+                        onTap: () => _openEntryForm(context, entry: entry),
+                        child: Padding(
+                          padding: const EdgeInsets.all(4),
+                          child: Icon(Icons.edit_outlined,
+                              color: ink400, size: 18),
+                        ),
+                      ),
+                      InkWell(
+                        borderRadius: BorderRadius.circular(8),
+                        onTap: () => _confirmDelete(context, entry),
+                        child: Padding(
+                          padding: const EdgeInsets.all(4),
+                          child: Icon(Icons.close, color: ink400, size: 18),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ],
           ),
@@ -732,6 +810,28 @@ class _EntryRowTile extends StatelessWidget {
       ),
     );
   }
+}
+
+/// 图片放大预览（对齐网页端 Lightbox：点击缩略图查看大图，可双指缩放）。
+Future<void> _zoomImage(
+    BuildContext context, List<String> urls, int index) async {
+  await showDialog<void>(
+    context: context,
+    builder: (ctx) => Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.all(16),
+      child: InteractiveViewer(
+        child: Image.network(
+          urls[index],
+          fit: BoxFit.contain,
+          errorBuilder: (_, __, ___) => const Center(
+            child: Icon(Icons.broken_image_outlined,
+                size: 48, color: Colors.white),
+          ),
+        ),
+      ),
+    ),
+  );
 }
 
 String _weekdayName(int w) {
@@ -1742,6 +1842,8 @@ Future<void> _openCollaborators(BuildContext context) async {
 
 Future<void> _confirmDelete(BuildContext context, GeneralEntry e) async {
   final state = context.read<GeneralState>();
+  final isDark = Theme.of(context).brightness == Brightness.dark;
+  final red = isDark ? AppColors.darkSemanticRed : AppColors.lightSemanticRed;
   final ok = await showDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
@@ -1756,7 +1858,7 @@ Future<void> _confirmDelete(BuildContext context, GeneralEntry e) async {
         ),
         TextButton(
           onPressed: () => Navigator.of(ctx).pop(true),
-          child: const Text('删除', style: TextStyle(color: Colors.red)),
+          child: Text('删除', style: TextStyle(color: red)),
         ),
       ],
     ),
