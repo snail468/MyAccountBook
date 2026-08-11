@@ -82,7 +82,15 @@ class _Body extends StatelessWidget {
           const SizedBox(height: 12),
 
           // ---- 规则列表 ----
-          if (state.rules.isEmpty)
+          if (state.loading)
+            const Padding(
+              padding: EdgeInsets.only(top: 8),
+              child: Center(
+                child: Text('加载中…',
+                    style: TextStyle(color: ink400, fontSize: 13)),
+              ),
+            )
+          else if (state.rules.isEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 8),
               child: Center(
@@ -96,7 +104,7 @@ class _Body extends StatelessWidget {
           const SizedBox(height: 12),
 
           // ---- 立即生成到期的账（仅在有规则时显示，对齐网页端）----
-          if (state.rules.isNotEmpty)
+          if (!state.loading && state.rules.isNotEmpty)
             GestureDetector(
               onTap: () async {
                 try {
@@ -145,7 +153,8 @@ class _Body extends StatelessWidget {
           const SizedBox(height: 12),
 
           // ---- 添加规则 ----
-          GestureDetector(
+          if (!state.loading)
+            GestureDetector(
             onTap: () => showModalBottomSheet(
               context: context,
               isScrollControlled: true,

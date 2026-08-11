@@ -26,6 +26,9 @@ class RecurringState extends ChangeNotifier {
 
   List<RecurringRule> get rules => _rules;
 
+  bool _loading = true;
+  bool get loading => _loading;
+
   int get count => _rules.length;
 
   /// 新增规则（1:1 对齐网页端 POST /api/recurring 的表单字段）。
@@ -250,9 +253,12 @@ class RecurringState extends ChangeNotifier {
   }
 
   Future<void> load() async {
+    _loading = true;
+    notifyListeners();
     final list = await RecurringRuleDao().listAll();
     _rules.clear();
     _rules.addAll(list);
+    _loading = false;
     notifyListeners();
   }
 }
