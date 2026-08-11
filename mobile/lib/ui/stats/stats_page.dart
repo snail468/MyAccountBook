@@ -171,6 +171,7 @@ class _StatsBody extends StatelessWidget {
                       child: _CompareCard(
                         title: '同比（vs 去年同月）',
                         ink500: ink500,
+                        emptyHint: state.hasYoy ? null : '还没满一年',
                         rows: [
                           _CompareRow(
                             label: '收入',
@@ -218,22 +219,45 @@ class _StatsBody extends StatelessWidget {
                 const SizedBox(height: 16),
 
                 // ---- 支出构成 ----
-                AppCard(
-                  frosted: false,
-                  radius: 24,
-                  child: Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: _CategoryBreakdown(
-                      categories: state.categories,
-                      ink900: ink900,
-                      ink500: ink500,
-                      fill: ink900,
-                      track: isDark
-                          ? AppColors.darkBorder
-                          : AppColors.lightInk100,
+                if (state.categories.isNotEmpty) ...[
+                  AppCard(
+                    frosted: false,
+                    radius: 24,
+                    child: Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: _CategoryBreakdown(
+                        categories: state.categories,
+                        ink900: ink900,
+                        ink500: ink500,
+                        fill: ink900,
+                        track: isDark
+                            ? AppColors.darkBorder
+                            : AppColors.lightInk100,
+                      ),
                     ),
                   ),
-                ),
+                  const SizedBox(height: 16),
+                ],
+
+                // ---- 收入构成（网页端并列卡，仅在有收入类别时显示）----
+                if (state.incomeCategories.isNotEmpty) ...[
+                  AppCard(
+                    frosted: false,
+                    radius: 24,
+                    child: Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: _CategoryBreakdown(
+                        categories: state.incomeCategories,
+                        ink900: ink900,
+                        ink500: ink500,
+                        fill: ink900,
+                        track: isDark
+                            ? AppColors.darkBorder
+                            : AppColors.lightInk100,
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ],
           ),
@@ -285,15 +309,19 @@ class _SummaryCard extends StatelessWidget {
 }
 
 /// 环比 / 同比单卡（标题 + 收入/支出两行带色 delta）。
+///
+/// [emptyHint] 非空时（如同比「还没满一年」）替换掉两行明细，对齐网页端的条件渲染。
 class _CompareCard extends StatelessWidget {
   final String title;
   final Color ink500;
   final List<_CompareRow> rows;
+  final String? emptyHint;
 
   const _CompareCard({
     required this.title,
     required this.ink500,
-    required this.rows,
+    this.rows = const [],
+    this.emptyHint,
   });
 
   @override
@@ -308,7 +336,11 @@ class _CompareCard extends StatelessWidget {
           children: [
             Text(title, style: TextStyle(color: ink500, fontSize: 11)),
             const SizedBox(height: 8),
-            ...rows,
+            if (emptyHint != null)
+              Text(emptyHint!,
+                  style: TextStyle(color: ink500, fontSize: 12))
+            else
+              ...rows,
           ],
         ),
       ),

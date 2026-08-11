@@ -11,6 +11,7 @@ import '../widgets/money.dart';
 import '../widgets/page_header.dart';
 import '../widgets/section_label.dart';
 import 'work_ledger_page.dart';
+import 'work_expenses_page.dart';
 
 /// 工作账本·多月总览（对齐网页 /work：work/page.tsx + WorkMonthsSection）。
 ///
@@ -161,6 +162,40 @@ class _WorkSummaryPageState extends State<WorkSummaryPage> {
                 title: '工作账本',
                 subtitle: '按月记录进项与出项',
               ),
+
+              // ---- 出项汇总（回款管理，对齐网页 /work/expenses）----
+              GestureDetector(
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const WorkExpensesPage()),
+                ),
+                child: AppCard(
+                  radius: 24,
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('出项汇总',
+                                  style: TextStyle(
+                                      color: ink900,
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w700)),
+                              const SizedBox(height: 4),
+                              Text('应收出项 · 回款进度 · 批量回款',
+                                  style: TextStyle(color: ink500, fontSize: 12)),
+                            ],
+                          ),
+                        ),
+                        Icon(Icons.chevron_right, color: ink400),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
 
               // ---- 累计汇总 ----
               AppCard(

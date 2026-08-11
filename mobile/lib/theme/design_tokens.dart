@@ -28,6 +28,11 @@ class AppColors {
   static const Color lightOverspendBorder = Color(0xFFFECACA);
   static const Color lightOverspendTitle = Color(0xFF991B1B);
   static const Color lightOverspendDetail = Color(0xFF7F1D1D);
+  // 深色超支卡：对齐网页端 dark:bg-red-900/20 + border-red-800 + text-red-300/200。
+  static const Color darkOverspendBg = Color(0x337F1D1D); // red-900 @20%
+  static const Color darkOverspendBorder = Color(0xFF991B1B); // red-800
+  static const Color darkOverspendTitle = Color(0xFFFCA5A5); // red-300
+  static const Color darkOverspendDetail = Color(0xFFFECACA); // red-200
   // 浮动按钮：白色 0.8 透明度 + 描边 #E2E8F0 0.7
   static const Color lightFloatingBtnBg = Color(0xCCFFFFFF);
   static const Color lightFloatingBtnBorder = Color(0xB2E2E8F0);
@@ -51,6 +56,9 @@ class AppColors {
   static const Color darkSemanticRed = Color(0xFFEF4444);
   static const Color darkSemanticGreen = Color(0xFF049E69);
   static const Color darkSemanticBlue = Color(0xFF2557EB);
+  // 卡片阴影：对齐网页端 shadow-sm（0 1px 2px 0 rgba(0,0,0,0.05)），仅经典态卡片使用。
+  static const Color lightCardShadow = Color(0x0D000000);
+  static const Color darkCardShadow = Color(0x0D000000);
 
   // ---------------- Glass（液态玻璃，亮/暗两套，1:1 对齐 globals.css .liquid） ----------------
   // 浅色玻璃
@@ -61,4 +69,14 @@ class AppColors {
   static const Color darkGlassPageBg = Color(0xFF0B0518); // 兜底纯色（深紫黑）
   static const Color darkGlassCardFill = Color(0x801E2130); // rgba(30,30,48,0.5)
   static const Color darkGlassCardBorder = Color(0x24FFFFFF); // rgba(255,255,255,0.14)
+
+  // ---------------- After-tax（劳务报酬税后卡，amber/tax 强调，1:1 对齐网页端 amber-*/20） ----------------
+  static const Color lightAfterTaxBg = Color(0xFFFEF3C7); // amber-100（近似 amber-50 兜底纯色）
+  static const Color lightAfterTaxBorder = Color(0xFFFDE68A); // amber-200
+  static const Color lightAfterTaxFg = Color(0xFF92400E); // amber-800
+  static const Color lightAfterTaxSub = Color(0xFFB45309); // amber-700
+  static const Color darkAfterTaxBg = Color(0x3378350F); // amber-900 @ 0.2
+  static const Color darkAfterTaxBorder = Color(0x6692400E); // amber-800 @ 0.4
+  static const Color darkAfterTaxFg = Color(0xFFFCD34D); // amber-300
+  static const Color darkAfterTaxSub = Color(0xB2FB923C); // amber-400 @ 0.7
 }

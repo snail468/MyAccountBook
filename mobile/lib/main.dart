@@ -10,6 +10,7 @@ import 'theme/app_theme.dart';
 import 'theme/design_tokens.dart';
 import 'ui/login_page.dart';
 import 'ui/home_page.dart';
+import 'ui/app_routes.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -63,6 +64,7 @@ class AppRoot extends StatelessWidget {
         );
       },
       home: const RootSwitcher(),
+      onGenerateRoute: appOnGenerateRoute,
     );
   }
 }

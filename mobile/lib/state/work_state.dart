@@ -106,4 +106,97 @@ class WorkState extends ChangeNotifier {
     }
     await load();
   }
+
+  /// 标记某出项已回款（对齐网页 PATCH action=refund）。
+  ///
+  /// 复用 [WorkEntryDao.insert] 的 replace 同 id 覆盖；已同步条目入队
+  /// PATCH /entries/:serverId（带 refundedAt），未同步本地条目改写待发 POST
+  /// （按 clientId coalesced）。更新后重新加载并通知监听者。
+  Future<void> refundEntry(WorkEntry e, int refundedAt) async {
+    final updated = WorkEntry(
+      id: e.id,
+      ledgerId: e.ledgerId,
+      serverId: e.serverId,
+      yearMonth: e.yearMonth,
+      category: e.category,
+      direction: e.direction,
+      amountCents: e.amountCents,
+      note: e.note,
+      occurredAt: e.occurredAt,
+      refundedAt: refundedAt,
+      deletedAt: e.deletedAt,
+      synced: 0,
+      clientId: e.clientId ?? e.id,
+    );
+    await _dao.insert(updated);
+    final body = updated.toApiBody();
+    body['ledgerId'] = ledger.serverId ?? ledger.id; // 用服务端账本 id
+    if (updated.serverId != null) {
+      body['action'] = 'refund';
+      body['refundedAt'] =
+          DateTime.fromMillisecondsSinceEpoch(refundedAt).toUtc().toIso8601String();
+      await _sync.enqueue(
+        method: 'PATCH',
+        path: '/entries/${updated.serverId}',
+        body: body,
+        entity: _kEntity,
+        entityLocalId: updated.id,
+      );
+    } else {
+      await _sync.enqueueCoalesced(
+        method: 'POST',
+        path: '/entries',
+        body: body,
+        clientId: updated.clientId,
+        entity: _kEntity,
+        entityLocalId: updated.id,
+      );
+    }
+    await load();
+  }
+
+  /// 撤销回款（对齐网页 PATCH action=unrefund）。
+  ///
+  /// 同样用 replace 覆盖，把 refundedAt 置空；已同步条目入队 PATCH action=unrefund，
+  /// 未同步本地条目改写待发 POST（coalesced）。
+  Future<void> unrefundEntry(WorkEntry e) async {
+    final updated = WorkEntry(
+      id: e.id,
+      ledgerId: e.ledgerId,
+      serverId: e.serverId,
+      yearMonth: e.yearMonth,
+      category: e.category,
+      direction: e.direction,
+      amountCents: e.amountCents,
+      note: e.note,
+      occurredAt: e.occurredAt,
+      refundedAt: null,
+      deletedAt: e.deletedAt,
+      synced: 0,
+      clientId: e.clientId ?? e.id,
+    );
+    await _dao.insert(updated);
+    final body = updated.toApiBody();
+    body['ledgerId'] = ledger.serverId ?? ledger.id;
+    if (updated.serverId != null) {
+      body['action'] = 'unrefund';
+      await _sync.enqueue(
+        method: 'PATCH',
+        path: '/entries/${updated.serverId}',
+        body: body,
+        entity: _kEntity,
+        entityLocalId: updated.id,
+      );
+    } else {
+      await _sync.enqueueCoalesced(
+        method: 'POST',
+        path: '/entries',
+        body: body,
+        clientId: updated.clientId,
+        entity: _kEntity,
+        entityLocalId: updated.id,
+      );
+    }
+    await load();
+  }
 }

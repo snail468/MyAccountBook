@@ -768,7 +768,8 @@ class _EntryFormSheetState extends State<_EntryFormSheet> {
   final _category = TextEditingController();
   final _amount = TextEditingController();
   final _note = TextEditingController();
-  final _image = TextEditingController();
+  final _tags = TextEditingController();
+  List<String> _imageUrls = const [];
   late DateTime _date;
 
   @override
@@ -779,7 +780,8 @@ class _EntryFormSheetState extends State<_EntryFormSheet> {
     _category.text = e?.category ?? '餐饮';
     _amount.text = e != null ? money.Money.formatPlain(e.amountCents) : '';
     _note.text = e?.note ?? '';
-    _image.text = e != null && e.imageUrls.isNotEmpty ? e.imageUrls.first : '';
+    _tags.text = e?.tags ?? '';
+    _imageUrls = e != null ? List<String>.from(e.imageUrls) : const <String>[];
     _date = e != null
         ? DateTime.fromMillisecondsSinceEpoch(e.occurredAt)
         : DateTime.now();
@@ -790,7 +792,7 @@ class _EntryFormSheetState extends State<_EntryFormSheet> {
     _category.dispose();
     _amount.dispose();
     _note.dispose();
-    _image.dispose();
+    _tags.dispose();
     super.dispose();
   }
 
@@ -814,8 +816,8 @@ class _EntryFormSheetState extends State<_EntryFormSheet> {
     final category =
         _category.text.trim().isEmpty ? '其他' : _category.text.trim();
     final note = _note.text.trim().isEmpty ? null : _note.text.trim();
-    final imageUrls =
-        _image.text.trim().isEmpty ? const <String>[] : <String>[_image.text.trim()];
+    final tags = _tags.text.trim().isEmpty ? null : _tags.text.trim();
+    final imageUrls = _imageUrls.where((u) => u.trim().isNotEmpty).toList();
     final occurredAt = _date.millisecondsSinceEpoch;
 
     final e = widget.entry;
@@ -824,6 +826,7 @@ class _EntryFormSheetState extends State<_EntryFormSheet> {
         direction: _direction,
         category: category,
         amountCents: cents,
+        tags: tags,
         note: note,
         occurredAt: occurredAt,
         imageUrls: imageUrls,
@@ -836,7 +839,7 @@ class _EntryFormSheetState extends State<_EntryFormSheet> {
         direction: _direction,
         category: category,
         amountCents: cents,
-        tags: e.tags,
+        tags: tags,
         note: note,
         imageUrls: imageUrls,
         occurredAt: occurredAt,
@@ -890,30 +893,30 @@ class _EntryFormSheetState extends State<_EntryFormSheet> {
           const SizedBox(height: 12),
           AppTextField(controller: _category, hint: '类别'),
           const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: suggestions
-                        .map((c) => ActionChip(
-                              label: Text(c,
-                                  style: TextStyle(color: ink900, fontSize: 13)),
-                              backgroundColor: isDark
-                                  ? AppColors.darkSurface
-                                  : AppColors.lightSurfaceSubtle,
-                              shape: StadiumBorder(
-                                side: BorderSide(
-                                  color: isDark
-                                      ? AppColors.darkBorder
-                                      : AppColors.lightBorder,
-                                ),
-                              ),
-                              onPressed: () {
-                                _category.text = c;
-                                setState(() {});
-                              },
-                            ))
-                        .toList(),
-                  ),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: suggestions
+                .map((c) => ActionChip(
+                      label: Text(c,
+                          style: TextStyle(color: ink900, fontSize: 13)),
+                      backgroundColor: isDark
+                          ? AppColors.darkSurface
+                          : AppColors.lightSurfaceSubtle,
+                      shape: StadiumBorder(
+                        side: BorderSide(
+                          color: isDark
+                              ? AppColors.darkBorder
+                              : AppColors.lightBorder,
+                        ),
+                      ),
+                      onPressed: () {
+                        _category.text = c;
+                        setState(() {});
+                      },
+                    ))
+                .toList(),
+          ),
           const SizedBox(height: 8),
           Align(
             alignment: Alignment.centerLeft,
@@ -928,7 +931,14 @@ class _EntryFormSheetState extends State<_EntryFormSheet> {
           const SizedBox(height: 8),
           AppTextField(controller: _amount, hint: '金额（元）'),
           const SizedBox(height: 12),
+          AppTextField(controller: _tags, hint: '标签（逗号分隔）'),
+          const SizedBox(height: 12),
           AppTextField(controller: _note, hint: '备注'),
+          const SizedBox(height: 12),
+          _ImageUrlsField(
+            value: _imageUrls,
+            onChanged: (v) => setState(() => _imageUrls = v),
+          ),
           const SizedBox(height: 12),
           InkWell(
             borderRadius: BorderRadius.circular(16),
@@ -960,12 +970,179 @@ class _EntryFormSheetState extends State<_EntryFormSheet> {
               ),
             ),
           ),
-          const SizedBox(height: 12),
-          AppTextField(controller: _image, hint: '图片链接（可选）'),
           const SizedBox(height: 16),
           AppPrimaryButton(label: '保存', onPressed: _save),
         ],
       ),
+    );
+  }
+}
+
+/// 多图选择（1:1 对齐网页端 ImageUploader：缩略图网格 + 新增 + 删除，最多 4 张）。
+///
+/// 本地优先版无上传后端，沿用 [GeneralEntry.imageUrls]（字符串列表）存储图片链接，
+/// 交互形态与网页端一致：网格缩略图、点击新增填链接、右上角删除。
+class _ImageUrlsField extends StatefulWidget {
+  final List<String> value;
+  final ValueChanged<List<String>> onChanged;
+  const _ImageUrlsField({required this.value, required this.onChanged});
+
+  @override
+  State<_ImageUrlsField> createState() => _ImageUrlsFieldState();
+}
+
+class _ImageUrlsFieldState extends State<_ImageUrlsField> {
+  static const int _max = 4;
+  final _url = TextEditingController();
+
+  @override
+  void dispose() {
+    _url.dispose();
+    super.dispose();
+  }
+
+  void _add(String url) {
+    final v = url.trim();
+    if (v.isEmpty || widget.value.length >= _max) return;
+    widget.onChanged(<String>[...widget.value, v]);
+  }
+
+  void _remove(int i) {
+    final next = <String>[...widget.value]..removeAt(i);
+    widget.onChanged(next);
+  }
+
+  Future<void> _showAddDialog() async {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final hint = isDark ? AppColors.darkInk400 : AppColors.lightInk400;
+    final fill = isDark ? AppColors.darkSurface : AppColors.lightSurface;
+    final border = isDark ? AppColors.darkBorder : AppColors.lightBorder;
+    _url.clear();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('添加图片链接'),
+        content: TextField(
+          controller: _url,
+          autofocus: true,
+          decoration: InputDecoration(
+            hintText: 'https://...',
+            hintStyle: TextStyle(color: hint, fontSize: 13),
+            isCollapsed: true,
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            filled: true,
+            fillColor: fill,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: border, width: 1),
+            ),
+          ),
+          onSubmitted: (_) => Navigator.of(ctx).pop(true),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('取消')),
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('添加')),
+        ],
+      ),
+    );
+    if (ok == true) _add(_url.text);
+  }
+
+  Widget _thumb(String url) {
+    return Image.network(
+      url,
+      fit: BoxFit.cover,
+      width: double.infinity,
+      height: double.infinity,
+      errorBuilder: (_, __, ___) => const Center(
+        child: Icon(Icons.broken_image_outlined,
+            size: 28, color: AppColors.lightInk400),
+      ),
+      loadingBuilder: (_, child, progress) =>
+          progress == null ? child : const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
+    final ink400 = isDark ? AppColors.darkInk400 : AppColors.lightInk400;
+    final tileBg = isDark ? AppColors.darkSurface : AppColors.lightSurfaceSubtle;
+    final dashed = isDark ? AppColors.darkBorder : AppColors.lightBorderDashed;
+    final red = isDark ? AppColors.darkSemanticRed : AppColors.lightSemanticRed;
+    final iconColor = isDark ? AppColors.darkInk100 : AppColors.lightSurface;
+    final addIcon =
+        isDark ? AppColors.darkInk400 : AppColors.lightInk400;
+
+    final children = <Widget>[
+      for (var i = 0; i < widget.value.length; i++)
+        Stack(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: Container(color: tileBg, child: _thumb(widget.value[i])),
+            ),
+            Positioned(
+              top: 4,
+              right: 4,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: () => _remove(i),
+                child: Container(
+                  width: 22,
+                  height: 22,
+                  decoration: BoxDecoration(
+                    color: red,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  alignment: Alignment.center,
+                  child: Icon(Icons.close, size: 14, color: iconColor),
+                ),
+              ),
+            ),
+          ],
+        ),
+      if (widget.value.length < _max)
+        InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: _showAddDialog,
+          child: Container(
+            decoration: BoxDecoration(
+              color: tileBg,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                  color: dashed, width: 2, style: BorderStyle.dashed),
+            ),
+            child: Center(child: Icon(Icons.add, size: 28, color: addIcon)),
+          ),
+        ),
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('小票/图片',
+            style: TextStyle(color: ink500, fontSize: 12)),
+        const SizedBox(height: 8),
+        GridView.count(
+          crossAxisCount: 3,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          mainAxisSpacing: 8,
+          crossAxisSpacing: 8,
+          childAspectRatio: 1,
+          children: children,
+        ),
+        const SizedBox(height: 4),
+        Text('输入图片链接，最多 $_max 张',
+            style: TextStyle(color: ink400, fontSize: 10)),
+      ],
     );
   }
 }
@@ -1048,6 +1225,14 @@ class _SettingsSheetState extends State<_SettingsSheet> {
           AppTextField(controller: _budget, hint: '月度预算（元，0 表示不限制）'),
           const SizedBox(height: 12),
           AppTextField(controller: _currency, hint: '币种（如 CNY）'),
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton(
+              onPressed: () => _openCategories(context),
+              child: const Text('管理分类'),
+            ),
+          ),
           const SizedBox(height: 16),
           AppPrimaryButton(label: '保存', onPressed: _save),
         ],
@@ -1080,16 +1265,38 @@ class _CategoryManagerSheet extends StatefulWidget {
 }
 
 class _CategoryManagerSheetState extends State<_CategoryManagerSheet> {
+  String _mode = 'categories'; // 'categories' | 'budgets'
+  final Set<String> _selected = {};
   late List<String> _added;
+  late List<String> _hidden;
   late Map<String, int> _budgets;
-  late List<String> _all;
+  late Map<String, int> _budgetsWeekly;
   final _newCat = TextEditingController();
-  final Map<String, TextEditingController> _budgetCtl = {};
+  final Map<String, TextEditingController> _monthCtl = {};
+  final Map<String, TextEditingController> _weekCtl = {};
 
-  TextEditingController _ctl(String c) => _budgetCtl.putIfAbsent(
+  /// 有效类别 = 预设 - 隐藏 + 新增 - 隐藏（对齐网页端 effectiveCategories）。
+  List<String> get _effective {
+    final hiddenSet = Set<String>.from(_hidden);
+    final presets =
+        defaultCategories.where((c) => !hiddenSet.contains(c)).toList();
+    final addedKept = _added.where((c) => !hiddenSet.contains(c)).toList();
+    return <String>{...presets, ...addedKept}.toList();
+  }
+
+  TextEditingController _monthCtlFor(String c) => _monthCtl.putIfAbsent(
         c,
         () => TextEditingController(
           text: _budgets.containsKey(c) ? money.Money.formatPlain(_budgets[c]!) : '',
+        ),
+      );
+
+  TextEditingController _weekCtlFor(String c) => _weekCtl.putIfAbsent(
+        c,
+        () => TextEditingController(
+          text: _budgetsWeekly.containsKey(c)
+              ? money.Money.formatPlain(_budgetsWeekly[c]!)
+              : '',
         ),
       );
 
@@ -1098,51 +1305,251 @@ class _CategoryManagerSheetState extends State<_CategoryManagerSheet> {
     super.initState();
     final cc = context.read<GeneralState>().customCategories;
     _added = List<String>.from(cc.added.map((x) => x.toString()));
+    _hidden = List<String>.from(cc.hidden);
     _budgets = Map<String, int>.from(cc.budgets);
-    _rebuildAll();
-  }
-
-  void _rebuildAll() {
-    _all = <String>{...defaultCategories, ..._added}.toList();
+    _budgetsWeekly = Map<String, int>.from(cc.budgetsWeekly);
   }
 
   @override
   void dispose() {
     _newCat.dispose();
-    for (final c in _budgetCtl.values) c.dispose();
+    for (final c in _monthCtl.values) c.dispose();
+    for (final c in _weekCtl.values) c.dispose();
     super.dispose();
   }
 
-  void _addCategory() {
-    final v = _newCat.text.trim();
-    if (v.isEmpty || _all.contains(v)) {
+  void _addCategoryName(String v) {
+    final name = v.trim();
+    if (name.isEmpty || _effective.contains(name)) {
       _newCat.clear();
       return;
     }
     setState(() {
-      _added.add(v);
-      _rebuildAll();
+      _added.add(name);
       _newCat.clear();
     });
   }
 
-  void _removeCategory(String c) {
+  void _toggleSelect(String c) {
     setState(() {
-      _added.remove(c);
-      _budgets.remove(c);
-      final ctl = _budgetCtl.remove(c);
-      ctl?.dispose();
-      _rebuildAll();
+      if (_selected.contains(c)) {
+        _selected.remove(c);
+      } else {
+        _selected.add(c);
+      }
+    });
+  }
+
+  /// 批量删除：从 added 移除，并加入 hidden（预设类别无法真删，仅隐藏）。
+  Future<void> _batchDelete() async {
+    if (_selected.isEmpty) return;
+    final names = _selected.toList();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final red = isDark ? AppColors.darkSemanticRed : AppColors.lightSemanticRed;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('删除 ${names.length} 个类别？'),
+        content: Text(
+          '${names.join('、')}\n\n已有的记账条目不会受影响，只是这些类别不再出现在选择列表里。',
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('取消')),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text('删除', style: TextStyle(color: red)),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    setState(() {
+      for (final n in names) {
+        _added.remove(n);
+        if (!_hidden.contains(n)) _hidden.add(n);
+      }
+      _selected.clear();
+    });
+  }
+
+  /// 还原默认：取消所有隐藏（保留已添加的自定义类别）。
+  Future<void> _restoreDefault() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('还原所有默认类别？'),
+        content: const Text('会取消所有隐藏，但保留已添加的自定义类别。'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('取消')),
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('还原')),
+        ],
+      ),
+    );
+    if (ok == true) {
+      setState(() {
+        _hidden.clear();
+        _selected.clear();
+      });
+    }
+  }
+
+  void _setBudget(String name, String yuan, String period) {
+    final map = period == 'month' ? _budgets : _budgetsWeekly;
+    final trimmed = yuan.trim();
+    setState(() {
+      if (trimmed.isEmpty) {
+        map.remove(name);
+        return;
+      }
+      final cents = money.Money.parseToCents(trimmed);
+      if (cents != null && cents > 0) {
+        map[name] = cents;
+      } else {
+        map.remove(name);
+      }
     });
   }
 
   Future<void> _save() async {
     final state = context.read<GeneralState>();
-    final cc = CustomCategories(added: _added, budgets: _budgets);
+    final cc = CustomCategories(
+      added: _added,
+      hidden: _hidden,
+      budgets: _budgets,
+      budgetsWeekly: _budgetsWeekly,
+    );
     final updated =
         state.ledger.copyWith(customCategories: jsonEncode(cc.toJson()));
     await state.updateLedger(updated);
     if (mounted) Navigator.of(context).pop();
+  }
+
+  Future<void> _showAddDialog() async {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final ink400 = isDark ? AppColors.darkInk400 : AppColors.lightInk400;
+    final border = isDark ? AppColors.darkBorder : AppColors.lightBorder;
+    _newCat.clear();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('新增分类'),
+        content: TextField(
+          controller: _newCat,
+          autofocus: true,
+          decoration: InputDecoration(
+            hintText: '分类名',
+            hintStyle: TextStyle(color: ink400, fontSize: 13),
+            isCollapsed: true,
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: border, width: 1),
+            ),
+          ),
+          onSubmitted: (_) => Navigator.of(ctx).pop(true),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('取消')),
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('添加')),
+        ],
+      ),
+    );
+    if (ok == true) _addCategoryName(_newCat.text);
+  }
+
+  Widget _budgetInput(TextEditingController ctl, ValueChanged<String> onChanged,
+      Color border, Color hint) {
+    return SizedBox(
+      height: 36,
+      child: TextField(
+        controller: ctl,
+        onChanged: onChanged,
+        textAlign: TextAlign.right,
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        decoration: InputDecoration(
+          hintText: '—',
+          hintStyle: TextStyle(color: hint, fontSize: 12),
+          isCollapsed: true,
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: BorderSide(color: border, width: 1),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _categoryTile(
+    String c,
+    bool isDark,
+    Color ink900,
+    Color red,
+    Color subtle,
+    Color selBg,
+    Color selBorder,
+  ) {
+    final isSel = _selected.contains(c);
+    final checkColor = isDark ? AppColors.darkInk100 : AppColors.lightSurface;
+    return InkWell(
+      borderRadius: BorderRadius.circular(16),
+      onTap: () => _toggleSelect(c),
+      child: Container(
+        decoration: BoxDecoration(
+          color: isSel ? selBg : subtle,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isSel
+                ? selBorder
+                : (isDark ? AppColors.darkBorder : AppColors.lightBorder),
+            width: 2,
+          ),
+        ),
+        child: Stack(
+          children: [
+            Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(iconOf(c), style: const TextStyle(fontSize: 22)),
+                  const SizedBox(height: 4),
+                  Text(c,
+                      style: TextStyle(color: ink900, fontSize: 11),
+                      overflow: TextOverflow.ellipsis),
+                ],
+              ),
+            ),
+            if (isSel)
+              Positioned(
+                top: 6,
+                right: 6,
+                child: Container(
+                  width: 18,
+                  height: 18,
+                  decoration: BoxDecoration(
+                    color: red,
+                    borderRadius: BorderRadius.circular(9),
+                  ),
+                  alignment: Alignment.center,
+                  child: Icon(Icons.check, size: 12, color: checkColor),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -1152,91 +1559,162 @@ class _CategoryManagerSheetState extends State<_CategoryManagerSheet> {
     final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
     final ink400 = isDark ? AppColors.darkInk400 : AppColors.lightInk400;
     final red = isDark ? AppColors.darkSemanticRed : AppColors.lightSemanticRed;
+    final border = isDark ? AppColors.darkBorder : AppColors.lightBorder;
+    final subtle = isDark ? AppColors.darkSurface : AppColors.lightSurfaceSubtle;
+    final selBg = isDark ? AppColors.darkSurface : AppColors.lightOverspendBg;
+    final selBorder =
+        isDark ? AppColors.darkSemanticRed : AppColors.lightOverspendBorder;
+
+    final effective = _effective;
 
     return _sheetScaffold(
       context,
       Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('分类管理',
-              style: TextStyle(
-                  color: ink900, fontSize: 18, fontWeight: FontWeight.w700)),
-          const SizedBox(height: 16),
-          ..._all.map((c) {
-            final isCustom = _added.contains(c);
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: Row(
-                children: [
-                  Text(iconOf(c), style: const TextStyle(fontSize: 18)),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(c,
-                        style: TextStyle(
-                            color: ink900, fontSize: 14, fontWeight: FontWeight.w600)),
-                  ),
-                  SizedBox(
-                    width: 96,
-                    child: TextField(
-                      controller: _ctl(c),
-                      onChanged: (v) {
-                        final cents = money.Money.parseToCents(v);
-                        setState(() {
-                          if (cents != null && cents > 0) {
-                            _budgets[c] = cents;
-                          } else {
-                            _budgets.remove(c);
-                          }
-                        });
-                      },
-                      keyboardType:
-                          const TextInputType.numberWithOptions(decimal: true),
-                      decoration: InputDecoration(
-                        hintText: '预算',
-                        hintStyle: TextStyle(color: ink400, fontSize: 12),
-                        isCollapsed: true,
-                        contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 8),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                          borderSide: BorderSide(
-                            color: isDark
-                                ? AppColors.darkBorder
-                                : AppColors.lightBorder,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  if (isCustom)
-                    InkWell(
-                      borderRadius: BorderRadius.circular(8),
-                      onTap: () => _removeCategory(c),
-                      child: Padding(
-                        padding: const EdgeInsets.all(4),
-                        child: Icon(Icons.close, color: red, size: 18),
-                      ),
-                    )
-                  else
-                    SizedBox(
-                      width: 26,
-                      child: Text('', style: TextStyle(color: ink500)),
-                    ),
-                ],
-              ),
-            );
-          }),
-          const SizedBox(height: 8),
           Row(
             children: [
-              Expanded(child: AppTextField(controller: _newCat, hint: '新增分类名')),
-              const SizedBox(width: 8),
-              TextButton(onPressed: _addCategory, child: const Text('添加')),
+              Text(_mode == 'categories' ? '管理类别' : '分类别预算',
+                  style: TextStyle(
+                      color: ink900, fontSize: 18, fontWeight: FontWeight.w700)),
+              const Spacer(),
+              if (_mode == 'categories')
+                TextButton(
+                  onPressed: _restoreDefault,
+                  child: Text('还原默认', style: TextStyle(color: ink500, fontSize: 13)),
+                ),
             ],
           ),
+          const SizedBox(height: 12),
+          SegmentedButton<String>(
+            segments: const [
+              ButtonSegment(value: 'categories', label: Text('类别')),
+              ButtonSegment(value: 'budgets', label: Text('分类预算')),
+            ],
+            selected: {_mode},
+            onSelectionChanged: (s) => setState(() => _mode = s.first),
+          ),
+          const SizedBox(height: 12),
+          if (_mode == 'categories') ...<Widget>[
+            GridView.count(
+              crossAxisCount: 3,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              mainAxisSpacing: 8,
+              crossAxisSpacing: 8,
+              childAspectRatio: 1.15,
+              children: <Widget>[
+                for (final c in effective)
+                  _categoryTile(c, isDark, ink900, red, subtle, selBg, selBorder),
+                InkWell(
+                  borderRadius: BorderRadius.circular(16),
+                  onTap: _showAddDialog,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: subtle,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                          color: isDark
+                              ? AppColors.darkBorder
+                              : AppColors.lightBorderDashed,
+                          width: 2,
+                          style: BorderStyle.dashed),
+                    ),
+                    child: const Center(
+                      child: Icon(Icons.add, size: 24),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (_selected.isNotEmpty)
+              SizedBox(
+                height: 52,
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _batchDelete,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: red,
+                    foregroundColor:
+                        isDark ? AppColors.darkInk100 : AppColors.lightSurface,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16)),
+                  ),
+                  child: Text('删除选中 (${_selected.length})',
+                      style: const TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.w600)),
+                ),
+              ),
+          ] else ...<Widget>[
+            Text(
+              '月预算按自然月算，周预算按周一起算。同一类别可以同时设两种，账本页会分开展示进度。留空或填 0 表示不设。',
+              style: TextStyle(color: ink500, fontSize: 11),
+            ),
+            const SizedBox(height: 12),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Row(
+                children: [
+                  Expanded(
+                      child:
+                          Text('类别', style: TextStyle(color: ink400, fontSize: 11))),
+                  SizedBox(
+                    width: 64,
+                    child: Text('月预算',
+                        textAlign: TextAlign.right,
+                        style: TextStyle(color: ink400, fontSize: 11)),
+                  ),
+                  const SizedBox(width: 8),
+                  SizedBox(
+                    width: 64,
+                    child: Text('周预算',
+                        textAlign: TextAlign.right,
+                        style: TextStyle(color: ink400, fontSize: 11)),
+                  ),
+                  const SizedBox(width: 4),
+                  Text('元', style: TextStyle(color: ink400, fontSize: 11)),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            for (final c in effective)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Row(
+                        children: [
+                          Text(iconOf(c), style: const TextStyle(fontSize: 18)),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(c,
+                                style: TextStyle(color: ink900, fontSize: 14)),
+                          ),
+                        ],
+                      ),
+                    ),
+                    SizedBox(
+                      width: 64,
+                      child: _budgetInput(_monthCtlFor(c),
+                          (v) => _setBudget(c, v, 'month'), border, ink400),
+                    ),
+                    const SizedBox(width: 8),
+                    SizedBox(
+                      width: 64,
+                      child: _budgetInput(_weekCtlFor(c),
+                          (v) => _setBudget(c, v, 'week'), border, ink400),
+                    ),
+                    const SizedBox(width: 4),
+                    Text('元', style: TextStyle(color: ink400, fontSize: 11)),
+                  ],
+                ),
+              ),
+          ],
           const SizedBox(height: 16),
-          AppPrimaryButton(label: '完成', onPressed: _save),
+          AppPrimaryButton(label: '保存', onPressed: _save),
         ],
       ),
     );

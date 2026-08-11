@@ -5,6 +5,7 @@ import '../../core/money.dart' as money;
 import '../../data/models/ledger.dart';
 import '../../data/models/work_entry.dart';
 import '../../state/work_state.dart';
+import '../../core/refund_status.dart';
 import '../../theme/design_tokens.dart';
 import '../widgets/app_card.dart';
 import '../widgets/app_primary_button.dart';
@@ -183,6 +184,7 @@ class _Body extends StatelessWidget {
                       red: red,
                       ink900: ink900,
                       ink500: ink500,
+                      state: state,
                       onEdit: () => _openForm(context, state, month, e),
                       onDelete: () => _confirmDelete(context, state, e),
                     )),
@@ -195,10 +197,12 @@ class _Body extends StatelessWidget {
 
   void _openForm(
       BuildContext context, WorkState state, String ym, WorkEntry? e) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final surface = isDark ? AppColors.darkSurface : AppColors.lightSurface;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Colors.transparent,
+      backgroundColor: surface,
       builder: (_) => _EntryFormSheet(state: state, yearMonth: ym, editing: e),
     );
   }
@@ -269,6 +273,10 @@ class _Stat extends StatelessWidget {
 }
 
 /// 单条记录的卡片（对齐网页 EntryRow）。
+///
+/// 出项（expense）额外带一个回款按钮：未回款显示 ✓（打开回款时间弹层标记已回款），
+/// 已回款显示 ↺（撤销回款）；同步展示"回款于 X"与超期红标（未回款 N 天）。
+/// 进项无回款概念，不显示该按钮。
 class _EntryCard extends StatelessWidget {
   final WorkEntry entry;
   final bool income;
@@ -276,6 +284,7 @@ class _EntryCard extends StatelessWidget {
   final Color red;
   final Color ink900;
   final Color ink500;
+  final WorkState state;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
 
@@ -286,21 +295,78 @@ class _EntryCard extends StatelessWidget {
     required this.red,
     required this.ink900,
     required this.ink500,
+    required this.state,
     required this.onEdit,
     required this.onDelete,
   });
 
+  bool get _refunded => entry.refundedAt != null;
+
+  Future<void> _openRefundDialog(BuildContext context) async {
+    final when = await showModalBottomSheet<DateTime>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).brightness == Brightness.dark
+          ? AppColors.darkSurface
+          : AppColors.lightSurface,
+      builder: (_) => _RefundDialog(entry: entry),
+    );
+    if (when != null) await state.refundEntry(entry, when.millisecondsSinceEpoch);
+  }
+
+  Future<void> _unrefund(BuildContext context) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('撤销回款？'),
+        content: Text(
+            '"${entry.category}" ${money.Money.formatPlain(entry.amountCents)} 元将恢复为出项。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('撤销'),
+          ),
+        ],
+      ),
+    );
+    if (ok == true) await state.unrefundEntry(entry);
+  }
+
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final ink400 = isDark ? AppColors.darkInk400 : AppColors.lightInk400;
+    final chipBg = isDark ? AppColors.darkInk100 : AppColors.lightInk100;
+    final warnBg = isDark ? AppColors.darkSurface : AppColors.lightOverspendBg;
+    final warnBorder =
+        isDark ? AppColors.darkBorder : AppColors.lightOverspendBorder;
+    final warnFg =
+        isDark ? AppColors.darkSemanticRed : AppColors.lightOverspendTitle;
+
     final amountColor = income ? green : red;
     final dateStr = DateFormat('yyyy-MM-dd HH:mm')
         .format(DateTime.fromMillisecondsSinceEpoch(entry.occurredAt));
+
+    final refunded = _refunded;
+    final occurred = DateTime.fromMillisecondsSinceEpoch(entry.occurredAt);
+    final refundedAt = entry.refundedAt == null
+        ? null
+        : DateTime.fromMillisecondsSinceEpoch(entry.refundedAt!);
+    final overdue = !refunded &&
+        refundStatus(occurred, entry.yearMonth, refundedAt: refundedAt) ==
+            RefundState.overdue;
+    final overdueDays = overdue
+        ? daysSincePending(occurred, entry.yearMonth, refundedAt: refundedAt)
+        : 0;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: AppCard(
         radius: 16,
-        onTap: onEdit,
         child: Padding(
           padding: const EdgeInsets.all(14),
           child: Row(
@@ -309,18 +375,49 @@ class _EntryCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(entry.category,
-                        style: TextStyle(
-                            color: ink900,
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600)),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(entry.category,
+                              style: TextStyle(
+                                  color: ink900,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                  decoration: refunded
+                                      ? TextDecoration.lineThrough
+                                      : null)),
+                        ),
+                        if (overdue)
+                          Container(
+                            margin: const EdgeInsets.only(left: 8),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: warnBg,
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(color: warnBorder, width: 1),
+                            ),
+                            child: Text('未回款 $overdueDays 天',
+                                style: TextStyle(color: warnFg, fontSize: 10)),
+                          ),
+                      ],
+                    ),
                     const SizedBox(height: 2),
                     Text(dateStr, style: TextStyle(color: ink500, fontSize: 11)),
+                    if (refunded && refundedAt != null)
+                      Text(
+                          '回款于 ${DateFormat('yyyy-MM-dd HH:mm').format(refundedAt)}',
+                          style: TextStyle(color: green, fontSize: 11)),
                     if (entry.note != null && entry.note!.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.only(top: 2),
                         child: Text(entry.note!,
-                            style: TextStyle(color: ink500, fontSize: 12)),
+                            style: TextStyle(
+                                color: refunded ? ink400 : ink500,
+                                fontSize: 12,
+                                decoration: refunded
+                                    ? TextDecoration.lineThrough
+                                    : null)),
                       ),
                   ],
                 ),
@@ -330,11 +427,35 @@ class _EntryCard extends StatelessWidget {
                 cents: income ? entry.amountCents : -entry.amountCents,
                 sign: true,
                 style: TextStyle(
-                    color: amountColor,
+                    color: refunded ? ink400 : amountColor,
                     fontSize: 16,
-                    fontWeight: FontWeight.w700),
+                    fontWeight: FontWeight.w700,
+                    decoration: refunded ? TextDecoration.lineThrough : null),
               ),
-              const SizedBox(width: 4),
+              // 回款按钮（仅出项）
+              if (!income)
+                Padding(
+                  padding: const EdgeInsets.only(left: 6),
+                  child: InkWell(
+                    onTap: refunded
+                        ? () => _unrefund(context)
+                        : () => _openRefundDialog(context),
+                    borderRadius: BorderRadius.circular(999),
+                    child: Container(
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        color: chipBg,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        refunded ? Icons.replay : Icons.check,
+                        size: 18,
+                        color: refunded ? ink500 : green,
+                      ),
+                    ),
+                  ),
+                ),
               IconButton(
                 onPressed: onEdit,
                 icon: Icon(Icons.edit_outlined, size: 18, color: ink500),
@@ -352,6 +473,121 @@ class _EntryCard extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// 回款时间选择弹层（对齐网页 EntryRow 的确认回款 dialog：datetime-local + 确认）。
+class _RefundDialog extends StatefulWidget {
+  final WorkEntry entry;
+  const _RefundDialog({required this.entry});
+
+  @override
+  State<_RefundDialog> createState() => _RefundDialogState();
+}
+
+class _RefundDialogState extends State<_RefundDialog> {
+  late DateTime _when;
+  String _error = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _when = DateTime.now();
+  }
+
+  Future<void> _pick() async {
+    final d = await showDatePicker(
+      context: context,
+      initialDate: _when,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+    );
+    if (d == null) return;
+    final t = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(_when),
+    );
+    if (t == null) return;
+    setState(() =>
+        _when = DateTime(d.year, d.month, d.day, t.hour, t.minute));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
+    final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
+    final red = isDark ? AppColors.darkSemanticRed : AppColors.lightSemanticRed;
+    final surface = isDark ? AppColors.darkSurface : AppColors.lightSurface;
+    final border = isDark ? AppColors.darkBorder : AppColors.lightBorder;
+
+    final whenStr = DateFormat('yyyy-MM-dd HH:mm').format(_when);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+        left: 20,
+        right: 20,
+        top: 20,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('确认回款',
+              style: TextStyle(
+                  color: ink900, fontSize: 18, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 4),
+          Text(
+              '${widget.entry.category} · ${money.Money.formatPlain(widget.entry.amountCents)} 元',
+              style: TextStyle(color: ink500, fontSize: 12)),
+          const SizedBox(height: 16),
+          Text('回款时间', style: TextStyle(color: ink500, fontSize: 12)),
+          const SizedBox(height: 6),
+          InkWell(
+            onTap: _pick,
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: surface,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: border),
+              ),
+              child: Text(whenStr, style: TextStyle(color: ink900)),
+            ),
+          ),
+          if (_error.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: Text(_error, style: TextStyle(color: red, fontSize: 13)),
+            ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: Text('取消', style: TextStyle(color: ink500)),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: AppPrimaryButton(
+                  label: '确认',
+                  onPressed: () => Navigator.of(context).pop(_when),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+        ],
       ),
     );
   }
@@ -518,7 +754,7 @@ class _EntryFormSheetState extends State<_EntryFormSheet> {
     final red = isDark ? AppColors.darkSemanticRed : AppColors.lightSemanticRed;
 
     final dateStr = DateFormat('yyyy-MM-dd HH:mm').format(_occurredAt);
-    final selectedFg = isDark ? AppColors.darkPageBg : Colors.white;
+    final selectedFg = isDark ? AppColors.darkPageBg : AppColors.lightSurface;
 
     return Container(
       decoration: BoxDecoration(

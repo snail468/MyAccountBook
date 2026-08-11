@@ -22,6 +22,7 @@ import 'widgets/money.dart';
 import 'home/income_components_card.dart';
 import 'home/overspend_card.dart';
 import 'home/backup_sheets.dart';
+import 'home/onboarding_guide.dart';
 import '../data/local/work_entry_dao.dart';
 import '../data/local/general_entry_dao.dart';
 import '../data/local/event_dao.dart';
@@ -65,6 +66,12 @@ class _HomePageState extends State<HomePage> {
   int _pendingCount = 0;
   Ledger? _ownWork;
   Ledger? _ownTaoyuan;
+  // 共享账本（本地无 userId 概念，沿用 own=同类型首本的口径：
+  // 同类型里除首本外的账本视为"被共享给我的"，对齐网页端 sharedWork/taoyuanLedgers）。
+  List<Ledger> _sharedWorkLedgers = const [];
+  List<Ledger> _sharedTaoyuanLedgers = const [];
+  Map<String, int> _sharedWorkCount = const {};
+  Map<String, int> _sharedTaoyuanCount = const {};
 
   @override
   void initState() {
@@ -82,6 +89,8 @@ class _HomePageState extends State<HomePage> {
         }
       }
       await _loadSummary();
+      // 首次启动自动弹出「使用引导」（对齐网页端 ?welcome=1 的落地页引导）。
+      await OnboardingGuide.maybeShowOnFirstLaunch(context);
     });
   }
 
@@ -107,6 +116,24 @@ class _HomePageState extends State<HomePage> {
       // 网页端只把"自己创建的第一本"工作/桃源计入首页综合视图。
       _ownWork = workLedgers.isNotEmpty ? workLedgers.first : null;
       _ownTaoyuan = taoyuanLedgers.isNotEmpty ? taoyuanLedgers.first : null;
+
+      // ---- 共享 work/taoyuan 卡片（对齐网页端 sharedWork/taoyuanLedgers） ----
+      // 本地无 userId，沿用 own=同类型首本口径：首本之外视为被共享给我的账本。
+      final sharedWorkLedgers = workLedgers.length > 1
+          ? workLedgers.sublist(1)
+          : const <Ledger>[];
+      final sharedTaoyuanLedgers = taoyuanLedgers.length > 1
+          ? taoyuanLedgers.sublist(1)
+          : const <Ledger>[];
+      final sharedWorkCount = <String, int>{};
+      for (final l in sharedWorkLedgers) {
+        sharedWorkCount[l.id] =
+            (await WorkEntryDao().listByLedger(l.id)).length;
+      }
+      final sharedTaoyuanCount = <String, int>{};
+      for (final l in sharedTaoyuanLedgers) {
+        sharedTaoyuanCount[l.id] = await EventDao().pendingCount(l.id);
+      }
 
       // ---- 总收入 A 的分量 ----
       final components = <IncomeComponent>[];
@@ -261,6 +288,10 @@ class _HomePageState extends State<HomePage> {
         _components = components;
         _overLedgers = overByLedger.values.toList();
         _ledgerCards = cards;
+        _sharedWorkLedgers = sharedWorkLedgers;
+        _sharedTaoyuanLedgers = sharedTaoyuanLedgers;
+        _sharedWorkCount = sharedWorkCount;
+        _sharedTaoyuanCount = sharedTaoyuanCount;
       });
     } catch (_) {
       // 汇总失败仅静默，保留已有 UI。
@@ -401,6 +432,26 @@ class _HomePageState extends State<HomePage> {
                   onTap: () => _openLedger(c.ledger),
                 ));
               }
+              // 共享 work/taoyuan 卡片（对齐网页端 ledgerCards 中 shared* 段，
+              // 排在 general/travel 之后、周期记账之前）。
+              for (final l in _sharedWorkLedgers) {
+                final n = _sharedWorkCount[l.id] ?? 0;
+                add(LedgerFeatureCard(
+                  icon: l.icon ?? '💼',
+                  title: l.name,
+                  subtitle: '共享账本 · $n 条记录',
+                  onTap: () => _openLedger(l),
+                ));
+              }
+              for (final l in _sharedTaoyuanLedgers) {
+                final n = _sharedTaoyuanCount[l.id] ?? 0;
+                add(LedgerFeatureCard(
+                  icon: l.icon ?? '🌸',
+                  title: l.name,
+                  subtitle: n > 0 ? '共享账本 · $n 个待处理活动' : '共享账本',
+                  onTap: () => _openLedger(l),
+                ));
+              }
               add(LedgerFeatureCard(
                 icon: '🔁',
                 title: '周期记账',
@@ -428,7 +479,7 @@ class _HomePageState extends State<HomePage> {
               add(LedgerFeatureCard(
                 icon: '🔍',
                 title: '搜索',
-                subtitle: '跨账本按关键字 · 金额 · 时间 · 类别',
+                subtitle: '跨账本按关键字 · 金额 · 时间 · 类别查找',
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const SearchPage()),
                 ),
@@ -468,11 +519,17 @@ class _HomePageState extends State<HomePage> {
                 subtitle: '改完会让其它设备重新登录',
                 onTap: () => showChangePasswordSheet(context),
               ));
+              add(LedgerFeatureCard(
+                icon: '🎉',
+                title: '使用引导',
+                subtitle: '功能速览 · 新手第一步',
+                onTap: () => OnboardingGuide.show(context),
+              ));
               if (auth.role == 'admin') {
                 add(LedgerFeatureCard(
                   icon: '👥',
                   title: '用户管理',
-                  subtitle: '家庭成员 · 角色与权限',
+                  subtitle: '管理员专属：新增/删除/重置用户',
                   onTap: () => Navigator.of(context).push(
                     MaterialPageRoute(builder: (_) => const UsersPage()),
                   ),

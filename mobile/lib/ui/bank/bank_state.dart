@@ -31,6 +31,7 @@ class BankState extends ChangeNotifier {
       bank: bank,
       type: type,
       last4: last4,
+      number: number,
       alias: alias,
       holder: holder,
       serverId: null,

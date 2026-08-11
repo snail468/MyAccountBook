@@ -100,7 +100,7 @@ class _TrashPageState extends State<TrashPage> {
                 if (_loading)
                   _hint('加载中…', ink400)
                 else if (_items.isEmpty)
-                  _hint('回收站是空的', ink500)
+                  _emptyState(ink400)
                 else
                   ..._items.map(
                     (e) => _TrashTile(
@@ -151,6 +151,7 @@ class _TrashTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final days = _daysLeft(entry.deletedAt);
     final title = (entry.note != null && entry.note!.isNotEmpty)
         ? entry.note!
@@ -159,7 +160,7 @@ class _TrashTile extends StatelessWidget {
     final contextLabel = ledgerName != null ? ' · $ledgerName' : '';
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.only(bottom: 8),
       child: AppCard(
         frosted: false,
         child: Padding(
@@ -186,18 +187,22 @@ class _TrashTile extends StatelessWidget {
                 style: TextStyle(color: ink400, fontSize: 13),
               ),
               const SizedBox(height: 8),
+              // 对齐网页端 TrashList：恢复/彻底删除为带描边的按钮（rounded-lg = 8px）
               Row(
                 children: [
-                  GestureDetector(
+                  _actionButton(
+                    label: '恢复',
+                    fg: isDark ? AppColors.darkInk100 : AppColors.lightInk900,
+                    border:
+                        isDark ? AppColors.darkBorder : AppColors.lightBorderDashed,
                     onTap: () => onRestore(entry),
-                    child:
-                        Text('恢复', style: TextStyle(color: ink500, fontSize: 13)),
                   ),
-                  const SizedBox(width: 16),
-                  GestureDetector(
+                  const SizedBox(width: 8),
+                  _actionButton(
+                    label: '彻底删除',
+                    fg: red,
+                    border: red,
                     onTap: () => onPurge(entry),
-                    child: Text('彻底删除',
-                        style: TextStyle(color: red, fontSize: 13)),
                   ),
                 ],
               ),
@@ -221,6 +226,35 @@ int _daysLeft(int? deletedAt) {
 Widget _hint(String text, Color color) => Padding(
       padding: const EdgeInsets.only(top: 8),
       child: Text(text, style: TextStyle(color: color, fontSize: 13)),
+    );
+
+/// 空状态（对齐网页端 `text-sm text-ink-400 py-12 text-center`）。
+Widget _emptyState(Color color) => Padding(
+      padding: const EdgeInsets.symmetric(vertical: 48),
+      child: Center(
+        child: Text('回收站是空的',
+            style: TextStyle(color: color, fontSize: 14)),
+      ),
+    );
+
+/// 带描边的小操作按钮（对齐网页端 TrashList 的 恢复 / 彻底删除 按钮）。
+Widget _actionButton({
+  required String label,
+  required Color fg,
+  required Color border,
+  required VoidCallback onTap,
+}) =>
+    OutlinedButton(
+      onPressed: onTap,
+      style: OutlinedButton.styleFrom(
+        foregroundColor: fg,
+        side: BorderSide(color: border, width: 1),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        minimumSize: Size.zero,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
+      child: Text(label, style: const TextStyle(fontSize: 13)),
     );
 
 /// 危险操作二次确认对话框（danger 文字用语义红）。

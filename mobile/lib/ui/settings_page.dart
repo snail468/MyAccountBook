@@ -41,7 +41,7 @@ class SettingsPage extends StatelessWidget {
                     _SettingRow(
                       icon: '🎨',
                       label: '外观',
-                      subtitle: '主题 · 字号 · 光效 · 音效',
+                      subtitle: '主题 · 字号 · 点击光效 · 音效',
                       onTap: () async {
                         await showModalBottomSheet(
                           context: context,

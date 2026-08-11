@@ -73,7 +73,7 @@ String? _nextStatus(String status) {
     case 'published':
       return (
         bg: isDark ? AppColors.darkInk100 : AppColors.lightInk900,
-        fg: isDark ? AppColors.darkPageBg : Colors.white,
+        fg: isDark ? AppColors.darkPageBg : AppColors.lightSurface,
         label: label,
       );
     case 'predicted':
@@ -134,6 +134,54 @@ String? _fmt(int? millis) {
   return DateFormat('M/d HH:mm')
       .format(DateTime.fromMillisecondsSinceEpoch(millis));
 }
+
+// ───────────────────────── 金额聚合 / 劳务报酬个税（对齐网页端 amounts.ts / tax.ts） ─────────────────────────
+
+/// 某阶段金额类合计（仅 money 种；Q币/周边不是钱，不计入）。
+int _moneySum(List<EventAmount> amounts, String stage) => amounts
+    .where((a) => a.stage == stage && rewardValueKind(a.rewardMethod) == 'money')
+    .fold(0, (int s, EventAmount a) => s + a.cents);
+
+/// 某阶段应税（现金等）与免税（京东卡）拆分；京东卡不并入税基。
+({int taxable, int nonTaxable}) _taxSplit(
+  List<EventAmount> amounts,
+  String stage,
+) {
+  int taxable = 0;
+  int nonTaxable = 0;
+  for (final a in amounts) {
+    if (a.stage != stage) continue;
+    if (rewardValueKind(a.rewardMethod) != 'money') continue;
+    if (a.rewardMethod == 'jdcard') {
+      nonTaxable += a.cents;
+    } else {
+      taxable += a.cents;
+    }
+  }
+  return (taxable: taxable, nonTaxable: nonTaxable);
+}
+
+/// 劳务报酬个税预扣（默认档位，单位：分），对齐 src/lib/tax.ts DEFAULT_TAX_BRACKETS。
+int _calcTaxCents(int income) {
+  if (income <= 0) return 0;
+  const brackets = <({int upTo, double rate, int deduct, int quick})>[
+    (upTo: 80000, rate: 0.0, deduct: 0, quick: 0),
+    (upTo: 400000, rate: 0.2, deduct: 80000, quick: 0),
+    (upTo: 2500000, rate: 0.16, deduct: 0, quick: 0),
+    (upTo: 6250000, rate: 0.24, deduct: 0, quick: 200000),
+    (upTo: null, rate: 0.32, deduct: 0, quick: 700000),
+  ];
+  final b = brackets.firstWhere(
+    (x) => x.upTo == null || income <= x.upTo,
+    orElse: () => brackets.last,
+  );
+  final taxable = (income - b.deduct).clamp(0, income);
+  final tax = (taxable * b.rate - b.quick).round();
+  return tax.clamp(0, income);
+}
+
+/// 税后收入 = 收入 - 税额。
+int _afterTaxCents(int income) => income - _calcTaxCents(income);
 
 // ───────────────────────── 数据层（Provider / ChangeNotifier） ─────────────────────────
 
@@ -225,6 +273,43 @@ class _TaoyuanStore extends ChangeNotifier {
       if (next == null) continue;
       await _dao.update(e.copyWith(status: next, synced: 0));
     }
+    await load();
+  }
+
+  /// 顶层活动（parentId 为空）；合并后的子活动不单独出现在分区里。
+  List<TaoyuanEvent> get topLevelEvents =>
+      events.where((e) => e.parentId == null).toList();
+
+  /// 某父活动下的子活动列表（合并后挂在下面）。
+  List<TaoyuanEvent> childrenOf(String parentId) =>
+      events.where((e) => e.parentId == parentId).toList();
+
+  /// 合并：把若干活动挂到 [parentId] 下，可选更新父活动名。
+  /// 金额不物理搬运，展示时按父+子聚合（对齐网页端 /api/events/merge）。
+  Future<void> mergeEvents({
+    required String parentId,
+    required List<String> childIds,
+    String? title,
+  }) async {
+    for (final cid in childIds) {
+      final c = _find(cid);
+      if (c == null) continue;
+      await _dao.update(c.copyWith(parentId: parentId, synced: 0));
+    }
+    if (title != null && title.trim().isNotEmpty) {
+      final p = _find(parentId);
+      if (p != null) {
+        await _dao.update(p.copyWith(title: title.trim(), synced: 0));
+      }
+    }
+    await load();
+  }
+
+  /// 摘出：把子活动恢复为独立顶层活动（对齐网页端 /api/events/{id}/unmerge）。
+  Future<void> extractEvent(String childId) async {
+    final c = _find(childId);
+    if (c == null) return;
+    await _dao.update(c.copyWith(parentId: null, synced: 0));
     await load();
   }
 
@@ -356,6 +441,35 @@ class _BodyState extends State<_Body> {
     if (ok == true && mounted) await store.deleteEvent(e.id);
   }
 
+  /// 打开合并确认弹层（对齐网页端 MergeBar 的 confirm 弹窗）。
+  void _openMergeConfirm(BuildContext context, _TaoyuanStore store) {
+    final selectedEvents = _selected
+        .map((id) => store._find(id))
+        .whereType<TaoyuanEvent>()
+        .toList();
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => ChangeNotifierProvider.value(
+        value: store,
+        child: _MergeConfirmSheet(
+          events: selectedEvents,
+          onCancel: () => Navigator.pop(context),
+          onConfirm: (parentId, title) async {
+            Navigator.pop(context);
+            await store.mergeEvents(
+              parentId: parentId,
+              childIds: _selected.where((id) => id != parentId).toList(),
+              title: title,
+            );
+            _exitSelecting();
+          },
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final store = context.watch<_TaoyuanStore>();
@@ -366,7 +480,7 @@ class _BodyState extends State<_Body> {
 
     final groups = <String, List<TaoyuanEvent>>{};
     for (final s in _kStatusOrder) groups[s] = [];
-    for (final e in store.events) {
+    for (final e in store.topLevelEvents) {
       (groups[e.status] ??= []).add(e);
     }
 
@@ -392,9 +506,9 @@ class _BodyState extends State<_Body> {
               Row(
                 children: [
                   Text(
-                    store.events.isEmpty
+                    store.topLevelEvents.isEmpty
                         ? ''
-                        : '共 ${store.events.length} 个活动',
+                        : '共 ${store.topLevelEvents.length} 个活动',
                     style: TextStyle(color: ink500, fontSize: 12),
                   ),
                   const Spacer(),
@@ -425,11 +539,13 @@ class _BodyState extends State<_Body> {
                           (e) => _EventCard(
                             store: store,
                             event: e,
+                            children: store.childrenOf(e.id),
                             selecting: _selecting,
                             selected: _selected.contains(e.id),
                             onToggle: () => _toggle(e.id),
                             onEdit: () => _openEdit(context, store, e),
                             onDelete: () => _confirmDelete(context, store, e),
+                            onExtract: (c) => store.extractEvent(c.id),
                           ),
                         )
                         .toList(),
@@ -449,14 +565,8 @@ class _BodyState extends State<_Body> {
             bottom: 0,
             child: _MergeBar(
               count: _selected.length,
-              canAdvance: _selected.any((id) {
-                final e = store._find(id);
-                return e != null && _nextStatus(e.status) != null;
-              }),
-              onAdvance: () async {
-                await store.advanceMany(_selected.toList());
-                _exitSelecting();
-              },
+              canMerge: _selected.length >= 2,
+              onMerge: () => _openMergeConfirm(context, store),
               onDone: _exitSelecting,
             ),
           ),
@@ -621,24 +731,45 @@ class _StageSection extends StatelessWidget {
 
 // ───────────────────────── 活动卡 ─────────────────────────
 
-class _EventCard extends StatelessWidget {
+class _EventCard extends StatefulWidget {
   final _TaoyuanStore store;
   final TaoyuanEvent event;
+  final List<TaoyuanEvent> children;
   final bool selecting;
   final bool selected;
   final VoidCallback onToggle;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
+  final void Function(TaoyuanEvent) onExtract;
 
   const _EventCard({
     required this.store,
     required this.event,
+    this.children = const [],
     this.selecting = false,
     this.selected = false,
     required this.onToggle,
     required this.onEdit,
     required this.onDelete,
+    required this.onExtract,
   });
+
+  @override
+  State<_EventCard> createState() => _EventCardState();
+}
+
+class _EventCardState extends State<_EventCard> {
+  bool _expanded = false;
+
+  /// 父 + 所有子在该阶段的金额条目（合并后金额聚合，对齐网页端 allEntries）。
+  List<EventAmount> _stageAmounts(String stage) {
+    final own = widget.store.amountsByEvent[widget.event.id] ??
+        const <EventAmount>[];
+    final childAmts = widget.children.expand(
+      (c) => widget.store.amountsByEvent[c.id] ?? const <EventAmount>[],
+    );
+    return [...own, ...childAmts].where((a) => a.stage == stage).toList();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -648,23 +779,41 @@ class _EventCard extends StatelessWidget {
     final ink400 = isDark ? AppColors.darkInk400 : AppColors.lightInk400;
     final surface = isDark ? AppColors.darkSurface : AppColors.lightSurface;
     final red = isDark ? AppColors.darkSemanticRed : AppColors.lightSemanticRed;
+    final blue = isDark ? AppColors.darkSemanticBlue : AppColors.lightSemanticBlue;
 
-    final amounts = store.amountsByEvent[event.id] ?? const <EventAmount>[];
+    final event = widget.event;
     final methods = parseRewardMethods(event.rewardMethods, event.rewardMethod);
     final images = _parseImages(event.contentImages);
     final pill = _statusPill(event.status, isDark);
     final next = _nextStatus(event.status);
+    final merged = widget.children.isNotEmpty;
 
     final stages = ['predicted', 'announced', 'paid'];
-    final paidSum = amounts
-        .where((a) => a.stage == 'paid' && rewardValueKind(a.rewardMethod) == 'money')
-        .fold(0, (int s, EventAmount a) => s + a.cents);
+    final sums = <String, int>{
+      for (final s in stages) s: _moneySum(_stageAmounts(s), s),
+    };
+
+    // 税后金额卡（劳务报酬）：公示金额 > 0 时展示，对齐网页端 EventCard.tsx。
+    Widget? afterTaxCard;
+    final announced = sums['announced']!;
+    if (announced > 0) {
+      final split = _taxSplit(_stageAmounts('announced'), 'announced');
+      final tax = _calcTaxCents(split.taxable);
+      final afterTax = _afterTaxCents(split.taxable) + split.nonTaxable;
+      afterTaxCard = _AfterTaxCard(
+        announced: announced,
+        tax: tax,
+        nonTaxable: split.nonTaxable,
+        afterTax: afterTax,
+        isDark: isDark,
+      );
+    }
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: AppCard(
         radius: 24,
-        onTap: selecting ? onToggle : null,
+        onTap: widget.selecting ? widget.onToggle : null,
         child: Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
@@ -677,16 +826,21 @@ class _EventCard extends StatelessWidget {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  if (selecting)
+                  if (widget.selecting)
                     Padding(
                       padding: const EdgeInsets.only(top: 2, right: 8),
-                      child: _Checkbox(selected: selected, onTap: onToggle, isDark: isDark),
+                      child: _Checkbox(
+                        selected: widget.selected,
+                        onTap: widget.onToggle,
+                        isDark: isDark,
+                      ),
                     ),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Expanded(
                               child: Text(
@@ -698,6 +852,24 @@ class _EventCard extends StatelessWidget {
                                 ),
                               ),
                             ),
+                            if (merged)
+                              Padding(
+                                padding: const EdgeInsets.only(left: 8),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: blue.withOpacity(0.12),
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                  child: Text(
+                                    '已合并 ${widget.children.length}',
+                                    style: TextStyle(color: blue, fontSize: 10),
+                                  ),
+                                ),
+                              ),
                             Container(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 10,
@@ -728,11 +900,11 @@ class _EventCard extends StatelessWidget {
                       ],
                     ),
                   ),
-                  if (!selecting)
+                  if (!widget.selecting)
                     Row(
                       children: [
-                        _IconBtn(icon: Icons.edit, color: ink400, onTap: onEdit),
-                        _IconBtn(icon: Icons.close, color: red, onTap: onDelete),
+                        _IconBtn(icon: Icons.edit, color: ink400, onTap: widget.onEdit),
+                        _IconBtn(icon: Icons.close, color: red, onTap: widget.onDelete),
                       ],
                     ),
                 ],
@@ -751,7 +923,7 @@ class _EventCard extends StatelessWidget {
                         .toList(),
                   ),
                 ),
-              // 三阶段金额卡
+              // 三阶段金额卡（含子活动金额）
               Padding(
                 padding: const EdgeInsets.only(top: 12),
                 child: Row(
@@ -760,29 +932,42 @@ class _EventCard extends StatelessWidget {
                         (s) => Expanded(
                           child: _StageMiniCard(
                             stage: s,
-                            amounts: amounts
-                                .where((a) => a.stage == s)
-                                .toList(),
-                            highlight: s == 'paid' && paidSum > 0,
+                            amounts: _stageAmounts(s),
+                            highlight: s == 'paid' && sums['paid']! > 0,
+                            count: _stageAmounts(s).length,
                             isDark: isDark,
-                            onTap: selecting
+                            onTap: widget.selecting
                                 ? null
-                                : () => _openStage(context, store, event, s),
+                                : () => _openStage(context, widget.store, event, s),
                           ),
                         ),
                       )
                       .toList(),
                 ),
               ),
+              if (afterTaxCard != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: afterTaxCard,
+                ),
               // 推进下一阶段
-              if (!selecting && next != null)
+              if (!widget.selecting && next != null)
                 Padding(
                   padding: const EdgeInsets.only(top: 10),
                   child: _AdvanceButton(
                     label: '推进到${_kStatusPill[next]}',
                     isDark: isDark,
-                    onTap: () => store.advanceStage(event),
+                    onTap: () => widget.store.advanceStage(event),
                   ),
+                ),
+              // 合并后的子活动（可展开 / 摘出）
+              if (merged)
+                _MergeChildren(
+                  children: widget.children,
+                  expanded: _expanded,
+                  onToggle: () => setState(() => _expanded = !_expanded),
+                  onExtract: widget.onExtract,
+                  store: widget.store,
                 ),
             ],
           ),
@@ -892,7 +1077,7 @@ class _Checkbox extends StatelessWidget {
     final fill = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
     final pageBg = isDark ? AppColors.darkPageBg : AppColors.lightPageBg;
     final border = isDark ? AppColors.darkBorder : AppColors.lightBorder;
-    final fg = isDark ? AppColors.darkPageBg : Colors.white;
+    final fg = isDark ? AppColors.darkPageBg : AppColors.lightSurface;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(999),
@@ -960,12 +1145,14 @@ class _StageMiniCard extends StatelessWidget {
   final String stage;
   final List<EventAmount> amounts;
   final bool highlight;
+  final int count;
   final bool isDark;
   final VoidCallback? onTap;
   const _StageMiniCard({
     required this.stage,
     required this.amounts,
     this.highlight = false,
+    this.count = 0,
     required this.isDark,
     this.onTap,
   });
@@ -998,7 +1185,7 @@ class _StageMiniCard extends StatelessWidget {
         child: Column(
           children: [
             Text(
-              _kStageLabel[stage]!,
+              count > 1 ? '${_kStageLabel[stage]} · $count' : _kStageLabel[stage]!,
               style: TextStyle(color: ink500, fontSize: 10),
             ),
             const SizedBox(height: 4),
@@ -1072,17 +1259,17 @@ class _AdvanceButton extends StatelessWidget {
   }
 }
 
-// ───────────────────────── MergeBar（批量推进） ─────────────────────────
+// ───────────────────────── MergeBar（合并子活动） ─────────────────────────
 
 class _MergeBar extends StatelessWidget {
   final int count;
-  final bool canAdvance;
-  final VoidCallback onAdvance;
+  final bool canMerge;
+  final VoidCallback onMerge;
   final VoidCallback onDone;
   const _MergeBar({
     required this.count,
-    required this.canAdvance,
-    required this.onAdvance,
+    required this.canMerge,
+    required this.onMerge,
     required this.onDone,
   });
 
@@ -1090,7 +1277,7 @@ class _MergeBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final fill = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
-    final text = isDark ? AppColors.darkPageBg : Colors.white;
+    final text = isDark ? AppColors.darkPageBg : AppColors.lightSurface;
     final surface = isDark ? AppColors.darkSurface : AppColors.lightSurface;
     final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
 
@@ -1101,7 +1288,7 @@ class _MergeBar extends StatelessWidget {
         children: [
           Expanded(
             child: Text(
-              '已选 $count 项${canAdvance ? '' : ' · 均已到账'}',
+              '已选 $count 项${canMerge ? '' : ' · 至少 2 项'}',
               style: TextStyle(color: ink500, fontSize: 13),
             ),
           ),
@@ -1111,7 +1298,7 @@ class _MergeBar extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           ElevatedButton(
-            onPressed: canAdvance ? onAdvance : null,
+            onPressed: canMerge ? onMerge : null,
             style: ElevatedButton.styleFrom(
               backgroundColor: fill,
               foregroundColor: text,
@@ -1119,9 +1306,381 @@ class _MergeBar extends StatelessWidget {
                 borderRadius: BorderRadius.circular(12),
               ),
             ),
-            child: const Text('推进下一阶段'),
+            child: const Text('合并'),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ───────────────────────── 税后金额卡（劳务报酬） ─────────────────────────
+
+class _AfterTaxCard extends StatelessWidget {
+  final int announced;
+  final int tax;
+  final int nonTaxable;
+  final int afterTax;
+  final bool isDark;
+  const _AfterTaxCard({
+    required this.announced,
+    required this.tax,
+    required this.nonTaxable,
+    required this.afterTax,
+    required this.isDark,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final bg = isDark ? AppColors.darkAfterTaxBg : AppColors.lightAfterTaxBg;
+    final border =
+        isDark ? AppColors.darkAfterTaxBorder : AppColors.lightAfterTaxBorder;
+    final fg = isDark ? AppColors.darkAfterTaxFg : AppColors.lightAfterTaxFg;
+    final sub = isDark ? AppColors.darkAfterTaxSub : AppColors.lightAfterTaxSub;
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: bg,
+        border: Border.all(color: border),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('税后金额（劳务报酬）',
+                  style: TextStyle(color: fg, fontSize: 12)),
+              Money(
+                cents: afterTax,
+                style: TextStyle(
+                  color: fg,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 4,
+              children: [
+                Text('公示 ', style: TextStyle(color: sub, fontSize: 10)),
+                Money(cents: announced, style: TextStyle(color: sub, fontSize: 10)),
+                Text(' · 应纳税 ', style: TextStyle(color: sub, fontSize: 10)),
+                Money(cents: tax, style: TextStyle(color: sub, fontSize: 10)),
+                if (nonTaxable > 0) ...[
+                  Text(' · 京东卡 ',
+                      style: TextStyle(color: sub, fontSize: 10)),
+                  Money(cents: nonTaxable, style: TextStyle(color: sub, fontSize: 10)),
+                  Text(' 不计税', style: TextStyle(color: sub, fontSize: 10)),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ───────────────────────── 合并后的子活动列表（展开 / 摘出） ─────────────────────────
+
+class _MergeChildren extends StatelessWidget {
+  final List<TaoyuanEvent> children;
+  final bool expanded;
+  final VoidCallback onToggle;
+  final void Function(TaoyuanEvent) onExtract;
+  final _TaoyuanStore store;
+  const _MergeChildren({
+    required this.children,
+    required this.expanded,
+    required this.onToggle,
+    required this.onExtract,
+    required this.store,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
+    final ink400 = isDark ? AppColors.darkInk400 : AppColors.lightInk400;
+    final border = isDark ? AppColors.darkBorder : AppColors.lightBorder;
+    final childBg = isDark ? AppColors.darkSurface : AppColors.lightInk100;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 8),
+        InkWell(
+          onTap: onToggle,
+          child: Text(
+            expanded ? '收起子活动' : '展开 ${children.length} 个子活动',
+            style: TextStyle(
+              color: ink500,
+              fontSize: 12,
+              decoration: TextDecoration.underline,
+            ),
+          ),
+        ),
+        if (expanded)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: children
+                  .map(
+                    (c) => _ChildRow(
+                      child: c,
+                      store: store,
+                      ink400: ink400,
+                      ink500: ink500,
+                      childBg: childBg,
+                      border: border,
+                      onExtract: () => onExtract(c),
+                    ),
+                  )
+                  .toList(),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _ChildRow extends StatelessWidget {
+  final TaoyuanEvent child;
+  final _TaoyuanStore store;
+  final Color ink400;
+  final Color ink500;
+  final Color childBg;
+  final Color border;
+  final VoidCallback onExtract;
+  const _ChildRow({
+    required this.child,
+    required this.store,
+    required this.ink400,
+    required this.ink500,
+    required this.childBg,
+    required this.border,
+    required this.onExtract,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final amounts = store.amountsByEvent[child.id] ?? const <EventAmount>[];
+    final pSum = _moneySum(amounts, 'predicted');
+    final aSum = _moneySum(amounts, 'announced');
+    final paidSum = _moneySum(amounts, 'paid');
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: childBg,
+        border: Border.all(color: border),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  child.title,
+                  style: TextStyle(
+                    color: ink500,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Row(
+                  children: [
+                    if (pSum > 0) ...[
+                      Text('预 ', style: TextStyle(color: ink400, fontSize: 10)),
+                      Money(
+                        cents: pSum,
+                        style: TextStyle(color: ink400, fontSize: 10),
+                      ),
+                      const SizedBox(width: 6),
+                    ],
+                    if (aSum > 0) ...[
+                      Text('公 ', style: TextStyle(color: ink400, fontSize: 10)),
+                      Money(
+                        cents: aSum,
+                        style: TextStyle(color: ink400, fontSize: 10),
+                      ),
+                      const SizedBox(width: 6),
+                    ],
+                    if (paidSum > 0) ...[
+                      Text('到 ', style: TextStyle(color: ink400, fontSize: 10)),
+                      Money(
+                        cents: paidSum,
+                        style: TextStyle(color: ink400, fontSize: 10),
+                      ),
+                    ],
+                  ],
+                ),
+              ],
+            ),
+          ),
+          GestureDetector(
+            onTap: onExtract,
+            child: Text('摘出',
+                style: TextStyle(
+                  color: ink500,
+                  fontSize: 10,
+                  decoration: TextDecoration.underline,
+                )),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ───────────────────────── 合并确认弹层 ─────────────────────────
+
+class _MergeConfirmSheet extends StatefulWidget {
+  final List<TaoyuanEvent> events;
+  final VoidCallback onCancel;
+  final void Function(String parentId, String title) onConfirm;
+  const _MergeConfirmSheet({
+    super.key,
+    required this.events,
+    required this.onCancel,
+    required this.onConfirm,
+  });
+
+  @override
+  State<_MergeConfirmSheet> createState() => _MergeConfirmSheetState();
+}
+
+class _MergeConfirmSheetState extends State<_MergeConfirmSheet> {
+  late String _parentId;
+  late final TextEditingController _title;
+
+  @override
+  void initState() {
+    super.initState();
+    _parentId = widget.events.first.id;
+    _title = TextEditingController(
+      text: widget.events.map((e) => e.title).join(' + '),
+    );
+  }
+
+  @override
+  void dispose() {
+    _title.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final surface = isDark ? AppColors.darkSurface : AppColors.lightSurface;
+    final fill = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
+    final text = isDark ? AppColors.darkPageBg : AppColors.lightSurface;
+    final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
+    final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
+    final unselBg = isDark ? AppColors.darkSurface : AppColors.lightInk100;
+    final border = isDark ? AppColors.darkBorder : AppColors.lightBorder;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+        left: 16,
+        right: 16,
+        top: 16,
+      ),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('合并 ${widget.events.length} 个活动',
+                style: TextStyle(
+                  color: ink900,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                )),
+            const SizedBox(height: 4),
+            Text('选一个作为主活动，其余的会挂在主活动下面。合并后金额直接相加。',
+                style: TextStyle(color: ink500, fontSize: 12)),
+            const SizedBox(height: 12),
+            Text('主活动', style: TextStyle(color: ink500, fontSize: 12)),
+            const SizedBox(height: 6),
+            ...widget.events.map(
+              (ev) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: InkWell(
+                  onTap: () => setState(() => _parentId = ev.id),
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: _parentId == ev.id ? fill : unselBg,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: _parentId == ev.id ? fill : border,
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(ev.title,
+                            style: TextStyle(
+                              color: _parentId == ev.id ? text : ink900,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            )),
+                        const SizedBox(height: 2),
+                        Text(ev.status,
+                            style: TextStyle(
+                              color: _parentId == ev.id ? text : ink500,
+                              fontSize: 11,
+                            )),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text('合并后的名字', style: TextStyle(color: ink500, fontSize: 12)),
+            const SizedBox(height: 6),
+            AppTextField(hint: '合并后的名字', controller: _title),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: TextButton(
+                    onPressed: widget.onCancel,
+                    child: const Text('取消'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: AppPrimaryButton(
+                    label: '确认合并',
+                    onPressed: () => widget.onConfirm(_parentId, _title.text),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+          ],
+        ),
       ),
     );
   }
@@ -1148,6 +1707,9 @@ class _EditEventSheetState extends State<EditEventSheet> {
   late final TextEditingController _amount;
   late final TextEditingController _custom;
 
+  DateTime? _startAt;
+  DateTime? _deadline;
+
   late List<String> _methods;
   late bool _participate;
   late String _amountMethod;
@@ -1173,6 +1735,11 @@ class _EditEventSheetState extends State<EditEventSheet> {
     _participate = e?.participate ?? true;
     _amountMethod = 'cash';
     _stage = 'predicted';
+    _startAt =
+        e?.startAt != null ? DateTime.fromMillisecondsSinceEpoch(e!.startAt!) : null;
+    _deadline = e?.deadline != null
+        ? DateTime.fromMillisecondsSinceEpoch(e!.deadline!)
+        : null;
   }
 
   @override
@@ -1208,6 +1775,26 @@ class _EditEventSheetState extends State<EditEventSheet> {
     });
   }
 
+  Future<void> _pickStart() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _startAt ?? DateTime.now(),
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+    );
+    if (picked != null) setState(() => _startAt = picked);
+  }
+
+  Future<void> _pickDeadline() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _deadline ?? DateTime.now(),
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+    );
+    if (picked != null) setState(() => _deadline = picked);
+  }
+
   Future<void> _save() async {
     setState(() => _error = null);
     if (_title.text.trim().isEmpty) {
@@ -1238,6 +1825,8 @@ class _EditEventSheetState extends State<EditEventSheet> {
         rewardMethods: jsonEncode(_methods),
         note: _note.text.trim().isEmpty ? null : _note.text.trim(),
         participate: _participate,
+        startAt: _startAt?.millisecondsSinceEpoch,
+        deadline: _deadline?.millisecondsSinceEpoch,
         synced: 0,
       );
 
@@ -1317,6 +1906,30 @@ class _EditEventSheetState extends State<EditEventSheet> {
             ),
             const SizedBox(height: 12),
             _Field(label: '活动名 *', child: AppTextField(hint: '活动名', controller: _title)),
+            _Field(
+              label: '活动时间',
+              child: Row(
+                children: [
+                  Expanded(
+                    child: _DateField(
+                      label: '开始',
+                      value: _startAt,
+                      isDark: isDark,
+                      onTap: _pickStart,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _DateField(
+                      label: '截止',
+                      value: _deadline,
+                      isDark: isDark,
+                      onTap: _pickDeadline,
+                    ),
+                  ),
+                ],
+              ),
+            ),
             _Field(
               label: '活动图片链接（每行一个 URL）',
               child: AppTextField(hint: 'https://...', controller: _imageText),
@@ -1418,7 +2031,7 @@ class _EditEventSheetState extends State<EditEventSheet> {
             if (_error != null)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
-                child: Text(_error!, style: const TextStyle(color: Colors.red)),
+                child: Text(_error!, style: const TextStyle(color: AppColors.lightSemanticRed)),
               ),
             const SizedBox(height: 12),
             Row(
@@ -1469,6 +2082,55 @@ class _Field extends StatelessWidget {
   }
 }
 
+/// 日期选择按钮（开始 / 截止），对齐网页端 EditEventModal 的 datetime 字段。
+class _DateField extends StatelessWidget {
+  final String label;
+  final DateTime? value;
+  final bool isDark;
+  final VoidCallback onTap;
+  const _DateField({
+    required this.label,
+    required this.value,
+    required this.isDark,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
+    final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
+    final surface = isDark ? AppColors.darkSurface : AppColors.lightInk100;
+    final border = isDark ? AppColors.darkBorder : AppColors.lightBorder;
+    final text = value == null
+        ? '选择日期'
+        : '${value!.year}/${value!.month}/${value!.day}';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: TextStyle(color: ink500, fontSize: 10)),
+        const SizedBox(height: 4),
+        InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+            decoration: BoxDecoration(
+              color: surface,
+              border: Border.all(color: border),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              text,
+              style: TextStyle(color: ink900, fontSize: 13),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _SelectChip extends StatelessWidget {
   final String label;
   final bool selected;
@@ -1483,7 +2145,7 @@ class _SelectChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final fill = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
-    final text = isDark ? AppColors.darkPageBg : Colors.white;
+    final text = isDark ? AppColors.darkPageBg : AppColors.lightSurface;
     final surface = isDark ? AppColors.darkSurface : AppColors.lightInk100;
     final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
     return InkWell(
@@ -1516,7 +2178,7 @@ class _SegmentedStage extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final fill = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
-    final text = isDark ? AppColors.darkPageBg : Colors.white;
+    final text = isDark ? AppColors.darkPageBg : AppColors.lightSurface;
     final surface = isDark ? AppColors.darkSurface : AppColors.lightSurface;
     final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
     return Container(
@@ -1631,7 +2293,7 @@ class _StageDetailSheetState extends State<StageDetailSheet> {
     final ink400 = isDark ? AppColors.darkInk400 : AppColors.lightInk400;
     final surface = isDark ? AppColors.darkSurface : AppColors.lightSurface;
     final fill = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
-    final text = isDark ? AppColors.darkPageBg : Colors.white;
+    final text = isDark ? AppColors.darkPageBg : AppColors.lightSurface;
 
     final moneySum = _amts
         .where((a) => rewardValueKind(a.rewardMethod) == 'money')
@@ -1704,7 +2366,7 @@ class _StageDetailSheetState extends State<StageDetailSheet> {
                             ),
                             TextButton(
                               onPressed: () => _confirmDelete(a),
-                              child: const Text('删', style: TextStyle(color: Colors.red)),
+                              child: const Text('删', style: TextStyle(color: AppColors.lightSemanticRed)),
                             ),
                           ],
                         ),
@@ -1937,7 +2599,7 @@ class _AmountSheetState extends State<AmountSheet> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
     final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
-    final text = isDark ? AppColors.darkPageBg : Colors.white;
+    final text = isDark ? AppColors.darkPageBg : AppColors.lightSurface;
     final surface = isDark ? AppColors.darkSurface : AppColors.lightSurface;
 
     return Container(
@@ -2028,7 +2690,7 @@ class _AmountSheetState extends State<AmountSheet> {
             if (_error != null)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
-                child: Text(_error!, style: const TextStyle(color: Colors.red)),
+                child: Text(_error!, style: const TextStyle(color: AppColors.lightSemanticRed)),
               ),
             const SizedBox(height: 12),
             Row(

@@ -39,9 +39,10 @@ class AppTextField extends StatelessWidget {
           borderRadius: BorderRadius.circular(16),
           borderSide: BorderSide(color: border, width: 1),
         ),
+        // 聚焦高亮：对齐网页端 `focus:ring-2 focus:ring-ink-400`（2px ink-400 描边）。
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: border, width: 1),
+          borderSide: BorderSide(color: hintColor, width: 2),
         ),
       ),
     );

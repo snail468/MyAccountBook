@@ -1,6 +1,7 @@
 import 'package:sqflite/sqflite.dart';
 import '../db/database.dart';
 import '../models/trip.dart';
+import '../models/stats_row.dart';
 
 /// 旅游账本：成员 / 花费 / 分摊 本地读写 + AA 结算计算。
 class TripDao {
@@ -205,5 +206,23 @@ class TripDao {
       if (debtors[di].amt == 0) di++;
     }
     return result;
+  }
+
+  /// 统计聚合用：旅游花费全部记为支出（用本币 amount_base_cents），取窗口内记录。
+  /// 对齐网页端 loadRows 的 trips 分支（direction 恒为 'expense'）。
+  Future<List<StatRow>> statsRows(int since) async {
+    final db = await _db.database;
+    final rows = await db.rawQuery(
+      '''SELECT occurred_at, amount_base_cents, category
+         FROM trip_expenses
+         WHERE deleted_at IS NULL AND occurred_at >= ?''',
+      [since],
+    );
+    return rows.map((r) => StatRow(
+      occurredAt: DateTime.fromMillisecondsSinceEpoch(r['occurred_at'] as int),
+      amountCents: (r['amount_base_cents'] as num?)?.toInt() ?? 0,
+      direction: 'expense',
+      category: (r['category'] as String?) ?? '旅游',
+    )).toList();
   }
 }

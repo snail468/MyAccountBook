@@ -93,19 +93,23 @@ class _LoginPageState extends State<LoginPage> {
               Text(_error!, style: TextStyle(color: red, fontSize: 14)),
             ],
             const SizedBox(height: 16),
-            SizedBox(
-              height: 52,
-              child: ElevatedButton(
-                onPressed: _busy ? null : _submit,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: btnBg,
-                  foregroundColor: btnText,
-                  disabledForegroundColor: btnText.withOpacity(0.6),
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
+            // 对齐网页端 `disabled:opacity-60`：忙碌（禁用）时整按钮降到 0.6 透明度。
+            Opacity(
+              opacity: _busy ? 0.6 : 1.0,
+              child: SizedBox(
+                height: 52,
+                child: ElevatedButton(
+                  onPressed: _busy ? null : _submit,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: btnBg,
+                    disabledBackgroundColor: btnBg,
+                    foregroundColor: btnText,
+                    disabledForegroundColor: btnText,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
                   ),
-                ),
                 child: _busy
                     ? Row(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -128,6 +132,7 @@ class _LoginPageState extends State<LoginPage> {
                         style: TextStyle(
                             fontSize: 16, fontWeight: FontWeight.w500)),
               ),
+            ),
             ),
             const SizedBox(height: 24),
             Center(

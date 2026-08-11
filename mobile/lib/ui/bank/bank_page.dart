@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 import '../../theme/design_tokens.dart';
 import '../../state/theme_state.dart';
+import '../../state/auth_state.dart';
 import '../../data/local/bank_card_dao.dart';
 import '../../data/models/bank_card.dart';
 import '../widgets/app_card.dart';
@@ -96,8 +98,9 @@ class _BankPageState extends State<BankPage> {
                         children: [
                           Expanded(
                             child: Text(
-                              '已验密，卡号直接显示；卡号与备注以加密存储，'
-                              '数据库文件泄露也读不出。本应用不存 CVV 和取款密码。',
+                              '已验密，卡号直接显示；10 分钟后自动上锁。'
+                              '卡号与备注以加密存储，数据库文件泄露也读不出。'
+                              '本应用不存 CVV 和取款密码，也请不要写进备注。',
                               style: TextStyle(color: ink500, fontSize: 11),
                             ),
                           ),
@@ -166,10 +169,57 @@ Widget _hint(String text, Color color) => Padding(
       child: Text(text, style: TextStyle(color: color, fontSize: 13)),
     );
 
-class _UnlockGate extends StatelessWidget {
+class _UnlockGate extends StatefulWidget {
   final VoidCallback onUnlock;
 
   const _UnlockGate({required this.onUnlock});
+
+  @override
+  State<_UnlockGate> createState() => _UnlockGateState();
+}
+
+class _UnlockGateState extends State<_UnlockGate> {
+  final _password = TextEditingController();
+  String? _error;
+  bool _busy = false;
+
+  @override
+  void dispose() {
+    _password.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final input = _password.text;
+    if (input.isEmpty) {
+      setState(() => _error = '请输入登录密码');
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    // 对齐网页端 CardsUnlockGate：验证的是登录密码（AuthState.loginPassword），
+    // 非本地随意开关。
+    final stored = context.read<AuthState>().loginPassword;
+    await Future<void>.delayed(const Duration(milliseconds: 250)); // 模拟验密
+    if (!mounted) return;
+    if (stored == null) {
+      setState(() {
+        _busy = false;
+        _error = '请先登录后再解锁';
+      });
+      return;
+    }
+    if (input != stored) {
+      setState(() {
+        _busy = false;
+        _error = '密码错误';
+      });
+      return;
+    }
+    widget.onUnlock();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -177,7 +227,7 @@ class _UnlockGate extends StatelessWidget {
     final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
     final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
     final fill = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
-    final textOn = isDark ? AppColors.darkCtaText : Colors.white;
+    final textOn = isDark ? AppColors.darkCtaText : AppColors.lightSurface;
 
     return Column(
       children: [
@@ -186,7 +236,7 @@ class _UnlockGate extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Text(
-              '进入前请验证。解锁后 10 分钟内查看卡号无需再次验密；超时自动上锁。',
+              '进入前请输入登录密码。解锁后 10 分钟内查看卡号无需再次验密；超时自动上锁。',
               style: TextStyle(color: ink500, fontSize: 12),
             ),
           ),
@@ -204,21 +254,42 @@ class _UnlockGate extends StatelessWidget {
                     style: TextStyle(
                         color: ink900, fontSize: 16, fontWeight: FontWeight.w600)),
                 const SizedBox(height: 12),
+                AppTextField(
+                  hint: '登录密码',
+                  obscure: true,
+                  controller: _password,
+                ),
+                if (_error != null) ...[
+                  const SizedBox(height: 8),
+                  Text(_error!,
+                      style: TextStyle(
+                          color: isDark
+                              ? AppColors.darkSemanticRed
+                              : AppColors.lightSemanticRed,
+                          fontSize: 13)),
+                ],
+                const SizedBox(height: 12),
                 SizedBox(
                   height: 48,
                   width: double.infinity,
                   child: ElevatedButton(
-                    onPressed: onUnlock,
+                    onPressed: _busy ? null : _submit,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: fill,
                       foregroundColor: textOn,
+                      disabledForegroundColor: textOn.withOpacity(0.6),
                       elevation: 0,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(16),
                       ),
                     ),
-                    child: const Text('解锁查看',
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                    child: _busy
+                        ? const Text('验证中…',
+                            style: TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.w600))
+                        : const Text('解锁',
+                            style: TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.w600)),
                   ),
                 ),
               ],
@@ -230,7 +301,7 @@ class _UnlockGate extends StatelessWidget {
   }
 }
 
-class _BankCardTile extends StatelessWidget {
+class _BankCardTile extends StatefulWidget {
   final BankCard card;
   final VoidCallback onEdit;
   final Future<void> Function(BankCard) onRemove;
@@ -242,11 +313,31 @@ class _BankCardTile extends StatelessWidget {
   });
 
   @override
+  State<_BankCardTile> createState() => _BankCardTileState();
+}
+
+class _BankCardTileState extends State<_BankCardTile> {
+  String? _copied; // 'number' | 'full'
+
+  Future<void> _copy(String text, String kind) async {
+    await Clipboard.setData(ClipboardData(text: text));
+    if (!mounted) return;
+    setState(() => _copied = kind);
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('已复制')));
+    Future<void>.delayed(const Duration(milliseconds: 1500), () {
+      if (mounted && _copied == kind) setState(() => _copied = null);
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final card = widget.card;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
     final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
     final ink400 = isDark ? AppColors.darkInk400 : AppColors.lightInk400;
+    final blue = isDark ? AppColors.darkSemanticBlue : AppColors.lightSemanticBlue;
     final icon = card.type == '信用卡' ? '🏧' : '🏦';
 
     return Padding(
@@ -267,8 +358,15 @@ class _BankCardTile extends StatelessWidget {
                     Text(card.bank,
                         style: TextStyle(color: ink900, fontSize: 18)),
                     const SizedBox(height: 2),
-                    Text('**** ${card.last4}',
-                        style: TextStyle(color: ink500, fontSize: 14)),
+                    if (card.number != null && card.number!.isNotEmpty)
+                      Text(BankCard.groupCardNumber(card.number!),
+                          style: TextStyle(
+                              color: ink900,
+                              fontSize: 14,
+                              letterSpacing: 1)),
+                    else
+                      Text('**** ${card.last4}',
+                          style: TextStyle(color: ink500, fontSize: 14)),
                     if (card.alias != null && card.alias!.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.only(top: 2),
@@ -281,6 +379,35 @@ class _BankCardTile extends StatelessWidget {
                         child: Text(card.holder!,
                             style: TextStyle(color: ink500, fontSize: 13)),
                       ),
+                    if (card.number != null && card.number!.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 16,
+                        children: [
+                          GestureDetector(
+                            onTap: () => _copy(card.number!, 'number'),
+                            child: Text(
+                              _copied == 'number' ? '已复制 ✓' : '复制卡号',
+                              style: TextStyle(color: blue, fontSize: 13),
+                            ),
+                          ),
+                          GestureDetector(
+                            onTap: () => _copy(
+                              buildCardShareText(
+                                bankName: card.bank,
+                                holder: card.holder,
+                                number: card.number!,
+                              ),
+                              'full',
+                            ),
+                            child: Text(
+                              _copied == 'full' ? '已复制 ✓' : '复制完整信息',
+                              style: TextStyle(color: blue, fontSize: 13),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -289,13 +416,13 @@ class _BankCardTile extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   GestureDetector(
-                    onTap: onEdit,
+                    onTap: widget.onEdit,
                     child: Text('编辑',
                         style: TextStyle(color: ink500, fontSize: 13)),
                   ),
                   const SizedBox(height: 8),
                   GestureDetector(
-                    onTap: () => onRemove(card),
+                    onTap: () => widget.onRemove(card),
                     child: Text('删除',
                         style: TextStyle(color: ink500, fontSize: 13)),
                   ),
@@ -325,7 +452,7 @@ class _TypeChip extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
     final fill = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
-    final textOn = isDark ? AppColors.darkCtaText : Colors.white;
+    final textOn = isDark ? AppColors.darkCtaText : AppColors.lightSurface;
     final border = isDark ? AppColors.darkBorder : AppColors.lightBorder;
 
     return InkWell(
@@ -371,7 +498,7 @@ class _CardSheetState extends State<_CardSheet> {
     final i = widget.initial;
     if (i != null) {
       _bank.text = i.bank;
-      _number.text = i.last4;
+      _number.text = i.number ?? i.last4;
       _alias.text = i.alias ?? '';
       _holder.text = i.holder ?? '';
       _type = i.type;
@@ -410,6 +537,7 @@ class _CardSheetState extends State<_CardSheet> {
       bank: bank,
       type: _type,
       last4: last4,
+      number: number,
       alias: _alias.text.trim().isEmpty ? null : _alias.text.trim(),
       holder: _holder.text.trim().isEmpty ? null : _holder.text.trim(),
       synced: 0,
@@ -456,7 +584,7 @@ class _CardSheetState extends State<_CardSheet> {
             ],
           ),
           const SizedBox(height: 12),
-          AppTextField(hint: '卡号（仅存后四位）', controller: _number),
+          AppTextField(hint: '完整卡号（本地加密存储）', controller: _number),
           const SizedBox(height: 12),
           AppTextField(hint: '卡别名（选填）', controller: _alias),
           const SizedBox(height: 12),

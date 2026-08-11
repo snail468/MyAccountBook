@@ -1,7 +1,9 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/reward_method.dart';
+import '../../state/theme_state.dart';
 import '../../theme/design_tokens.dart';
 import '../widgets/app_card.dart';
 import '../widgets/money.dart';
@@ -122,7 +124,8 @@ class _IncomeComponentsCardState extends State<IncomeComponentsCard> {
         widget.countReward.isNotEmpty ||
         widget.textReward.isNotEmpty;
 
-    return AppCard(
+    final glass = context.watch<ThemeState>().style == AppStyle.glass;
+    final card = AppCard(
       radius: 24,
       child: Padding(
         padding: const EdgeInsets.all(24),
@@ -155,7 +158,7 @@ class _IncomeComponentsCardState extends State<IncomeComponentsCard> {
               cents: _A,
               style: TextStyle(
                 color: _A < 0 ? semanticRed : brandPink,
-                fontSize: 44,
+                fontSize: 48,
                 fontWeight: FontWeight.w700,
               ),
             ),
@@ -224,6 +227,23 @@ class _IncomeComponentsCardState extends State<IncomeComponentsCard> {
           ],
         ),
       ),
+    );
+    if (glass) return card;
+    // 经典态补 shadow-sm（对齐网页端 IncomeComponentsCard 的 shadow-sm）；
+    // 玻璃态由 AppCard 自带磨砂投影，无需叠加。
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: isDark ? AppColors.darkCardShadow : AppColors.lightCardShadow,
+            blurRadius: 2,
+            spreadRadius: 0,
+            offset: const Offset(0, 1),
+          ),
+        ],
+      ),
+      child: card,
     );
   }
 

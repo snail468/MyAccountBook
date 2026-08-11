@@ -2,6 +2,7 @@ import 'package:sqflite/sqflite.dart';
 import '../../core/reward_method.dart';
 import '../db/database.dart';
 import '../models/taoyuan_event.dart';
+import '../models/stats_row.dart';
 
 /// 桃源奖励汇总（对齐网页端 src/app/page.tsx 的 paidAmounts 循环）。
 ///
@@ -216,5 +217,47 @@ class EventDao {
       [ledgerId],
     );
     return (rows.first['c'] as num?)?.toInt() ?? 0;
+  }
+
+  /// 统计聚合用：桃源已到账(paid)且为金额类(money)的奖励计入收入，
+  /// 类别取活动 topicTag（空则兜底「桃源奖励」）。对齐网页端 loadRows 的 paidAmounts 分支。
+  Future<List<StatRow>> statsRows(int since) async {
+    final db = await _db.database;
+    final rows = await db.rawQuery(
+      '''SELECT a.occurred_at AS occurred_at, a.cents AS cents,
+                a.reward_method AS reward_method,
+                e.reward_method AS event_reward_method,
+                e.reward_methods AS event_reward_methods,
+                e.topic_tag AS topic_tag
+         FROM event_amounts a
+         JOIN taoyuan_events e ON e.id = a.event_id
+         WHERE a.stage = 'paid' AND a.deleted_at IS NULL
+           AND e.deleted_at IS NULL AND a.occurred_at >= ?''',
+      [since],
+    );
+    final result = <StatRow>[];
+    for (final r in rows) {
+      final cents = (r['cents'] as num?)?.toInt() ?? 0;
+      var method = r['reward_method'] as String?;
+      if (method == null || method.isEmpty) {
+        final methods = parseRewardMethods(
+          r['event_reward_methods'] as String?,
+          r['event_reward_method'] as String?,
+        );
+        method = methods.isNotEmpty ? methods.first : null;
+      }
+      // 只把金额类奖励计入收入：Q币 / 周边等不是钱，混进来会让收入虚高。
+      if (rewardValueKind(method) != RewardValueKind.money) continue;
+      final tag = (r['topic_tag'] as String?)?.trim();
+      final category = tag != null && tag.isNotEmpty ? tag : '桃源奖励';
+      result.add(StatRow(
+        occurredAt:
+            DateTime.fromMillisecondsSinceEpoch(r['occurred_at'] as int),
+        amountCents: cents,
+        direction: 'income',
+        category: category,
+      ));
+    }
+    return result;
   }
 }

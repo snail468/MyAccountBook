@@ -18,6 +18,7 @@ class UsersState extends ChangeNotifier {
       role: 'member',
       joinedDate: _today(),
       isSelf: false,
+      password: password,
     );
     await FamilyMemberDao().insert(u);
     _users.add(u);
@@ -41,8 +42,12 @@ class UsersState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 重置密码（仅提示，无实际改密逻辑）。
-  void resetPassword(AppUser u) {
+  /// 重置密码（对齐网页端 AdminUserList.resetPwd：落库 family_members.password）。
+  Future<void> resetPassword(AppUser u, String newPassword) async {
+    final updated = u.copyWith(password: newPassword);
+    final idx = _users.indexWhere((e) => e.id == u.id);
+    if (idx >= 0) _users[idx] = updated;
+    await FamilyMemberDao().update(updated);
     notifyListeners();
   }
 

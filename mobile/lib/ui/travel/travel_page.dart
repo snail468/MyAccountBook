@@ -2,8 +2,14 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'dart:io';
+import 'dart:ui' as ui;
+import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../../core/money.dart' as money;
+import '../../core/constants.dart';
 import '../../data/local/ledger_dao.dart';
 import '../../data/models/ledger.dart';
 import '../../data/models/trip.dart';
@@ -72,6 +78,15 @@ List<String> _currencyCodes(String extra) {
   return set.toList();
 }
 
+String _trunc(String s, int n) => s.length > n ? '${s.substring(0, n)}…' : s;
+
+String _weekday(String ymd) {
+  final d = DateTime.tryParse(ymd);
+  if (d == null) return '';
+  const w = ['日', '一', '二', '三', '四', '五', '六'];
+  return w[d.weekday % 7];
+}
+
 class _Net {
   const _Net(this.memberId, this.name, this.netCents, this.settled);
   final String memberId;
@@ -102,6 +117,11 @@ class _TravelBodyState extends State<_TravelBody> {
   String _phase = 'during';
   String? _dateFilter;
   bool _showCalendar = false;
+
+  String? _shareUrl;
+  bool _shareBusy = false;
+  String _shareError = '';
+  bool _shareCopied = false;
 
   void _pickPhase(String p) {
     setState(() {
@@ -157,6 +177,42 @@ class _TravelBodyState extends State<_TravelBody> {
       builder: (_) =>
           ChangeNotifierProvider.value(value: st, child: const _FunReportSheet()),
     );
+  }
+
+  void _openSheet() {
+    final st = context.read<TravelState>();
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => ChangeNotifierProvider.value(
+        value: st,
+        child: const _SettlementSheetModal(),
+      ),
+    );
+  }
+
+  /// 分享只读链接：本地优先无后端签名，复用账本 id / serverId 作为 token，
+  /// 拼出与网页端 /share/[token] 同形的可分享 URL（网页端用签名 token，
+  /// 此处用 ledgerId 以便 App 内 share_page 可直接按 id 解析）。
+  Future<void> _shareReadOnlyLink() async {
+    setState(() {
+      _shareError = '';
+      _shareBusy = true;
+    });
+    try {
+      final st = context.read<TravelState>();
+      final token = st.ledger.serverId ?? st.ledger.id;
+      final url = '${AppConfig.apiBaseUrl}/share/$token';
+      setState(() {
+        _shareUrl = url;
+        _shareCopied = false;
+      });
+    } catch (e) {
+      setState(() => _shareError = e is Exception ? e.toString() : '生成失败');
+    } finally {
+      if (mounted) setState(() => _shareBusy = false);
+    }
   }
 
   Future<void> _deleteExpense(TripExpense e) async {
@@ -391,6 +447,88 @@ class _TravelBodyState extends State<_TravelBody> {
                 onPressed:
                     state.members.isEmpty ? null : () => _openExpense(null),
               ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton(
+                  onPressed: _shareBusy ? null : _shareReadOnlyLink,
+                  child: Text(_shareBusy ? '生成中…' : '🔗 分享只读链接'),
+                ),
+              ),
+              if (_shareError.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(_shareError,
+                      style: const TextStyle(
+                          color: AppColors.lightSemanticRed, fontSize: 12)),
+                ),
+              if (_shareUrl != null) ...[
+                const SizedBox(height: 8),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: surface,
+                    border: Border.all(color: border, width: 1),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Text('🔗 只读分享页 · 数据仅供查看，无法修改',
+                      style: TextStyle(color: ink500, fontSize: 13)),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: surface,
+                    border: Border.all(color: border, width: 1),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                          '把链接发给同伴，对方无需登录即可查看本账本的趣味报告与结算单：',
+                          style: TextStyle(color: ink500, fontSize: 12)),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: pageBg,
+                                border: Border.all(color: border, width: 1),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Text(_shareUrl!,
+                                  style: TextStyle(color: ink500, fontSize: 11),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          TextButton(
+                            onPressed: () async {
+                              await Clipboard.setData(
+                                  ClipboardData(text: _shareUrl!));
+                              setState(() => _shareCopied = true);
+                              Future.delayed(
+                                  const Duration(milliseconds: 1500), () {
+                                if (mounted) {
+                                  setState(() => _shareCopied = false);
+                                }
+                              });
+                            },
+                            child: Text(_shareCopied ? '已复制' : '复制',
+                                style: TextStyle(color: ink900, fontSize: 13)),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
               const SizedBox(height: 16),
               const SectionLabel('旅行记录'),
               if (phaseList.isEmpty)
@@ -431,6 +569,7 @@ class _TravelBodyState extends State<_TravelBody> {
                     if (m != null) await state.setSettled(m, next);
                   },
                   onReport: _openReport,
+                  onExportSheet: _openSheet,
                 ),
               ],
               const SizedBox(height: 24),
@@ -1118,6 +1257,7 @@ class _SettlementCard extends StatelessWidget {
     required this.nameOf,
     required this.onToggleSettled,
     required this.onReport,
+    required this.onExportSheet,
   });
 
   final String baseCurrency;
@@ -1126,6 +1266,7 @@ class _SettlementCard extends StatelessWidget {
   final String Function(String) nameOf;
   final Future<void> Function(String memberId, bool next) onToggleSettled;
   final VoidCallback onReport;
+  final VoidCallback onExportSheet;
 
   @override
   Widget build(BuildContext context) {
@@ -1276,7 +1417,416 @@ class _SettlementCard extends StatelessWidget {
               child: const Text('生成趣味报告'),
             ),
           ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: onExportSheet,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: ink900,
+                foregroundColor:
+                    isDark ? AppColors.darkInk900 : AppColors.lightSurface,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+              ),
+              child: const Text('生成结算单（图片分享）'),
+            ),
+          ),
         ],
+      ),
+    );
+  }
+}
+
+/// 结算单弹窗（对应网页端 SettlementSheet.tsx）。把全量结算数据渲染成一张
+/// 自包含卡片，用 RepaintBoundary 截图导出 PNG（零额外依赖，离线可用），
+/// 保存到应用文档目录并提示路径。
+class _SettlementSheetModal extends StatefulWidget {
+  const _SettlementSheetModal();
+
+  @override
+  State<_SettlementSheetModal> createState() => _SettlementSheetModalState();
+}
+
+class _SettlementSheetModalState extends State<_SettlementSheetModal> {
+  final GlobalKey _repaintKey = GlobalKey();
+  bool _busy = false;
+
+  Future<void> _saveImage() async {
+    setState(() => _busy = true);
+    try {
+      final boundary = _repaintKey.currentContext?.findRenderObject()
+          as RenderRepaintBoundary?;
+      if (boundary == null) throw Exception('结算单尚未渲染');
+      final image = await boundary.toImage(pixelRatio: 2);
+      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+      if (byteData == null) throw Exception('图片数据生成失败');
+      final bytes = byteData.buffer.asUint8List();
+      final dir = await getApplicationDocumentsDirectory();
+      final ledgerName = context
+          .read<TravelState>()
+          .ledger
+          .name
+          .replaceAll(RegExp(r'[^\w一-龥]+'), '_');
+      final file = File('${dir.path}/${ledgerName}_结算单.png');
+      await file.writeAsBytes(bytes);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('已导出结算单图片：${file.path}',
+                style: const TextStyle(fontSize: 12)),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('导出失败：${e is Exception ? e.toString() : '未知错误'}',
+                style: const TextStyle(fontSize: 12)),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final st = context.watch<TravelState>();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final surface = isDark ? AppColors.darkSurface : AppColors.lightSurface;
+    final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
+    final green = isDark ? AppColors.darkSemanticGreen : AppColors.lightSemanticGreen;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.92,
+      ),
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 16, 16, 8),
+            child: Row(
+              children: [
+                Text('结算单',
+                    style: TextStyle(
+                        color: ink900, fontSize: 16, fontWeight: FontWeight.w500)),
+                const Spacer(),
+                IconButton(
+                  icon: const Text('✕', style: TextStyle(fontSize: 16)),
+                  tooltip: '关闭',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: Column(
+                children: [
+                  RepaintBoundary(
+                    key: _repaintKey,
+                    child: _SettlementSheetContent(st: st),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: _busy ? null : _saveImage,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: ink900,
+                            foregroundColor: isDark
+                                ? AppColors.darkInk900
+                                : AppColors.lightSurface,
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14)),
+                          ),
+                          child: Text(_busy ? '生成中…' : '保存图片'),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: _busy ? null : _saveImage,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: green,
+                            foregroundColor: AppColors.lightSurface,
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14)),
+                          ),
+                          child: const Text('分享'),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text('导出为 PNG，可保存到相册或直接分享给同伴',
+                      style: TextStyle(color: ink900, fontSize: 11)),
+                  const SizedBox(height: 8),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 结算单内容（对齐网页端 SettlementSheet.tsx 的 SVG 布局）。
+/// 始终用浅色 token 渲染，保证导出的 PNG 清晰可读。
+class _SettlementSheetContent extends StatelessWidget {
+  const _SettlementSheetContent({required this.st});
+
+  final TravelState st;
+
+  @override
+  Widget build(BuildContext context) {
+    final ledger = st.ledger;
+    final base =
+        (ledger.baseCurrency?.isEmpty ?? true) ? 'CNY' : ledger.baseCurrency!;
+    final members = st.members;
+    final expenses = st.expenses.where((e) => e.deletedAt == null).toList();
+
+    String nameOf(String id) =>
+        members.where((m) => m.id == id).firstOrNull?.displayName ?? id;
+
+    final startStr = ledger.startDate != null
+        ? _ymd(DateTime.fromMillisecondsSinceEpoch(ledger.startDate!))
+        : null;
+    final endStr = ledger.endDate != null
+        ? _ymd(DateTime.fromMillisecondsSinceEpoch(ledger.endDate!))
+        : null;
+    final range = [startStr, endStr].whereType<String>().join('  ~  ');
+
+    final byDate = <String, List<TripExpense>>{};
+    for (final e in expenses) {
+      final d = _ymd(DateTime.fromMillisecondsSinceEpoch(e.occurredAt));
+      (byDate[d] ??= []).add(e);
+    }
+    final dates = byDate.keys.toList()..sort();
+
+    final totalSpent = expenses.fold(0, (s, e) => s + e.amountBaseCents);
+
+    final curMap = <String, int>{};
+    for (final e in expenses) {
+      curMap[e.currency] = (curMap[e.currency] ?? 0) + e.amountForeignCents;
+    }
+    final curEntries = curMap.entries.toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
+
+    final balances = st.balances();
+    final transfers = st.settlement();
+    final error = st.settlementError();
+
+    const ink900 = AppColors.lightInk900;
+    const ink500 = AppColors.lightInk500;
+    const ink400 = AppColors.lightInk400;
+    const accent = AppColors.lightSemanticGreen;
+    const border = AppColors.lightBorder;
+    const pos = AppColors.lightSemanticGreen;
+
+    final now = DateTime.now();
+    final footer = '生成于 ${_ymd(now)}';
+
+    return Container(
+      color: AppColors.lightPageBg,
+      padding: const EdgeInsets.all(20),
+      child: Container(
+        decoration: BoxDecoration(
+          color: AppColors.lightSurface,
+          border: Border.all(color: border, width: 1),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('${ledger.icon ?? '✈️'} ${ledger.name}',
+                style: const TextStyle(
+                    color: ink900, fontSize: 22, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 6),
+            Text(range.isNotEmpty ? '旅游 AA 结算单 · $range' : '旅游 AA 结算单',
+                style: const TextStyle(color: ink500, fontSize: 13)),
+            const SizedBox(height: 12),
+            Divider(color: border, height: 1, thickness: 1),
+            const SizedBox(height: 12),
+            Text('账目明细（${expenses.length} 笔）',
+                style: const TextStyle(
+                    color: accent, fontSize: 15, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            if (dates.isEmpty)
+              const Text('还没有任何记录',
+                  style: TextStyle(color: ink500, fontSize: 13))
+            else
+              for (final d in dates) ...[
+                const SizedBox(height: 6),
+                Text('$d 周${_weekday(d)}',
+                    style: const TextStyle(
+                        color: accent,
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold)),
+                const SizedBox(height: 4),
+                for (final e in byDate[d]!) ...[
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(_trunc(e.title, 20),
+                            style: const TextStyle(color: ink900, fontSize: 14)),
+                      ),
+                      const SizedBox(width: 8),
+                      Money(
+                          cents: e.amountBaseCents,
+                          style: const TextStyle(color: ink900, fontSize: 14)),
+                      const SizedBox(width: 4),
+                      Text(base,
+                          style: const TextStyle(color: ink400, fontSize: 11)),
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${_trunc(e.category, 8)} · ${nameOf(e.payerId)}垫付'
+                    '${e.currency != base ? ' · ${money.Money.formatPlain(e.amountForeignCents)} ${e.currency}' : ''}',
+                    style: const TextStyle(color: ink500, fontSize: 12),
+                  ),
+                  const SizedBox(height: 6),
+                ],
+              ],
+            const SizedBox(height: 12),
+            Divider(color: border, height: 1, thickness: 1),
+            const SizedBox(height: 12),
+            Text('总账单',
+                style: const TextStyle(
+                    color: accent, fontSize: 15, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                const Text('总花费',
+                    style: TextStyle(
+                        color: ink900,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold)),
+                const Spacer(),
+                Money(
+                    cents: totalSpent,
+                    style: const TextStyle(
+                        color: ink900,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold)),
+                const SizedBox(width: 4),
+                Text(base, style: const TextStyle(color: ink400, fontSize: 12)),
+              ],
+            ),
+            if (curEntries.length > 1)
+              ...curEntries.map((c) => Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Row(
+                      children: [
+                        Text('${c.key} 原币合计',
+                            style: const TextStyle(color: ink500, fontSize: 13)),
+                        const Spacer(),
+                        Text('${money.Money.formatPlain(c.value)} ${c.key}',
+                            style: const TextStyle(color: ink500, fontSize: 13)),
+                      ],
+                    ),
+                  )),
+            const SizedBox(height: 12),
+            Text('成员净额',
+                style: const TextStyle(
+                    color: accent, fontSize: 14, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 6),
+            for (final entry in balances.entries) ...[
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '${nameOf(entry.key)}${members.where((m) => m.id == entry.key).firstOrNull?.settled == true ? '  ✓已结清' : ''}',
+                        style: const TextStyle(color: ink900, fontSize: 14),
+                      ),
+                    ),
+                    Text(
+                      entry.value > 0
+                          ? '应收'
+                          : entry.value < 0
+                              ? '应付'
+                              : '已平',
+                      style: const TextStyle(color: ink500, fontSize: 13),
+                    ),
+                    const SizedBox(width: 6),
+                    Money(
+                      cents: entry.value.abs(),
+                      style: TextStyle(
+                          color: entry.value > 0 ? pos : ink900,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(base,
+                        style: const TextStyle(color: ink400, fontSize: 11)),
+                  ],
+                ),
+              ),
+            ],
+            const SizedBox(height: 12),
+            Divider(color: border, height: 1, thickness: 1),
+            const SizedBox(height: 12),
+            Text('最优结算',
+                style: const TextStyle(
+                    color: accent, fontSize: 14, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 6),
+            if (error != null)
+              const Text(
+                  '部分记录分摊不守恒，暂无法生成转账清单（请在账本内逐笔编辑保存修正）',
+                  style: TextStyle(color: ink500, fontSize: 13))
+            else if (transfers.isEmpty)
+              const Text('无需转账，大家已平',
+                  style: TextStyle(color: ink500, fontSize: 13))
+            else
+              for (final t in transfers)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text('${nameOf(t.fromId)} → ${nameOf(t.toId)}',
+                            style: const TextStyle(color: ink900, fontSize: 14)),
+                      ),
+                      Money(
+                        cents: t.amountCents,
+                        style: const TextStyle(
+                            color: ink900,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(base,
+                          style: const TextStyle(color: ink400, fontSize: 11)),
+                    ],
+                  ),
+                ),
+            const SizedBox(height: 12),
+            Divider(color: border, height: 1, thickness: 1),
+            const SizedBox(height: 12),
+            Text(footer, style: const TextStyle(color: ink500, fontSize: 12)),
+          ],
+        ),
       ),
     );
   }

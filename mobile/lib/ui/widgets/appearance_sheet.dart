@@ -7,8 +7,9 @@ import 'app_switch.dart';
 
 /// 首页「外观」快捷面板（👁 浮动按钮入口），对齐设计稿 2:139。
 ///
-/// 覆盖：主题模式 / 界面风格（隐藏液态玻璃，仅保留「默认」）/ 字号 /
-/// 光效开关 / 音效开关 + 试听 / 完成。所有改动即时写入 [ThemeState] 并持久化。
+/// 覆盖：主题模式 / 界面风格（默认 / 液态玻璃 双选项，均可选）/
+/// 字号 / 点击光效开关 / 音效开关 + 试听 / 完成。所有改动即时写入
+/// [ThemeState] 并持久化。试听按钮会预览当前「点击光效」涟漪（对齐网页端 previewFx）。
 class AppearanceSheet extends StatelessWidget {
   const AppearanceSheet({super.key});
 
@@ -20,7 +21,7 @@ class AppearanceSheet extends StatelessWidget {
     final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
     final ink400 = isDark ? AppColors.darkInk400 : AppColors.lightInk400;
 
-    // 界面风格：默认 / 玻璃 双选项，均可选（对齐 globals.css .liquid 液态玻璃主题）。
+    // 界面风格：默认 / 液态玻璃 双选项，均可选（对齐 globals.css .liquid 液态玻璃主题）。
     final styleValue = ts.style;
 
     return Container(
@@ -56,7 +57,7 @@ class AppearanceSheet extends StatelessWidget {
           const SizedBox(height: 16),
           Text('界面风格', style: TextStyle(color: ink500, fontSize: 13)),
           const SizedBox(height: 8),
-          // 界面风格：默认(可选) + 玻璃(置灰禁用 + 即将推出，不可点)
+          // 界面风格：默认(可选) + 液态玻璃(可选)
           Container(
             decoration: BoxDecoration(
               color: isDark ? AppColors.darkSurface : AppColors.lightSurfaceSubtle,
@@ -74,7 +75,7 @@ class AppearanceSheet extends StatelessWidget {
                   onTap: () => ts.setStyle(AppStyle.classic),
                 ),
                 _StyleChip(
-                  label: '玻璃',
+                  label: '液态玻璃',
                   selected: styleValue == AppStyle.glass,
                   onTap: () => ts.setStyle(AppStyle.glass),
                 ),
@@ -103,7 +104,7 @@ class AppearanceSheet extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('光效',
+                    Text('点击光效',
                         style: TextStyle(
                             color: ink900,
                             fontSize: 15,
@@ -142,9 +143,7 @@ class AppearanceSheet extends StatelessWidget {
                 ),
               ),
               TextButton(
-                onPressed: () {
-                  // 第二阶段：试听/试看逻辑（无音视频资源，仅 UI 占位，见 PRD P2-04）
-                },
+                onPressed: () => _previewClickFx(context, ts),
                 child:
                     Text('试听', style: TextStyle(color: ink400, fontSize: 13)),
               ),
@@ -166,7 +165,85 @@ class AppearanceSheet extends StatelessWidget {
   }
 }
 
-/// 界面风格选项 chip：默认 / 玻璃，均可选。
+/// 试听「点击光效」：对齐网页端 previewFx 的 light 部分，在屏幕中心播一段
+/// 品牌粉涟漪（无音视频资源，声音部分本地暂不实现）。光效关闭时给轻提示。
+void _previewClickFx(BuildContext context, ThemeState ts) {
+  if (!ts.effectOn) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('点击光效已关闭，开启后试听可见涟漪')),
+    );
+    return;
+  }
+  final overlay = Overlay.of(context, rootOverlay: true);
+  if (overlay == null) return;
+  final entry = OverlayEntry(builder: (_) => const Center(child: _ClickRipple()));
+  overlay.insert(entry);
+  Future.delayed(const Duration(milliseconds: 760), () {
+    try {
+      entry.remove();
+    } catch (_) {
+      // 面板已关闭时忽略
+    }
+  });
+}
+
+/// 屏幕中心涟漪：scale 1→6、opacity 1→0（对齐网页端 RIPPLE_SCALE/DURATION）。
+class _ClickRipple extends StatefulWidget {
+  const _ClickRipple();
+
+  @override
+  State<_ClickRipple> createState() => _ClickRippleState();
+}
+
+class _ClickRippleState extends State<_ClickRipple>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c;
+  late final Animation<double> _scale;
+  late final Animation<double> _opacity;
+
+  @override
+  void initState() {
+    super.initState();
+    _c = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 700),
+    )..forward();
+    _scale = Tween<double>(begin: 1, end: 6).animate(
+      CurvedAnimation(
+        parent: _c,
+        curve: const Cubic(0.16, 1, 0.3, 1),
+      ),
+    );
+    _opacity = Tween<double>(begin: 1, end: 0).animate(_c);
+  }
+
+  @override
+  void dispose() => _c.dispose();
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final accent = isDark ? AppColors.darkBrandPink : AppColors.lightBrandPink;
+    return Opacity(
+      opacity: _opacity.value,
+      child: Transform.scale(
+        scale: _scale.value,
+        child: Container(
+          width: 20,
+          height: 20,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: RadialGradient(
+              colors: [accent.withOpacity(0.7), accent.withOpacity(0)],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 界面风格选项 chip：默认 / 液态玻璃，均可选。
 class _StyleChip extends StatelessWidget {
   final String label;
   final bool selected;

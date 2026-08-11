@@ -41,15 +41,46 @@ class _UsersPageState extends State<UsersPage> {
     setState(() {});
   }
 
-  Future<void> _add(String name, String role) async {
+  Future<void> _add(String name, String role, String password) async {
     final u = AppUser(
       id: const Uuid().v4(),
       name: name,
       role: role,
       joinedDate: _today(),
       isSelf: false,
+      password: password,
     );
     await FamilyMemberDao().insert(u);
+  }
+
+  /// 重置某用户密码（对齐网页端 AdminUserList.resetPwd：先输入新密码 ≥ 6 位，
+  /// 确认后落库 family_members.password）。
+  Future<void> _resetPassword(AppUser u) async {
+    final newPwd = await _promptPassword(
+      context,
+      title: '重置「${u.name}」的密码',
+      hint: '新密码（≥ 6 位）',
+    );
+    if (newPwd == null || !mounted) return;
+    if (newPwd.length < 6) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('密码至少 6 位')),
+        );
+      }
+      return;
+    }
+    final ok = await _confirm(
+      context,
+      title: '重置「${u.name}」的密码？',
+      body: '新密码：$newPwd\n对方需要用这个新密码登录。',
+      confirmText: '重置',
+    );
+    if (!ok || !mounted) return;
+    await FamilyMemberDao().update(u.copyWith(password: newPwd));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('已重置')));
   }
 
   Future<void> _cycleRole(AppUser u) async {
@@ -108,8 +139,8 @@ class _UsersPageState extends State<UsersPage> {
                     context: context,
                     isScrollControlled: true,
                     builder: (_) => _AddUserSheet(
-                      onSave: (name, role) async {
-                        await _add(name, role);
+                      onSave: (name, role, password) async {
+                        await _add(name, role, password);
                         if (mounted) Navigator.of(context).pop();
                       },
                     ),
@@ -132,6 +163,7 @@ class _UsersPageState extends State<UsersPage> {
                       blue: blue,
                       red: red,
                       onCycle: _cycleRole,
+                      onReset: _resetPassword,
                       onRemove: _remove,
                     ),
                   ),
@@ -163,6 +195,7 @@ class _UserTile extends StatelessWidget {
   final Color blue;
   final Color red;
   final Future<void> Function(AppUser) onCycle;
+  final Future<void> Function(AppUser) onReset;
   final Future<void> Function(AppUser) onRemove;
 
   const _UserTile({
@@ -173,6 +206,7 @@ class _UserTile extends StatelessWidget {
     required this.blue,
     required this.red,
     required this.onCycle,
+    required this.onReset,
     required this.onRemove,
   });
 
@@ -213,8 +247,8 @@ class _UserTile extends StatelessWidget {
                         color: blue,
                         borderRadius: BorderRadius.circular(999),
                       ),
-                      child: const Text('管理员',
-                          style: TextStyle(color: Colors.white, fontSize: 12)),
+                        child: const Text('管理员',
+                            style: TextStyle(color: AppColors.lightSurface, fontSize: 12)),
                     )
                   else
                     Text('成员', style: TextStyle(color: ink500, fontSize: 12)),
@@ -226,6 +260,12 @@ class _UserTile extends StatelessWidget {
               const SizedBox(height: 8),
               Row(
                 children: [
+                  GestureDetector(
+                    onTap: () => onReset(user),
+                    child: Text('重置密码',
+                        style: TextStyle(color: ink500, fontSize: 13)),
+                  ),
+                  const SizedBox(width: 16),
                   GestureDetector(
                     onTap: () => onCycle(user),
                     child: Text(isAdmin ? '降级' : '升级',
@@ -264,7 +304,7 @@ class _RoleChip extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
     final fill = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
-    final textOn = isDark ? AppColors.darkCtaText : Colors.white;
+    final textOn = isDark ? AppColors.darkCtaText : AppColors.lightSurface;
     final border =
         isDark ? AppColors.darkBorder : AppColors.lightBorder;
 
@@ -289,7 +329,7 @@ class _RoleChip extends StatelessWidget {
 }
 
 class _AddUserSheet extends StatefulWidget {
-  final Future<void> Function(String name, String role) onSave;
+  final Future<void> Function(String name, String role, String password) onSave;
 
   const _AddUserSheet({required this.onSave});
 
@@ -299,11 +339,13 @@ class _AddUserSheet extends StatefulWidget {
 
 class _AddUserSheetState extends State<_AddUserSheet> {
   final _name = TextEditingController();
+  final _password = TextEditingController();
   String _role = 'member';
 
   @override
   void dispose() {
     _name.dispose();
+    _password.dispose();
     super.dispose();
   }
 
@@ -327,6 +369,12 @@ class _AddUserSheetState extends State<_AddUserSheet> {
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
           const SizedBox(height: 12),
           AppTextField(hint: '用户名', controller: _name),
+          const SizedBox(height: 12),
+          AppTextField(
+            hint: '密码（≥ 6 位）',
+            obscure: true,
+            controller: _password,
+          ),
           const SizedBox(height: 12),
           Container(
             decoration: BoxDecoration(
@@ -357,13 +405,20 @@ class _AddUserSheetState extends State<_AddUserSheet> {
             label: '保存',
             onPressed: () async {
               final name = _name.text.trim();
+              final password = _password.text;
               if (name.isEmpty) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('请填写用户名')),
                 );
                 return;
               }
-              await widget.onSave(name, _role);
+              if (password.length < 6) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('密码至少 6 位')),
+                );
+                return;
+              }
+              await widget.onSave(name, _role, password);
             },
           ),
           const SizedBox(height: 16),
@@ -399,4 +454,43 @@ Future<bool> _confirm(
     ),
   );
   return confirmed ?? false;
+}
+
+/// 输入密码的对话框（对齐网页端 resetPwd 的 window.prompt 输入新密码）。
+/// 返回输入的密码；取消/关闭返回 null。
+Future<String?> _promptPassword(
+  BuildContext context, {
+  required String title,
+  required String hint,
+}) async {
+  final ctl = TextEditingController();
+  final isDark = Theme.of(context).brightness == Brightness.dark;
+  final red = isDark ? AppColors.darkSemanticRed : AppColors.lightSemanticRed;
+  String? result;
+  await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: Text(title),
+      content: AppTextField(
+        hint: hint,
+        obscure: true,
+        controller: ctl,
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(ctx).pop(false),
+          child: const Text('取消'),
+        ),
+        TextButton(
+          onPressed: () {
+            result = ctl.text;
+            Navigator.of(ctx).pop(true);
+          },
+          child: Text('确定', style: TextStyle(color: red)),
+        ),
+      ],
+    ),
+  );
+  ctl.dispose();
+  return result;
 }

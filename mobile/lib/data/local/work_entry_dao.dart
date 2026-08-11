@@ -1,6 +1,7 @@
 import 'package:sqflite/sqflite.dart';
 import '../db/database.dart';
 import '../models/work_entry.dart';
+import '../models/stats_row.dart';
 
 /// 工作账本条目本地读写。
 class WorkEntryDao {
@@ -116,5 +117,23 @@ class WorkEntryDao {
           : (income: cur.income, expense: cur.expense + sum);
     }
     return map;
+  }
+
+  /// 统计聚合用：工作账本只把 income 方向计入现金流（垫款本质是回款，不计支出），
+  /// 取窗口内记录。对齐网页端 loadRows 的 entries 分支（direction: 'income'）。
+  Future<List<StatRow>> statsRows(int since) async {
+    final db = await _db.database;
+    final rows = await db.rawQuery(
+      '''SELECT occurred_at, amount_cents, category
+         FROM work_entries
+         WHERE deleted_at IS NULL AND direction = 'income' AND occurred_at >= ?''',
+      [since],
+    );
+    return rows.map((r) => StatRow(
+      occurredAt: DateTime.fromMillisecondsSinceEpoch(r['occurred_at'] as int),
+      amountCents: (r['amount_cents'] as num?)?.toInt() ?? 0,
+      direction: 'income',
+      category: (r['category'] as String?) ?? '工作',
+    )).toList();
   }
 }

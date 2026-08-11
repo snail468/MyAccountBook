@@ -1,6 +1,7 @@
 import 'package:sqflite/sqflite.dart';
 import '../db/database.dart';
 import '../models/general_entry.dart';
+import '../models/stats_row.dart';
 
 /// 环比同比所需的「当前月 / 上月 / 去年同月」收入与支出聚合（全账本，单位分）。
 class PeriodComparison {
@@ -257,6 +258,24 @@ class GeneralEntryDao {
           label: r['category'] as String,
           cents: (r['s'] as num?)?.toInt() ?? 0,
         )).toList();
+  }
+
+  /// 统计聚合用：返回窗口内（occurred_at >= [since]）全部普通账本条目的归一化记录。
+  /// income / expense 两个方向都包含。对齐网页端 loadRows 的 generals 分支。
+  Future<List<StatRow>> statsRows(int since) async {
+    final db = await _db.database;
+    final rows = await db.rawQuery(
+      '''SELECT occurred_at, amount_cents, direction, category
+         FROM general_entries
+         WHERE deleted_at IS NULL AND occurred_at >= ?''',
+      [since],
+    );
+    return rows.map((r) => StatRow(
+      occurredAt: DateTime.fromMillisecondsSinceEpoch(r['occurred_at'] as int),
+      amountCents: (r['amount_cents'] as num?)?.toInt() ?? 0,
+      direction: (r['direction'] as String?) ?? 'expense',
+      category: (r['category'] as String?) ?? '未分类',
+    )).toList();
   }
 
   static int _monthStart(String ym) {

@@ -28,13 +28,13 @@ class OverspendCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bg = isDark ? AppColors.darkSurface : AppColors.lightOverspendBg;
+    final bg = isDark ? AppColors.darkOverspendBg : AppColors.lightOverspendBg;
     final border =
-        isDark ? AppColors.darkBorder : AppColors.lightOverspendBorder;
+        isDark ? AppColors.darkOverspendBorder : AppColors.lightOverspendBorder;
     final titleColor =
-        isDark ? AppColors.darkInk100 : AppColors.lightOverspendTitle;
+        isDark ? AppColors.darkOverspendTitle : AppColors.lightOverspendTitle;
     final detailColor =
-        isDark ? AppColors.darkInk400 : AppColors.lightOverspendDetail;
+        isDark ? AppColors.darkOverspendDetail : AppColors.lightOverspendDetail;
 
     return Container(
       decoration: BoxDecoration(

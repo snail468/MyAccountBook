@@ -11,7 +11,7 @@ class AppDatabase {
   AppDatabase._internal();
   static final AppDatabase instance = AppDatabase._internal();
 
-  static const int _version = 4;
+  static const int _version = 5;
   Database? _db;
 
   Future<Database> get database async {
@@ -49,6 +49,11 @@ class AppDatabase {
     // + server_id 唯一部分索引（幂等迁移，PRAGMA 探测缺失列后 ALTER ADD）。
     if (oldV < 4) {
       await _migrateToV4(db);
+    }
+    // 版本 5：家庭成员补 password 列（创建/重置登录密码用）；
+    // 银行卡补 number 列（完整卡号，落库经混淆）。均幂等迁移。
+    if (oldV < 5) {
+      await _migrateToV5(db);
     }
   }
 
@@ -128,6 +133,17 @@ class AppDatabase {
     await db.execute(
       'CREATE UNIQUE INDEX IF NOT EXISTS idx_recurring_rules_server_id ON recurring_rules(server_id) WHERE server_id IS NOT NULL;',
     );
+  }
+
+  /// 升级到 v5：家庭成员补 password 列；银行卡补 number 列。
+  /// 均按 PRAGMA 探测缺失列后仅 ALTER ADD（幂等）。
+  Future<void> _migrateToV5(Database db) async {
+    await _addColumnsIfMissing(db, 'family_members', const {
+      'password': 'TEXT',
+    });
+    await _addColumnsIfMissing(db, 'bank_cards', const {
+      'number': 'TEXT',
+    });
   }
 
   /// 对指定表探测列，仅 ALTER ADD 缺失列（幂等）。
@@ -358,7 +374,8 @@ class AppDatabase {
         server_id TEXT,
         alias TEXT,
         holder TEXT,
-        synced INTEGER NOT NULL DEFAULT 1
+        synced INTEGER NOT NULL DEFAULT 1,
+        number TEXT
       );
     ''');
     await db.execute('''
@@ -368,6 +385,7 @@ class AppDatabase {
         role TEXT NOT NULL DEFAULT 'member',
         joined_date TEXT,
         is_self INTEGER NOT NULL DEFAULT 0,
+        password TEXT,
         created_at INTEGER
       );
     ''');
