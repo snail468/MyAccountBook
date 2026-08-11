@@ -143,6 +143,7 @@ class AppDatabase {
     });
     await _addColumnsIfMissing(db, 'bank_cards', const {
       'number': 'TEXT',
+      'note': 'TEXT',
     });
   }
 

@@ -307,8 +307,6 @@ class _TravelBodyState extends State<_TravelBody> {
     final endStr = state.ledger.endDate != null
         ? _ymd(DateTime.fromMillisecondsSinceEpoch(state.ledger.endDate!))
         : null;
-    final meta = '${state.members.length} 位成员';
-
     final phaseList = state.expenses
         .where((e) =>
             e.deletedAt == null &&
@@ -351,7 +349,7 @@ class _TravelBodyState extends State<_TravelBody> {
               PageHeader(
                 icon: state.ledger.icon ?? '✈️',
                 title: state.ledger.name,
-                subtitle: meta,
+                subtitle: '',
                 actions: [
                   if (state.pending > 0) _PendingBadge(count: state.pending),
                   IconButton(

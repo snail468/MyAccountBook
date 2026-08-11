@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -28,11 +29,27 @@ class _BankPageState extends State<BankPage> {
   final List<BankCard> _cards = [];
   bool _loading = true;
   bool _unlocked = false;
+  Timer? _lockTimer;
 
   @override
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void dispose() {
+    _lockTimer?.cancel();
+    super.dispose();
+  }
+
+  /// 解锁成功：进入明文态并启动 10 分钟 TTL（对齐网页端 lockAtMs 自动上锁）。
+  void _onUnlocked() {
+    setState(() => _unlocked = true);
+    _lockTimer?.cancel();
+    _lockTimer = Timer(const Duration(minutes: 10), () {
+      if (mounted) setState(() => _unlocked = false);
+    });
   }
 
   Future<void> _load() async {
@@ -88,7 +105,7 @@ class _BankPageState extends State<BankPage> {
                   subtitle: '加密存储卡号 · 查看需验密码',
                 ),
                 if (!_unlocked)
-                  _UnlockGate(onUnlock: () => setState(() => _unlocked = true))
+                  _UnlockGate(onUnlock: _onUnlocked)
                 else ...[
                   AppCard(
                     frosted: false,
@@ -99,13 +116,16 @@ class _BankPageState extends State<BankPage> {
                           Expanded(
                             child: Text(
                               '已验密，卡号直接显示；10 分钟后自动上锁。'
-                              '卡号与备注以加密存储，数据库文件泄露也读不出。'
+                              '卡号与备注以 AES-256-GCM 加密存储，数据库文件泄露也读不出。'
                               '本应用不存 CVV 和取款密码，也请不要写进备注。',
                               style: TextStyle(color: ink500, fontSize: 11),
                             ),
                           ),
                           GestureDetector(
-                            onTap: () => setState(() => _unlocked = false),
+                            onTap: () {
+                              _lockTimer?.cancel();
+                              setState(() => _unlocked = false);
+                            },
                             child: Text('立即上锁',
                                 style: TextStyle(color: ink500, fontSize: 11)),
                           ),
@@ -114,8 +134,7 @@ class _BankPageState extends State<BankPage> {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  AppPrimaryButton(
-                    label: '＋ 添加银行卡',
+                  _AddCardButton(
                     onPressed: () => showModalBottomSheet(
                       context: context,
                       isScrollControlled: true,
@@ -133,7 +152,7 @@ class _BankPageState extends State<BankPage> {
                   if (_loading)
                     _hint('加载中…', ink400)
                   else if (_cards.isEmpty)
-                    _hint('还没有备份的银行卡', ink500)
+                    _hint('还没有记录任何卡片', ink500)
                   else
                     ..._cards.map(
                       (c) => _BankCardTile(
@@ -168,6 +187,38 @@ Widget _hint(String text, Color color) => Padding(
       padding: const EdgeInsets.only(top: 8),
       child: Text(text, style: TextStyle(color: color, fontSize: 13)),
     );
+
+/// 添加卡片按钮：border-dashed 描边（对齐网页端 `border-2 border-dashed`）。
+///
+/// 复用 codebase 既有的 [AppColors.lightBorderDashed]/[AppColors.darkBorderDashed]
+/// 令牌（home_page / recurring 等同款「虚线感」处理，Flutter 无原生 dashed border）。
+class _AddCardButton extends StatelessWidget {
+  final VoidCallback onPressed;
+
+  const _AddCardButton({required this.onPressed});
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final border = isDark ? AppColors.darkBorderDashed : AppColors.lightBorderDashed;
+    final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
+
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton(
+        onPressed: onPressed,
+        style: OutlinedButton.styleFrom(
+          side: BorderSide(color: border, width: 2),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          backgroundColor: Colors.transparent,
+        ),
+        child: Text('＋ 添加卡片',
+            style: TextStyle(color: ink500, fontSize: 14)),
+      ),
+    );
+  }
+}
 
 class _UnlockGate extends StatefulWidget {
   final VoidCallback onUnlock;
@@ -355,8 +406,18 @@ class _BankCardTileState extends State<_BankCardTile> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(card.bank,
+                    Text(card.alias ?? card.bank,
                         style: TextStyle(color: ink900, fontSize: 18)),
+                    const SizedBox(height: 2),
+                    Text(
+                      <String>[
+                        card.bank,
+                        card.type,
+                        if (card.holder != null && card.holder!.isNotEmpty)
+                          card.holder!,
+                      ].join(' · '),
+                      style: TextStyle(color: ink500, fontSize: 13),
+                    ),
                     const SizedBox(height: 2),
                     if (card.number != null && card.number!.isNotEmpty)
                       Text(BankCard.groupCardNumber(card.number!),
@@ -367,16 +428,10 @@ class _BankCardTileState extends State<_BankCardTile> {
                     else
                       Text('**** ${card.last4}',
                           style: TextStyle(color: ink500, fontSize: 14)),
-                    if (card.alias != null && card.alias!.isNotEmpty)
+                    if (card.note != null && card.note!.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.only(top: 2),
-                        child: Text(card.alias!,
-                            style: TextStyle(color: ink500, fontSize: 13)),
-                      ),
-                    if (card.holder != null && card.holder!.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 2),
-                        child: Text(card.holder!,
+                        child: Text('备注：${card.note!}',
                             style: TextStyle(color: ink500, fontSize: 13)),
                       ),
                     if (card.number != null && card.number!.isNotEmpty) ...[
@@ -490,6 +545,7 @@ class _CardSheetState extends State<_CardSheet> {
   final _number = TextEditingController();
   final _alias = TextEditingController();
   final _holder = TextEditingController();
+  final _note = TextEditingController();
   String _type = '储蓄卡';
 
   @override
@@ -501,6 +557,7 @@ class _CardSheetState extends State<_CardSheet> {
       _number.text = i.number ?? i.last4;
       _alias.text = i.alias ?? '';
       _holder.text = i.holder ?? '';
+      _note.text = i.note ?? '';
       _type = i.type;
     }
   }
@@ -511,6 +568,7 @@ class _CardSheetState extends State<_CardSheet> {
     _number.dispose();
     _alias.dispose();
     _holder.dispose();
+    _note.dispose();
     super.dispose();
   }
 
@@ -540,6 +598,7 @@ class _CardSheetState extends State<_CardSheet> {
       number: number,
       alias: _alias.text.trim().isEmpty ? null : _alias.text.trim(),
       holder: _holder.text.trim().isEmpty ? null : _holder.text.trim(),
+      note: _note.text.trim().isEmpty ? null : _note.text.trim(),
       synced: 0,
       createdAt: widget.initial?.createdAt ?? now,
     );
@@ -559,7 +618,7 @@ class _CardSheetState extends State<_CardSheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(widget.initial == null ? '添加银行卡' : '编辑银行卡',
+          Text(widget.initial == null ? '添加卡片' : '编辑卡片',
               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
           const SizedBox(height: 12),
           AppTextField(hint: '银行名', controller: _bank),
@@ -589,6 +648,8 @@ class _CardSheetState extends State<_CardSheet> {
           AppTextField(hint: '卡别名（选填）', controller: _alias),
           const SizedBox(height: 12),
           AppTextField(hint: '持卡人（选填）', controller: _holder),
+          const SizedBox(height: 12),
+          AppTextField(hint: '备注（可选，别写密码和 CVV）', controller: _note),
           const SizedBox(height: 16),
           AppPrimaryButton(label: '保存', onPressed: _save),
           const SizedBox(height: 16),

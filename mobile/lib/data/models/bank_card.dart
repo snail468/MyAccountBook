@@ -16,6 +16,7 @@ class BankCard {
   final String? serverId; // 服务端 cuid（同步前为 null）
   final String? alias; // 卡片别名（服务端明文）
   final String? holder; // 持卡人（服务端明文）
+  final String? note; // 备注（服务端明文；对齐网页端 CardsClient 的 note 字段）
   final int synced; // 0=待同步 / 1=已同步
   final int? createdAt; // 创建时间戳（ms）；pull 复用本地已有值，避免创建顺序被打乱[R2]
   /// 完整卡号（明文，仅在内存态展示；落库经 [obfuscateNumber] 混淆）。
@@ -29,6 +30,7 @@ class BankCard {
     this.serverId,
     this.alias,
     this.holder,
+    this.note,
     this.synced = 1,
     this.createdAt,
     this.number,
@@ -42,6 +44,7 @@ class BankCard {
         serverId: m['server_id'] as String?,
         alias: m['alias'] as String?,
         holder: m['holder'] as String?,
+        note: m['note'] as String?,
         synced: (m['synced'] as int? ?? 1),
         createdAt: m['created_at'] as int?,
         number: deobfuscateNumber(m['number'] as String?),
@@ -55,6 +58,7 @@ class BankCard {
         'server_id': serverId,
         'alias': alias,
         'holder': holder,
+        'note': note,
         'synced': synced,
         'created_at': createdAt ?? DateTime.now().millisecondsSinceEpoch,
         'number': number == null ? null : obfuscateNumber(number!),
@@ -70,6 +74,7 @@ class BankCard {
     bool clearServerId = false,
     String? alias,
     String? holder,
+    String? note,
     int? synced,
     int? createdAt,
     String? number,
@@ -82,6 +87,7 @@ class BankCard {
         serverId: clearServerId ? null : (serverId ?? this.serverId),
         alias: alias ?? this.alias,
         holder: holder ?? this.holder,
+        note: note ?? this.note,
         synced: synced ?? this.synced,
         createdAt: createdAt ?? this.createdAt,
         number: number ?? this.number,
