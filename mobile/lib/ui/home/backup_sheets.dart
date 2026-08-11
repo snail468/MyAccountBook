@@ -372,7 +372,7 @@ class _ChangePasswordSheetState extends State<_ChangePasswordSheet> {
               controller: widget.newCtl,
               obscureText: true,
               autofillHints: const [AutofillHints.newPassword],
-              decoration: _decoration('新密码（至少 8 位）', isDark),
+              decoration: _decoration('新密码（至少 8 位，别用连续数字或常见弱口令）', isDark),
             ),
             const SizedBox(height: 12),
             TextField(

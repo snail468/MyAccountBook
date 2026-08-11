@@ -54,7 +54,7 @@ class SettingsPage extends StatelessWidget {
                     _SettingRow(
                       icon: '📤',
                       label: '导出备份',
-                      subtitle: '把所有本地账本导出为文件',
+                      subtitle: '全部账本 · CSV 查看 / JSON 完整还原',
                       onTap: () async {
                         await showExportSheet(context);
                       },
@@ -63,7 +63,7 @@ class SettingsPage extends StatelessWidget {
                     _SettingRow(
                       icon: '📥',
                       label: '导入还原',
-                      subtitle: '从备份文件恢复全部数据',
+                      subtitle: '从完整备份 JSON 恢复数据',
                       onTap: () async {
                         await showImportSheet(context, onImported: () {});
                       },
@@ -72,7 +72,7 @@ class SettingsPage extends StatelessWidget {
                     _SettingRow(
                       icon: '🔑',
                       label: '修改密码',
-                      subtitle: '修改登录密码',
+                      subtitle: '改完会让其它设备重新登录',
                       onTap: () async {
                         await showChangePasswordSheet(context);
                       },
