@@ -175,7 +175,7 @@ class SearchDao {
         final t = TripExpense.fromDb(m);
         if (q.isNotEmpty &&
             !t.title.toLowerCase().contains(q) &&
-            !t.note.toLowerCase().contains(q) &&
+            !(t.note ?? '').toLowerCase().contains(q) &&
             !t.category.toLowerCase().contains(q)) continue;
         if (f.category.trim().isNotEmpty &&
             !t.category
@@ -216,7 +216,7 @@ class SearchDao {
         if (q.isNotEmpty &&
             !ev.title.toLowerCase().contains(q) &&
             !content.contains(q) &&
-            !ev.note.toLowerCase().contains(q) &&
+            !(ev.note ?? '').toLowerCase().contains(q) &&
             !reward.contains(q) &&
             !topic.contains(q)) continue;
         if (f.tag.trim().isNotEmpty &&
