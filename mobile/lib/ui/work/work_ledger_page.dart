@@ -74,11 +74,6 @@ class _Body extends StatelessWidget {
         expense += e.amountCents;
       }
     }
-    final balance = income - expense;
-    final rate = expense > 0
-        ? (income / expense * 100).round()
-        : (income > 0 ? 100 : 0);
-
     final parts = month.split('-');
     final yearLabel = parts[0];
     final monthLabel = int.parse(parts[1]);
@@ -97,7 +92,7 @@ class _Body extends StatelessWidget {
                 subtitle: '$yearLabel 年 $monthLabel 月',
               ),
 
-              // ---- 汇总卡（进项 / 出项 / 结余 / 回款率）----
+              // ---- 汇总卡（对齐网页 WorkMonthSection：仅进项/出项，中性色，无 +/-）----
               AppCard(
                 radius: 24,
                 child: Padding(
@@ -114,43 +109,26 @@ class _Body extends StatelessWidget {
                               fontSize: 28,
                               fontWeight: FontWeight.w700)),
                       const SizedBox(height: 14),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _Stat(
-                              label: '进项',
-                              cents: income,
-                              sign: true,
-                              color: green,
-                            ),
-                          ),
-                          Expanded(
-                            child: _Stat(
-                              label: '出项',
-                              cents: -expense,
-                              sign: true,
-                              color: red,
-                            ),
-                          ),
-                        ],
+                      Text('进项',
+                          style: TextStyle(color: ink500, fontSize: 12)),
+                      const SizedBox(height: 4),
+                      Money(
+                        cents: income,
+                        style: TextStyle(
+                            color: ink900,
+                            fontSize: 26,
+                            fontWeight: FontWeight.w700),
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 8),
                       Row(
                         children: [
-                          Expanded(
-                            child: _Stat(
-                              label: '结余',
-                              cents: balance,
-                              sign: true,
-                              color: balance >= 0 ? green : red,
-                            ),
-                          ),
-                          Expanded(
-                            child: _Stat(
-                              label: '回款率',
-                              text: expense > 0 ? '$rate%' : '—',
-                              color: ink900,
-                            ),
+                          Text('出项 ',
+                              style: TextStyle(
+                                  color: ink500, fontSize: 12)),
+                          Money(
+                            cents: expense,
+                            style: TextStyle(
+                                color: ink500, fontSize: 12),
                           ),
                         ],
                       ),
@@ -229,46 +207,6 @@ class _Body extends StatelessWidget {
       ),
     );
     if (ok == true) await state.deleteEntry(e);
-  }
-}
-
-/// 汇总小块（标签 + 金额 / 文本）。
-class _Stat extends StatelessWidget {
-  final String label;
-  final int cents;
-  final String? text;
-  final bool sign;
-  final Color color;
-
-  const _Stat({
-    required this.label,
-    this.cents = 0,
-    this.text,
-    this.sign = false,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: TextStyle(color: ink500, fontSize: 12)),
-        const SizedBox(height: 4),
-        text != null
-            ? Text(text!,
-                style: TextStyle(
-                    color: color, fontSize: 18, fontWeight: FontWeight.w700))
-            : Money(
-                cents: cents,
-                sign: sign,
-                style: TextStyle(
-                    color: color, fontSize: 18, fontWeight: FontWeight.w700),
-              ),
-      ],
-    );
   }
 }
 

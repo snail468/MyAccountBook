@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
@@ -502,8 +503,6 @@ class _BodyState extends State<_Body> {
                     ? [_PendingBadge(count: store.pending)]
                     : null,
               ),
-              const SizedBox(height: 12),
-              _StatsStrip(store: store),
               const SizedBox(height: 8),
               // 选择 / 计数
               Row(
@@ -606,84 +605,6 @@ class _PendingBadge extends StatelessWidget {
   }
 }
 
-/// 统计条：现金 / 京东卡 / 其它 / 待处理。
-class _StatsStrip extends StatelessWidget {
-  final _TaoyuanStore store;
-  const _StatsStrip({required this.store});
-
-  @override
-  Widget build(BuildContext context) {
-    final t = store.totals;
-    final other = t.other.values.fold(0, (int a, int b) => a + b);
-    return Row(
-      children: [
-        Expanded(child: _StatCell(label: '现金', child: Money(cents: t.cash))),
-        const SizedBox(width: 8),
-        Expanded(child: _StatCell(label: '京东卡', child: Money(cents: t.jdcard))),
-        const SizedBox(width: 8),
-        Expanded(child: _StatCell(label: '其它', child: Money(cents: other))),
-        const SizedBox(width: 8),
-        Expanded(
-          child: _StatCell(
-            label: '待处理',
-            child: _PendingCount(count: store.pending),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _StatCell extends StatelessWidget {
-  final String label;
-  final Widget child;
-  const _StatCell({required this.label, required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
-    final surface = isDark ? AppColors.darkSurface : AppColors.lightSurface;
-    return AppCard(
-      radius: 24,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-        decoration: BoxDecoration(
-          color: surface,
-          borderRadius: BorderRadius.circular(24),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(label, style: TextStyle(color: ink500, fontSize: 11)),
-            const SizedBox(height: 4),
-            child,
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _PendingCount extends StatelessWidget {
-  final int count;
-  const _PendingCount({required this.count});
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final pink = isDark ? AppColors.darkBrandPink : AppColors.lightBrandPink;
-    return Text(
-      '$count',
-      style: TextStyle(
-        color: pink,
-        fontSize: 16,
-        fontWeight: FontWeight.w700,
-      ),
-    );
-  }
-}
-
 /// 阶段分区标题 + 卡片列表 / 空态。
 class _StageSection extends StatelessWidget {
   final String label;
@@ -763,6 +684,7 @@ class _EventCard extends StatefulWidget {
 
 class _EventCardState extends State<_EventCard> {
   bool _expanded = false;
+  bool _copied = false;
 
   /// 父 + 所有子在该阶段的金额条目（合并后金额聚合，对齐网页端 allEntries）。
   List<EventAmount> _stageAmounts(String stage) {
@@ -926,6 +848,38 @@ class _EventCardState extends State<_EventCard> {
                         .toList(),
                   ),
                 ),
+              // 话题 tag（对齐网页 EventCard 的复制按钮）
+              if (event.topicTag != null && event.topicTag!.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 10),
+                  child: InkWell(
+                    onTap: _copyTag,
+                    borderRadius: BorderRadius.circular(8),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: surface,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              event.topicTag!,
+                              style: TextStyle(color: ink500, fontSize: 12),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            _copied ? '已复制' : '复制',
+                            style: TextStyle(color: ink400, fontSize: 11),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
               // 三阶段金额卡（含子活动金额）
               Padding(
                 padding: const EdgeInsets.only(top: 12),
@@ -1001,6 +955,16 @@ class _EventCardState extends State<_EventCard> {
     return [
       Padding(padding: const EdgeInsets.only(top: 8), child: Column(children: lines)),
     ];
+  }
+
+  Future<void> _copyTag() async {
+    final tag = widget.event.topicTag;
+    if (tag == null || tag.isEmpty) return;
+    await Clipboard.setData(ClipboardData(text: tag));
+    if (mounted) setState(() => _copied = true);
+    Future.delayed(const Duration(milliseconds: 1500), () {
+      if (mounted) setState(() => _copied = false);
+    });
   }
 
   void _openStage(
