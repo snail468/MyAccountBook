@@ -12,9 +12,10 @@ import 'stats_state.dart';
 /// 结构：顶部 3 张汇总卡（总收入 / 总支出 / 结余）→ 月度收支趋势双折线图
 /// （可点选单月看明细）→ 环比 / 同比两张并排卡 → 月均支出卡 → 支出构成横向占比条。
 ///
-/// 颜色语义（按任务约定的个人记账口径，非网页端股票涨跌色）：
-///   收入增 / 支出减 = 绿；反 = 红；无对比基数 / 持平 = 灰(ink400)。
-/// 趋势图收入线=绿、支出线=红（任务明确要求）。
+/// 颜色对齐网页端：
+/// - 趋势图：收入线 = 绿(emerald)、支出线 = 墨色(ink-900 / ink-100)，非语义红绿。
+/// - 环比/同比变化徽标：纯涨跌色（涨 = 红 / 跌 = 绿，股票涨跌惯例），与收支方向无关；
+///   持平或无可比基数 = 灰(ink400)。
 class StatsPage extends StatelessWidget {
   const StatsPage({super.key});
 
@@ -39,7 +40,6 @@ class _StatsBody extends StatelessWidget {
     final ink400 = isDark ? AppColors.darkInk400 : AppColors.lightInk400;
     final border = isDark ? AppColors.darkBorder : AppColors.lightBorder;
     final pageBg = isDark ? AppColors.darkPageBg : AppColors.lightPageBg;
-    final red = isDark ? AppColors.darkSemanticRed : AppColors.lightSemanticRed;
     final green =
         isDark ? AppColors.darkSemanticGreen : AppColors.lightSemanticGreen;
 
@@ -131,7 +131,7 @@ class _StatsBody extends StatelessWidget {
                         _TrendChart(
                           buckets: state.trend,
                           incomeColor: green,
-                          expenseColor: red,
+                          expenseColor: ink900,
                           baselineColor: border,
                           ink900: ink900,
                           ink500: ink500,
@@ -155,13 +155,11 @@ class _StatsBody extends StatelessWidget {
                             label: '收入',
                             cur: state.curIncome,
                             prev: state.prevIncome,
-                            isIncome: true,
                           ),
                           _CompareRow(
                             label: '支出',
                             cur: state.curExpense,
                             prev: state.prevExpense,
-                            isIncome: false,
                           ),
                         ],
                       ),
@@ -177,13 +175,11 @@ class _StatsBody extends StatelessWidget {
                             label: '收入',
                             cur: state.curIncome,
                             prev: state.yoyIncome,
-                            isIncome: true,
                           ),
                           _CompareRow(
                             label: '支出',
                             cur: state.curExpense,
                             prev: state.yoyExpense,
-                            isIncome: false,
                           ),
                         ],
                       ),
@@ -356,13 +352,11 @@ class _CompareRow extends StatelessWidget {
   final String label;
   final int cur;
   final int prev;
-  final bool isIncome;
 
   const _CompareRow({
     required this.label,
     required this.cur,
     required this.prev,
-    required this.isIncome,
   });
 
   @override
@@ -378,13 +372,15 @@ class _CompareRow extends StatelessWidget {
     final diff = cur - prev;
     final up = diff > 0;
     final down = diff < 0;
-    final good = isIncome ? up : down; // 收入增 / 支出减 = 好
+    // 对齐网页端 ChangeBadge：纯涨跌色（涨=红 / 跌=绿，股票涨跌惯例），
+    // 与收入/支出无关；持平或无可比基数 = 灰。
     final color =
-        !hasBase ? ink400 : (diff == 0 ? ink400 : (good ? green : red));
-    final arrow = !hasBase ? '—' : (up ? '↑' : down ? '↓' : '—');
-    final pctText = !hasBase
+        !hasBase ? ink400 : (diff == 0 ? ink400 : (up ? red : green));
+    final text = !hasBase
         ? '—'
-        : '${diff >= 0 ? '+' : ''}${(diff / prev * 100).toStringAsFixed(1)}%';
+        : (diff == 0
+            ? '0%'
+            : '${up ? '↑' : '↓'} ${(diff.abs() / prev * 100).toStringAsFixed(1)}%');
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
@@ -392,7 +388,7 @@ class _CompareRow extends StatelessWidget {
         children: [
           Text(label, style: TextStyle(color: ink500, fontSize: 12)),
           const Spacer(),
-          Text('$arrow $pctText',
+          Text(text,
               style: TextStyle(
                   color: color, fontSize: 12, fontWeight: FontWeight.w600)),
         ],
