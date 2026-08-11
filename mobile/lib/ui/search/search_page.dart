@@ -114,12 +114,17 @@ class _BodyState extends State<_Body> {
                   onClose: () => setState(() => _panelOpen = false),
                 ),
 
-              // ---- 结果 ----
-              const SectionLabel('结果'),
-              if (_loading)
-                _Hint(text: '搜索中…', color: ink400)
-              else if (results.isEmpty)
-                _Hint(text: '没有匹配的记录', color: ink400)
+      // ---- 结果 ----
+      const SectionLabel('结果'),
+      if (_loading)
+        _Hint(text: '搜索中…', color: ink400)
+      else if (results.isEmpty)
+        _Hint(
+          text: state.activeCount == 0
+              ? '输入关键字或设置筛选条件后开始搜索'
+              : '没有匹配的记录',
+          color: ink400,
+        )
               else ...<Widget>[
                 ...results.map(
                   (r) => _ResultCard(
