@@ -1074,7 +1074,7 @@ class _ImageUrlsFieldState extends State<_ImageUrlsField> {
     final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
     final ink400 = isDark ? AppColors.darkInk400 : AppColors.lightInk400;
     final tileBg = isDark ? AppColors.darkSurface : AppColors.lightSurfaceSubtle;
-    final dashed = isDark ? AppColors.darkBorder : AppColors.lightBorderDashed;
+    final dashed = isDark ? AppColors.darkBorderDashed : AppColors.lightBorderDashed;
     final red = isDark ? AppColors.darkSemanticRed : AppColors.lightSemanticRed;
     final iconColor = isDark ? AppColors.darkInk100 : AppColors.lightSurface;
     final addIcon =
@@ -1117,7 +1117,7 @@ class _ImageUrlsFieldState extends State<_ImageUrlsField> {
               color: tileBg,
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
-                  color: dashed, width: 2, style: BorderStyle.dashed),
+                  color: dashed, width: 2),
             ),
             child: Center(child: Icon(Icons.add, size: 28, color: addIcon)),
           ),
@@ -1615,10 +1615,9 @@ class _CategoryManagerSheetState extends State<_CategoryManagerSheet> {
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
                           color: isDark
-                              ? AppColors.darkBorder
+                              ? AppColors.darkBorderDashed
                               : AppColors.lightBorderDashed,
-                          width: 2,
-                          style: BorderStyle.dashed),
+                          width: 2),
                     ),
                     child: const Center(
                       child: Icon(Icons.add, size: 24),

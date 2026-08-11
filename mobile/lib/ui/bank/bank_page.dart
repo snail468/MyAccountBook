@@ -363,7 +363,7 @@ class _BankCardTileState extends State<_BankCardTile> {
                           style: TextStyle(
                               color: ink900,
                               fontSize: 14,
-                              letterSpacing: 1)),
+                              letterSpacing: 1))
                     else
                       Text('**** ${card.last4}',
                           style: TextStyle(color: ink500, fontSize: 14)),

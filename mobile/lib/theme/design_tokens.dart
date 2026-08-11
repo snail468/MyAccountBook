@@ -39,8 +39,10 @@ class AppColors {
 
   // ---------------- Dark（镜像） ----------------
   static const Color darkPageBg = Color(0xFF0F172A); // = ink900
+  static const Color darkInk900 = Color(0xFF0F172A); // 镜像 lightInk900（深底上的最暗色/深底反白文字底色）
   static const Color darkSurface = Color(0xFF1E293B); // = ink800
   static const Color darkBorder = Color(0xFF334155); // = ink700
+  static const Color darkBorderDashed = Color(0xFF64748B); // 镜像 lightBorderDashed（深底虚线，比实线亮一档）
   static const Color darkInk100 = Color(0xFFF1F5F9); // 主文本
   static const Color darkInk400 = Color(0xFF94A3B8); // 次文本
   static const Color darkInk500 = Color(0xFF64748B); // 三级文本

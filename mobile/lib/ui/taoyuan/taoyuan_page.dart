@@ -164,7 +164,7 @@ int _moneySum(List<EventAmount> amounts, String stage) => amounts
 /// 劳务报酬个税预扣（默认档位，单位：分），对齐 src/lib/tax.ts DEFAULT_TAX_BRACKETS。
 int _calcTaxCents(int income) {
   if (income <= 0) return 0;
-  const brackets = <({int upTo, double rate, int deduct, int quick})>[
+  const brackets = <({int? upTo, double rate, int deduct, int quick})>[
     (upTo: 80000, rate: 0.0, deduct: 0, quick: 0),
     (upTo: 400000, rate: 0.2, deduct: 80000, quick: 0),
     (upTo: 2500000, rate: 0.16, deduct: 0, quick: 0),
