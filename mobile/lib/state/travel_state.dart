@@ -31,6 +31,11 @@ class TravelState extends ChangeNotifier {
   List<TripMember> get members => _members;
   List<TripExpense> get expenses => _expenses;
 
+  /// 待同步的本地花费数（synced==0 且未删除），对应网页端 PendingBadge 的
+  /// 离线队列计数。由已加载的 _expenses 直接推导，随 loadExpenses 自动刷新。
+  int get pending =>
+      _expenses.where((e) => e.deletedAt == null && e.synced == 0).length;
+
   /// 每笔花费的分摊明细（花费 id -> 分摊列表），供页面展示「分摊」与趣味报告。
   Map<String, List<TripSplit>> get splitsByExpense => _splitsByExpense;
 

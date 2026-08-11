@@ -87,6 +87,26 @@ String _weekday(String ymd) {
   return w[d.weekday % 7];
 }
 
+/// 点按花费缩略图 → 全屏查看（对应网页端 Lightbox）。
+void _zoomTravelImage(BuildContext context, List<String> urls, int index) {
+  showDialog(
+    context: context,
+    builder: (_) => Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.all(24),
+      child: InteractiveViewer(
+        child: Image.network(
+          urls[index],
+          fit: BoxFit.contain,
+          errorBuilder: (_, __, ___) => const Center(
+            child: Icon(Icons.broken_image, color: Colors.white, size: 48),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
 class _Net {
   const _Net(this.memberId, this.name, this.netCents, this.settled);
   final String memberId;
@@ -281,14 +301,13 @@ class _TravelBodyState extends State<_TravelBody> {
     String nameOf(String id) =>
         state.members.where((m) => m.id == id).firstOrNull?.displayName ?? id;
 
-    final startStr =
-        state.ledger.startDate != null ? _md(state.ledger.startDate!) : null;
-    final endStr =
-        state.ledger.endDate != null ? _md(state.ledger.endDate!) : null;
-    final meta = <String>[
-      if (startStr != null && endStr != null) '$startStr-$endStr',
-      '${state.members.length} 位成员',
-    ].join(' · ');
+    final startStr = state.ledger.startDate != null
+        ? _ymd(DateTime.fromMillisecondsSinceEpoch(state.ledger.startDate!))
+        : null;
+    final endStr = state.ledger.endDate != null
+        ? _ymd(DateTime.fromMillisecondsSinceEpoch(state.ledger.endDate!))
+        : null;
+    final meta = '${state.members.length} 位成员';
 
     final phaseList = state.expenses
         .where((e) =>
@@ -334,6 +353,7 @@ class _TravelBodyState extends State<_TravelBody> {
                 title: state.ledger.name,
                 subtitle: meta,
                 actions: [
+                  if (state.pending > 0) _PendingBadge(count: state.pending),
                   IconButton(
                     icon: const Text('⚙', style: TextStyle(fontSize: 20)),
                     tooltip: '设置',
@@ -712,7 +732,7 @@ class _PhaseButton extends StatelessWidget {
         ? (isDark ? AppColors.darkInk100 : AppColors.lightInk900)
         : (isDark ? AppColors.darkSurface : const Color(0xFFF1F5F9));
     final textColor = selected
-        ? (isDark ? AppColors.darkInk100 : Colors.white)
+        ? (isDark ? AppColors.darkInk900 : Colors.white)
         : ink500;
 
     return InkWell(
@@ -773,10 +793,23 @@ class _TripDailyChart extends StatelessWidget {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text('每日花费（$baseCurrency）',
-                style: TextStyle(color: ink500, fontSize: 13)),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('每日花费（$baseCurrency）',
+                    style: TextStyle(color: ink500, fontSize: 13)),
+                const SizedBox(height: 2),
+                Text('峰值 ${money.Money.formatPlain(max)}',
+                    style: TextStyle(color: ink500, fontSize: 11)),
+              ],
+            ),
             Text('合计 ${money.Money.formatPlain(total)}',
-                style: TextStyle(color: ink500, fontSize: 13)),
+                style: TextStyle(
+                    color: isDark
+                        ? AppColors.darkInk400
+                        : AppColors.lightInk700,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600)),
           ],
         ),
         const SizedBox(height: 8),
@@ -835,7 +868,6 @@ class _BudgetBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
-    final ink600 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
     final ratio = limit > 0 ? (spent / limit).clamp(0.0, 1.0) : 0.0;
     final over = spent > limit;
 
@@ -851,7 +883,7 @@ class _BudgetBar extends StatelessWidget {
               Text(
                 '${money.Money.formatPlain(spent)} / ${money.Money.formatPlain(limit)} $currency',
                 style: TextStyle(
-                    color: over ? AppColors.lightSemanticRed : ink600,
+                    color: over ? AppColors.lightSemanticRed : ink500,
                     fontSize: 12),
               ),
             ],
@@ -1044,7 +1076,7 @@ class _TripCalendar extends StatelessWidget {
           children: [
             Text('行程日历（$baseCurrency）',
                 style: TextStyle(color: ink500, fontSize: 12)),
-            Text('点有记录的日期可筛选',
+            Text('点有记录的日期可筛选列表',
                 style: TextStyle(color: ink400, fontSize: 10)),
           ],
         ),
@@ -1162,6 +1194,39 @@ class _ExpenseTile extends StatelessWidget {
                       child: Text('备注：${expense.note}',
                           style: TextStyle(color: ink500, fontSize: 11)),
                     ),
+                  if (expense.imageUrls.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Wrap(
+                        spacing: 6,
+                        children: [
+                          for (final url in expense.imageUrls)
+                            InkWell(
+                              onTap: () => _zoomTravelImage(
+                                  context,
+                                  expense.imageUrls,
+                                  expense.imageUrls.indexOf(url)),
+                              borderRadius: BorderRadius.circular(8),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: Image.network(
+                                  url,
+                                  width: 36,
+                                  height: 36,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) => Container(
+                                    width: 36,
+                                    height: 36,
+                                    color: ink400.withOpacity(0.2),
+                                    child: Icon(Icons.image,
+                                        size: 16, color: ink400),
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -1203,6 +1268,33 @@ class _ExpenseTile extends StatelessWidget {
               ],
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PendingBadge extends StatelessWidget {
+  final int count;
+  const _PendingBadge({required this.count});
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final pink = isDark ? AppColors.darkBrandPink : AppColors.lightBrandPink;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: pink.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: pink.withOpacity(0.4)),
+      ),
+      child: Text(
+        '待处理 $count',
+        style: TextStyle(
+          color: pink,
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
         ),
       ),
     );
@@ -2123,7 +2215,7 @@ class _SegBtn extends StatelessWidget {
         ? (isDark ? AppColors.darkInk100 : AppColors.lightInk900)
         : (isDark ? AppColors.darkSurface : const Color(0xFFF1F5F9));
     final textColor = selected
-        ? (isDark ? AppColors.darkInk100 : Colors.white)
+        ? (isDark ? AppColors.darkInk900 : Colors.white)
         : ink500;
 
     return InkWell(
