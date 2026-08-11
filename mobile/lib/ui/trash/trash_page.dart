@@ -55,8 +55,8 @@ class _TrashPageState extends State<TrashPage> {
   Future<void> _purge(GeneralEntry e) async {
     final ok = await _confirm(
       context,
-      title: '永久删除「${e.note ?? e.category}」？',
-      body: '这一步不可撤销，立刻从本地数据库抹掉，无法找回。',
+      title: '永久删除「${e.category}」？',
+      body: '这一步不可撤销，跳过 60 天保留期，立刻从数据库抹掉。',
       confirmText: '彻底删除',
     );
     if (!ok || !mounted) return;
@@ -89,7 +89,6 @@ class _TrashPageState extends State<TrashPage> {
                 const PageHeader(
                   icon: '🗑️',
                   title: '回收站',
-                  subtitle: '删除的记账条目 · 60 天内可恢复',
                 ),
                 Text(
                   '删除的记账条目保留 60 天，之后自动清理。恢复即回到原账本；'
@@ -115,10 +114,6 @@ class _TrashPageState extends State<TrashPage> {
                     ),
                   ),
                 const SizedBox(height: 16),
-                Text(
-                  '删除的记录会在 60 天后自动清除，期间可随时恢复。',
-                  style: TextStyle(color: ink400, fontSize: 12),
-                ),
               ],
             ),
           ),
@@ -153,10 +148,7 @@ class _TrashTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final days = _daysLeft(entry.deletedAt);
-    final title = (entry.note != null && entry.note!.isNotEmpty)
-        ? entry.note!
-        : entry.category;
-    final direction = entry.direction == 'income' ? '收入' : '支出';
+    final title = entry.category;
     final contextLabel = ledgerName != null ? ' · $ledgerName' : '';
 
     return Padding(
@@ -179,7 +171,7 @@ class _TrashTile extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 4),
-              Text('$direction$contextLabel',
+              Text('普通账本 · 记录$contextLabel',
                   style: TextStyle(color: ink500, fontSize: 13)),
               const SizedBox(height: 4),
               Text(
@@ -194,7 +186,7 @@ class _TrashTile extends StatelessWidget {
                     label: '恢复',
                     fg: isDark ? AppColors.darkInk100 : AppColors.lightInk900,
                     border:
-                        isDark ? AppColors.darkBorder : AppColors.lightBorderDashed,
+                        isDark ? AppColors.darkBorder : AppColors.lightBorder,
                     onTap: () => onRestore(entry),
                   ),
                   const SizedBox(width: 8),
@@ -220,7 +212,7 @@ int _daysLeft(int? deletedAt) {
   const retention = 60 * 24 * 60 * 60 * 1000;
   final cutoff = deletedAt + retention;
   final ms = cutoff - DateTime.now().millisecondsSinceEpoch;
-  return ms <= 0 ? 0 : (ms / (24 * 60 * 60 * 1000)).ceil();
+  return ms <= 0 ? 0 : (ms / (24 * 60 * 60 * 1000)).floor();
 }
 
 Widget _hint(String text, Color color) => Padding(
