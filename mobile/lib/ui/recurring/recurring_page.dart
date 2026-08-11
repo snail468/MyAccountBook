@@ -83,8 +83,8 @@ class _Body extends StatelessWidget {
 
           // ---- 规则列表 ----
           if (state.loading)
-            const Padding(
-              padding: EdgeInsets.only(top: 8),
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
               child: Center(
                 child: Text('加载中…',
                     style: TextStyle(color: ink400, fontSize: 13)),
