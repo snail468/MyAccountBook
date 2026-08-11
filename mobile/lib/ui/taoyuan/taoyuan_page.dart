@@ -172,7 +172,10 @@ int _calcTaxCents(int income) {
     (upTo: null, rate: 0.32, deduct: 0, quick: 700000),
   ];
   final b = brackets.firstWhere(
-    (x) => x.upTo == null || income <= x.upTo,
+    (x) {
+      final upTo = x.upTo;
+      return upTo == null || income <= upTo;
+    },
     orElse: () => brackets.last,
   );
   final taxable = (income - b.deduct).clamp(0, income);
