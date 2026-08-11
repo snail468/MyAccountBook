@@ -396,7 +396,7 @@ class _HomePageState extends State<HomePage> {
               }
               if (_ownWork != null) {
                 add(LedgerFeatureCard(
-                  icon: '📤',
+                  icon: '',
                   title: '工作出项汇总',
                   subtitleWidget: Row(
                     children: [
@@ -499,35 +499,35 @@ class _HomePageState extends State<HomePage> {
                 ),
               ));
               add(LedgerFeatureCard(
-                icon: '📤',
+                icon: '',
                 title: '导出备份',
-                subtitle: '把全部本地数据导出为 JSON 文件',
+                subtitle: '全部账本 · CSV 查看 / JSON 完整还原',
                 onTap: () => showExportSheet(context),
               ));
               add(LedgerFeatureCard(
-                icon: '📥',
+                icon: '',
                 title: '导入还原',
-                subtitle: '从备份文件整库还原（覆盖当前）',
+                subtitle: '从完整备份 JSON 恢复数据',
                 onTap: () => showImportSheet(context, onImported: () async {
                   await context.read<LedgerListState>().load();
                   await _loadSummary();
                 }),
               ));
               add(LedgerFeatureCard(
-                icon: '🔑',
+                icon: '',
                 title: '修改密码',
                 subtitle: '改完会让其它设备重新登录',
                 onTap: () => showChangePasswordSheet(context),
               ));
               add(LedgerFeatureCard(
-                icon: '🎉',
+                icon: '',
                 title: '使用引导',
                 subtitle: '功能速览 · 新手第一步',
                 onTap: () => OnboardingGuide.show(context),
               ));
               if (auth.role == 'admin') {
                 add(LedgerFeatureCard(
-                  icon: '👥',
+                  icon: '',
                   title: '用户管理',
                   subtitle: '管理员专属：新增/删除/重置用户',
                   onTap: () => Navigator.of(context).push(

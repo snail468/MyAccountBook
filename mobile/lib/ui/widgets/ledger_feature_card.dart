@@ -37,8 +37,10 @@ class LedgerFeatureCard extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         child: Row(
           children: [
-            Text(icon, style: const TextStyle(fontSize: 22)),
-            const SizedBox(width: 12),
+            if (icon.isNotEmpty) ...[
+              Text(icon, style: const TextStyle(fontSize: 22)),
+              const SizedBox(width: 12),
+            ],
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
