@@ -89,6 +89,7 @@ class _TrashPageState extends State<TrashPage> {
                 const PageHeader(
                   icon: '🗑️',
                   title: '回收站',
+                  subtitle: '',
                 ),
                 Text(
                   '删除的记账条目保留 60 天，之后自动清理。恢复即回到原账本；'
