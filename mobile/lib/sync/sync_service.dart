@@ -452,6 +452,16 @@ class SyncService {
           EventAmount.fromApi(a as Map<String, dynamic>, localId, localId: _uuid.v4()),
         );
       }
+      // 活动图片：列表接口未必返回 contentImages，详情接口一定包含；
+      // 用详情补全，确保桃源活动图片能同步到本地。[#7]
+      final imgs = detail['contentImages'] as String?;
+      if (imgs != null && imgs.isNotEmpty) {
+        final cur = await _eventDao.getById(localId);
+        if (cur != null &&
+            (cur.contentImages == null || cur.contentImages!.isEmpty)) {
+          await _eventDao.update(cur.copyWith(contentImages: imgs));
+        }
+      }
     }
 
     // 对账：删本地已同步但服务端已软删的活动（金额级联清理由 DAO 处理）。

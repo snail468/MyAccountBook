@@ -48,6 +48,11 @@ class AuthState extends ChangeNotifier {
     _rememberedUsername = prefs.getString(_kRememberUser);
     // 预载记住的密码，使已登录会话（cookie 仍有效）进入银行卡页时解锁门可直接验密。
     _loginPassword = prefs.getString(_kRememberPass);
+    // 启动恢复用户名：单用户应用里"记住的用户名"即当前登录用户。若不回填，
+    // 重启后 [username] 为 null，首页头部「用户名 · 心愿便利贴」会显示空白。[#1]
+    if (_authed) {
+      _username = _rememberedUsername;
+    }
     _initialized = true;
     notifyListeners();
   }

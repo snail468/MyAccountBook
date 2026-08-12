@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/general_categories.dart' show iconOf, defaultCategories, CustomCategories;
+import '../../core/constants.dart';
 import '../../core/money.dart' as money;
 import '../../data/models/general_entry.dart';
 import '../../data/models/ledger.dart';
@@ -753,7 +754,7 @@ class _EntryRowTile extends StatelessWidget {
                                     borderRadius: BorderRadius.circular(4),
                                   ),
                                   child: Image.network(
-                                    entry.imageUrls[i],
+                                    AppConfig.resolveImageUrl(entry.imageUrls[i]),
                                     fit: BoxFit.cover,
                                     errorBuilder: (_, __, ___) => const Icon(
                                         Icons.broken_image_outlined,
@@ -822,7 +823,7 @@ Future<void> _zoomImage(
       insetPadding: const EdgeInsets.all(16),
       child: InteractiveViewer(
         child: Image.network(
-          urls[index],
+          AppConfig.resolveImageUrl(urls[index]),
           fit: BoxFit.contain,
           errorBuilder: (_, __, ___) => const Center(
             child: Icon(Icons.broken_image_outlined,
@@ -1155,7 +1156,7 @@ class _ImageUrlsFieldState extends State<_ImageUrlsField> {
 
   Widget _thumb(String url) {
     return Image.network(
-      url,
+      AppConfig.resolveImageUrl(url),
       fit: BoxFit.cover,
       width: double.infinity,
       height: double.infinity,

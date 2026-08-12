@@ -32,4 +32,14 @@ class AppConfig {
   /// 应用版本号。CI 构建时会被 sed 注入真实 tag 值（见 flutter.yml）。
   /// 本地构建时就是这个 fallback 值，安装后 AppBar 副标题可见。
   static const String appVersion = '2.0.9+dev';
+
+  /// 把图片地址解析成可直连的绝对 URL。
+  ///
+  /// 服务端把上传图片存为相对路径（如 `/api/uploads/xxx.jpg`，见网页端
+  /// imageCleanup.ts），Flutter 的 [Image.network] 直接用相对路径会加载失败。
+  /// 这里对以 `/` 开头的相对路径拼上 [apiBaseUrl]，已是 http(s) 绝对路径则原样返回。
+  static String resolveImageUrl(String url) {
+    if (url.startsWith('/')) return '$apiBaseUrl$url';
+    return url;
+  }
 }

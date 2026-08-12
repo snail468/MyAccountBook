@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/money.dart' as money;
+import '../../core/constants.dart';
 import '../../core/reward_method.dart';
 import '../../data/local/event_dao.dart';
 import '../../data/models/ledger.dart';
@@ -1081,7 +1082,8 @@ class _Thumb extends StatelessWidget {
         builder: (_) => Dialog(
           child: ClipRRect(
             borderRadius: BorderRadius.circular(12),
-            child: Image.network(url, fit: BoxFit.contain, errorBuilder: (
+            child: Image.network(AppConfig.resolveImageUrl(url),
+                fit: BoxFit.contain, errorBuilder: (
               _,
               __,
               ___,
@@ -1096,7 +1098,7 @@ class _Thumb extends StatelessWidget {
         child: ClipRRect(
           borderRadius: BorderRadius.circular(12),
           child: Image.network(
-            url,
+            AppConfig.resolveImageUrl(url),
             fit: BoxFit.cover,
             errorBuilder: (_, __, ___) =>
                 Container(color: surface, child: const Icon(Icons.broken_image)),

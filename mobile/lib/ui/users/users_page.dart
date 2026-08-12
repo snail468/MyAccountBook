@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 import '../../theme/design_tokens.dart';
 import '../../state/theme_state.dart';
+import '../../state/auth_state.dart';
 import '../../data/local/family_member_dao.dart';
 import '../../data/models/app_user.dart';
 import '../widgets/app_card.dart';
@@ -34,6 +35,27 @@ class _UsersPageState extends State<UsersPage> {
   Future<void> _load() async {
     final list = await FamilyMemberDao().listAll();
     if (!mounted) return;
+    // 注入当前登录用户（网页端 AdminUserList 含自己并标记「（我）」）。
+    // family_members 表与登录 users 表隔离，这里把 auth 用户名合成一条 isSelf 记录置顶；
+    // 若列表里已有同名成员则直接标记 isSelf，避免重复。[#6]
+    final auth = context.read<AuthState>();
+    if (auth.username != null && auth.username!.isNotEmpty) {
+      final idx = list.indexWhere((u) => u.name == auth.username);
+      if (idx >= 0) {
+        list[idx] = list[idx].copyWith(isSelf: true);
+      } else {
+        list.insert(
+          0,
+          AppUser(
+            id: 'self',
+            name: auth.username!,
+            role: 'admin',
+            joinedDate: _today(),
+            isSelf: true,
+          ),
+        );
+      }
+    }
     _users
       ..clear()
       ..addAll(list);
