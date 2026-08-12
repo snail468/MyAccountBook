@@ -46,3 +46,26 @@ export async function POST(req: Request) {
   await ensureUserSetup(user.id);
   return NextResponse.json({ ok: true, user });
 }
+
+/// GET /api/admin/users —— 返回全部用户（id / username / role / createdAt）。
+///
+/// 对齐网页端 AdminUserList：管理员进入用户管理即可看到所有用户。移动端
+/// [UsersPage] 在线时调用此端点，把服务端用户落地到本地 [family_members]（按
+/// username 去重），从而补全省份/角色信息并支持本地角色切换与重置密码。[#6]
+export async function GET() {
+  const current = await requireAdmin();
+  if (current instanceof Response) return current;
+
+  const users = await prisma.user.findMany({
+    select: { id: true, username: true, role: true, createdAt: true },
+    orderBy: { createdAt: 'asc' },
+  });
+  return NextResponse.json({
+    users: users.map((u) => ({
+      id: u.id,
+      username: u.username,
+      role: u.role,
+      joinedAt: u.createdAt.toISOString(),
+    })),
+  });
+}

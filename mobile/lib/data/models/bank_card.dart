@@ -117,6 +117,10 @@ class BankCard {
       serverId: j['id']?.toString(),
       alias: j['alias']?.toString(),
       holder: j['holder']?.toString(),
+      // 完整卡号仅在「页面级解锁」后由 GET /api/cards 返回（AES-256-GCM 解密）；
+      // 未解锁拉取时服务端不返回 number，沿用 sync 路径的 prev?.number 兜底。[#5]
+      number: j['number']?.toString(),
+      note: j['note']?.toString(),
       synced: 1,
       createdAt: createdAt,
     );

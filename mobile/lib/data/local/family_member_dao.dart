@@ -18,6 +18,19 @@ class FamilyMemberDao {
     return rows.map(AppUser.fromDb).toList();
   }
 
+  /// 按用户名查找本地家庭成员（用于与服务端用户去重合并）。[#6]
+  Future<AppUser?> findByName(String name) async {
+    final db = await _db.database;
+    final rows = await db.query(
+      'family_members',
+      where: 'name = ?',
+      whereArgs: [name],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return AppUser.fromDb(rows.first);
+  }
+
   Future<void> delete(String id) async {
     final db = await _db.database;
     await db.delete('family_members', where: 'id = ?', whereArgs: [id]);

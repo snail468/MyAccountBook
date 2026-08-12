@@ -4,6 +4,8 @@ import 'package:uuid/uuid.dart';
 import '../../theme/design_tokens.dart';
 import '../../state/theme_state.dart';
 import '../../state/auth_state.dart';
+import '../../api/api_client.dart';
+import '../../api/admin_api.dart';
 import '../../data/local/family_member_dao.dart';
 import '../../data/models/app_user.dart';
 import '../widgets/app_card.dart';
@@ -33,6 +35,34 @@ class _UsersPageState extends State<UsersPage> {
   }
 
   Future<void> _load() async {
+    // 在线时先把服务端全部用户落到本地 family_members（按 username 去重），
+    // 让管理员能看到所有用户；服务端角色/加入日期以服务端为准回写本地。
+    // 失败（离线/非管理员）静默降级，沿用本地数据。[#6]
+    try {
+      final serverUsers = await AdminApi(ApiClient.instance).listUsers();
+      final dao = FamilyMemberDao();
+      for (final su in serverUsers) {
+        final name = su['username'] as String?;
+        if (name == null || name.isEmpty) continue;
+        final role = (su['role'] as String?) ?? 'member';
+        final joined = _isoToDate(su['joinedAt'] as String?);
+        final existing = await dao.findByName(name);
+        if (existing == null) {
+          await dao.insert(AppUser(
+            id: su['id']?.toString() ?? const Uuid().v4(),
+            name: name,
+            role: role,
+            joinedDate: joined,
+            isSelf: false,
+          ));
+        } else {
+          await dao.update(existing.copyWith(role: role, joinedDate: joined));
+        }
+      }
+    } catch (_) {
+      // 离线或鉴权失败：忽略，沿用本地 family_members。
+    }
+
     final list = await FamilyMemberDao().listAll();
     if (!mounted) return;
     // 注入当前登录用户（网页端 AdminUserList 含自己并标记「（我）」）。
@@ -207,6 +237,18 @@ String _today() {
   final d = DateTime.now();
   return '${d.year}-${d.month.toString().padLeft(2, '0')}-'
       '${d.day.toString().padLeft(2, '0')}';
+}
+
+/// 服务端 ISO 时间 → 本地展示用 'yyyy-MM-dd'；解析失败回退今天。[#6]
+String _isoToDate(String? iso) {
+  if (iso == null || iso.isEmpty) return _today();
+  try {
+    final d = DateTime.parse(iso);
+    return '${d.year}-${d.month.toString().padLeft(2, '0')}-'
+        '${d.day.toString().padLeft(2, '0')}';
+  } catch (_) {
+    return _today();
+  }
 }
 
 class _UserTile extends StatelessWidget {

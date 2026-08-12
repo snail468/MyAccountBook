@@ -301,15 +301,19 @@ class _UnlockGateState extends State<_UnlockGate> {
       for (final c in locals) {
         if (c.serverId != null) byServer[c.serverId!] = c;
       }
+      // 解锁成功：GET /api/cards 返回服务端所有卡（含解密完整卡号）。
+      // 对每张服务端卡 upsert 到本地：已映射的复用 local.id/createdAt，
+      // 服务端新增但本地没有的卡也新建（此前若 local==null 会跳过 → 卡号不同步）。[#5]
       for (final j in unlocked) {
         final sid = j['id'] as String?;
         if (sid == null) continue;
         final local = byServer[sid];
-        if (local == null) continue;
-        final num = j['number'] as String?;
-        if (num != null && num.isNotEmpty) {
-          await BankCardDao().upsert(local.copyWith(number: num));
-        }
+        final card = BankCard.fromApi(
+          j,
+          localId: local?.id ?? const Uuid().v4(),
+          createdAt: local?.createdAt,
+        ).copyWith(number: j['number'] as String?);
+        await BankCardDao().upsert(card);
       }
     } catch (_) {
       // 卡号写回失败不阻塞解锁：用户至少能看到本地已存卡号，下次同步再补。

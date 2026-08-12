@@ -88,7 +88,7 @@ class _Body extends StatelessWidget {
             children: [
               PageHeader(
                 icon: '💼',
-                title: '工作账本',
+                title: ledger.displayName,
                 subtitle: '$yearLabel 年 $monthLabel 月',
               ),
 

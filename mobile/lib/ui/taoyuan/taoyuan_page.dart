@@ -16,6 +16,7 @@ import '../../theme/design_tokens.dart';
 import '../widgets/app_card.dart';
 import '../widgets/app_primary_button.dart';
 import '../widgets/app_text_field.dart';
+import '../widgets/authenticated_image.dart';
 import '../widgets/image_picker_field.dart';
 import '../widgets/money.dart';
 import '../widgets/page_header.dart';
@@ -1083,13 +1084,12 @@ class _Thumb extends StatelessWidget {
         builder: (_) => Dialog(
           child: ClipRRect(
             borderRadius: BorderRadius.circular(12),
-            child: Image.network(AppConfig.resolveImageUrl(url),
-                fit: BoxFit.contain, errorBuilder: (
-              _,
-              __,
-              ___,
-            ) =>
-                Container(color: surface, child: const Icon(Icons.broken_image))),
+            child: AuthenticatedImage(
+              url: url,
+              fit: BoxFit.contain,
+              errorWidget:
+                  Container(color: surface, child: const Icon(Icons.broken_image)),
+            ),
           ),
         ),
       ),
@@ -1098,10 +1098,10 @@ class _Thumb extends StatelessWidget {
         height: 96,
         child: ClipRRect(
           borderRadius: BorderRadius.circular(12),
-          child: Image.network(
-            AppConfig.resolveImageUrl(url),
+          child: AuthenticatedImage(
+            url: url,
             fit: BoxFit.cover,
-            errorBuilder: (_, __, ___) =>
+            errorWidget:
                 Container(color: surface, child: const Icon(Icons.broken_image)),
           ),
         ),
