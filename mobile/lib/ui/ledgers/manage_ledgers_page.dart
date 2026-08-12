@@ -43,10 +43,14 @@ class _ManageLedgersPageState extends State<ManageLedgersPage> {
   }
 
   Future<void> _softDelete(Ledger l) async {
+    final isBuiltin = l.kind == 'work' || l.kind == 'taoyuan';
+    final body = isBuiltin
+        ? '首页不再显示。60 天内可恢复；恢复后原有数据完整保留。'
+        : '首页不再显示。60 天内可恢复；60 天后系统自动清除，届时该账本的所有记录都会一并销毁！';
     final ok = await _confirm(
       context,
       title: '把「${l.name}」放入回收站？',
-      body: '首页不再显示。60 天内可恢复；恢复后原有数据完整保留。',
+      body: body,
       confirmText: '放入回收站',
     );
     if (!ok || !mounted) return;
@@ -55,6 +59,13 @@ class _ManageLedgersPageState extends State<ManageLedgersPage> {
   }
 
   Future<void> _restore(Ledger l) async {
+    final ok = await _confirm(
+      context,
+      title: '恢复「${l.name}」？',
+      body: '账本会从回收站移回首页。',
+      confirmText: '恢复',
+    );
+    if (!ok || !mounted) return;
     await LedgerDao().upsert(l.copyWith(deletedAt: null, synced: 0));
     if (!mounted) return;
     ScaffoldMessenger.of(context)
@@ -63,10 +74,14 @@ class _ManageLedgersPageState extends State<ManageLedgersPage> {
   }
 
   Future<void> _purge(Ledger l) async {
+    final isBuiltin = l.kind == 'work' || l.kind == 'taoyuan';
+    final body = isBuiltin
+        ? '这只会删掉入口元数据，该账本的实际条目数据保留；以后可以从预设库重新添加，届时数据仍在。'
+        : '该账本所有记录会立即一并销毁，此操作不可恢复！';
     final ok = await _confirm(
       context,
       title: '永久删除「${l.name}」？',
-      body: '该账本所有记录会立即一并销毁，此操作不可恢复！',
+      body: body,
       confirmText: '永久删除',
     );
     if (!ok || !mounted) return;
@@ -165,7 +180,7 @@ class _ManageLedgersPageState extends State<ManageLedgersPage> {
                 ),
                 const SizedBox(height: 8),
                 if (recycled.isEmpty)
-                  _hint('回收站是空的', ink500)
+                  _hint('没有已删除的账本', ink500)
                 else
                   ...recycled.map(
                     (l) => _RecycledTile(
