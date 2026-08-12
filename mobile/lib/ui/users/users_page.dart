@@ -134,7 +134,7 @@ class _UsersPageState extends State<UsersPage> {
                   subtitle: '家庭成员 · 角色与权限',
                 ),
                 AppPrimaryButton(
-                  label: '新建用户',
+                  label: '+ 新建用户',
                   onPressed: () => showModalBottomSheet(
                     context: context,
                     isScrollControlled: true,
@@ -214,6 +214,7 @@ class _UserTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final isAdmin = user.role == 'admin';
     final deletable = !user.isSelf;
+    final canCycle = !user.isSelf;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -234,7 +235,7 @@ class _UserTile extends StatelessWidget {
                             style: TextStyle(color: ink900, fontSize: 15)),
                         if (user.isSelf) ...[
                           const SizedBox(width: 8),
-                          Text('我', style: TextStyle(color: ink400, fontSize: 13)),
+                          Text('（我）', style: TextStyle(color: ink400, fontSize: 13)),
                         ],
                       ],
                     ),
@@ -249,9 +250,7 @@ class _UserTile extends StatelessWidget {
                       ),
                         child: const Text('管理员',
                             style: TextStyle(color: AppColors.lightSurface, fontSize: 12)),
-                    )
-                  else
-                    Text('成员', style: TextStyle(color: ink500, fontSize: 12)),
+                    ),
                 ],
               ),
               const SizedBox(height: 4),
@@ -267,9 +266,10 @@ class _UserTile extends StatelessWidget {
                   ),
                   const SizedBox(width: 16),
                   GestureDetector(
-                    onTap: () => onCycle(user),
-                    child: Text(isAdmin ? '降级' : '升级',
-                        style: TextStyle(color: ink500, fontSize: 13)),
+                    onTap: canCycle ? () => onCycle(user) : null,
+                    child: Text(isAdmin ? '降级为普通用户' : '升为管理员',
+                        style: TextStyle(
+                            color: canCycle ? ink500 : ink400, fontSize: 13)),
                   ),
                   const SizedBox(width: 16),
                   GestureDetector(
