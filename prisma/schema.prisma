@@ -69,6 +69,7 @@ model Entry {
   occurredAt   DateTime  @default(now())
   refundedAt   DateTime?
   createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
   // 软删除：非空 = 在回收站，60 天后由 purgeExpiredRecords 硬删。
   // **所有金额聚合都必须过滤 deletedAt=null** —— 漏一处就把已删条目当有效数据算，
   // 总额会悄悄错。见 src/lib/softDelete.ts 的 NOT_DELETED。
@@ -268,6 +269,7 @@ model GeneralEntry {
   imageUrls   String?  // JSON array
   occurredAt  DateTime @default(now())
   createdAt   DateTime @default(now())
+  updatedAt  DateTime @updatedAt
   // 软删除。见 src/lib/softDelete.ts。
   deletedAt   DateTime?
   // 离线记账幂等键：客户端在入队时生成一个 UUID，后端见到相同 clientId +
@@ -322,6 +324,7 @@ model TripExpense {
   imageUrls          String?  // JSON array
   occurredAt         DateTime @default(now())
   createdAt          DateTime @default(now())
+  updatedAt  DateTime @updatedAt
   // 软删除。见 src/lib/softDelete.ts。
   // **旅游账本尤其危险**：软删的支出必须排除，否则成员净额和最优结算直接算错。
   deletedAt          DateTime?

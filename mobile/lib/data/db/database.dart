@@ -11,7 +11,7 @@ class AppDatabase {
   AppDatabase._internal();
   static final AppDatabase instance = AppDatabase._internal();
 
-  static const int _version = 6;
+  static const int _version = 7;
   Database? _db;
 
   Future<Database> get database async {
@@ -58,6 +58,10 @@ class AppDatabase {
     // 版本 6：账本补 is_own / owner_name 列（协同共享账本首页加 owner 前缀用）。幂等迁移。
     if (oldV < 6) {
       await _migrateToV6(db);
+    }
+    // 版本 7：账本补 last_pull_at 列（增量同步水线）。幂等迁移。
+    if (oldV < 7) {
+      await _migrateToV7(db);
     }
   }
 
@@ -160,6 +164,13 @@ class AppDatabase {
     });
   }
 
+  /// 升级到 v7：账本补 last_pull_at（增量同步水线，epoch ms）。幂等迁移。
+  Future<void> _migrateToV7(Database db) async {
+    await _addColumnsIfMissing(db, 'ledgers', const {
+      'last_pull_at': 'INTEGER',
+    });
+  }
+
   /// 对指定表探测列，仅 ALTER ADD 缺失列（幂等）。
   Future<void> _addColumnsIfMissing(
     Database db,
@@ -207,6 +218,7 @@ class AppDatabase {
         trip_budget TEXT,
         is_own INTEGER NOT NULL DEFAULT 0,
         owner_name TEXT,
+        last_pull_at INTEGER,
         synced INTEGER NOT NULL DEFAULT 1
       );
     ''');

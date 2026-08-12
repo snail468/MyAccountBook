@@ -203,6 +203,8 @@ TripExpense tripExpenseFromApi(Map<String, dynamic> j, String ledgerId,
   final occurred =
       j['occurredAt'] is String ? DateTime.tryParse(j['occurredAt']) : null;
   final imgs = j['imageUrls'];
+  final deleted =
+      j['deletedAt'] is String ? DateTime.tryParse(j['deletedAt']) : null;
   return TripExpense(
     id: localId ?? (j['id'] as String),
     serverId: j['id'] as String,
@@ -219,6 +221,7 @@ TripExpense tripExpenseFromApi(Map<String, dynamic> j, String ledgerId,
     imageUrls: imgs is List ? imgs.map((e) => e.toString()).toList() : const [],
     occurredAt:
         occurred?.millisecondsSinceEpoch ?? DateTime.now().millisecondsSinceEpoch,
+    deletedAt: deleted?.millisecondsSinceEpoch,
     synced: 1,
   );
 }

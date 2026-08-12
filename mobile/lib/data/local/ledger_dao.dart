@@ -8,9 +8,15 @@ class LedgerDao {
 
   Future<void> upsert(Ledger l) async {
     final db = await _db.database;
+    // 保留本地增量同步水线：ConflictAlgorithm.replace 会整行覆盖，若不读回旧值，
+    // 每次 _pullAll 的 upsert 都会把 last_pull_at 重置为 null，导致永远走全量拉取、
+    // 真·增量失效。Ledger.fromApi 不填充 lastPullAt（服务端无此字段），故需在此兜底。
+    final prev = await db.query('ledgers',
+        columns: ['last_pull_at'], where: 'id = ?', whereArgs: [l.id], limit: 1);
+    final prevLastPull = prev.isNotEmpty ? (prev.first['last_pull_at'] as int?) : null;
     await db.insert(
       'ledgers',
-      l.toDb(),
+      {...l.toDb(), 'last_pull_at': prevLastPull ?? l.lastPullAt},
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
   }
@@ -89,6 +95,17 @@ class LedgerDao {
     await db.update(
       'ledgers',
       {'synced': 1, 'server_id': serverId},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  /// 记录某账本上次成功拉取条目变更的时间戳（增量同步水线）。
+  Future<void> updateLastPullAt(String id, int ts) async {
+    final db = await _db.database;
+    await db.update(
+      'ledgers',
+      {'last_pull_at': ts},
       where: 'id = ?',
       whereArgs: [id],
     );

@@ -100,6 +100,8 @@ class GeneralEntry {
     final occurred =
         j['occurredAt'] is String ? DateTime.tryParse(j['occurredAt']) : null;
     final imgs = j['imageUrls'];
+    final deleted =
+        j['deletedAt'] is String ? DateTime.tryParse(j['deletedAt']) : null;
     return GeneralEntry(
       id: localId ?? (j['id'] as String),
       serverId: j['id'] as String,
@@ -112,6 +114,7 @@ class GeneralEntry {
       imageUrls: imgs is List ? imgs.map((e) => e.toString()).toList() : const [],
       occurredAt:
           occurred?.millisecondsSinceEpoch ?? DateTime.now().millisecondsSinceEpoch,
+      deletedAt: deleted?.millisecondsSinceEpoch,
       synced: 1,
     );
   }

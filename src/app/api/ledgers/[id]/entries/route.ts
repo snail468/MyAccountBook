@@ -42,16 +42,29 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const url = new URL(req.url);
   const limit = parsePageSize(url.searchParams.get('limit'));
   const cursor = decodeCursor(url.searchParams.get('cursor'));
+  // 增量同步：?since=<ISO> 只返回水位之后的变更（新建/编辑/软删）。
+  const sinceParam = url.searchParams.get('since');
+  const since = sinceParam ? new Date(sinceParam) : null;
 
   const rows = await prisma.generalEntry.findMany({
-    where: { ledgerId: id, ...NOT_DELETED, ...cursorWhere(cursor) },
+    where: {
+      ledgerId: id,
+      ...(since
+        ? { OR: [{ updatedAt: { gt: since } }, { deletedAt: { gt: since } }] }
+        : NOT_DELETED),
+      ...cursorWhere(since ? null : cursor),
+    },
     orderBy: TIME_DESC_ORDER,
-    take: limit + 1, // 多取一条用于判断是否还有下一页
+    take: since ? undefined : limit + 1, // 增量模式不分页，全量返回变更
   });
 
-  const { items, nextCursor } = slicePage(rows, limit);
+  const { items, nextCursor } = since
+    ? { items: rows, nextCursor: null }
+    : slicePage(rows, limit);
 
   return NextResponse.json({
+    // 能力标志：客户端据此从「全量对账」切换为「增量应用」（upsert 变更 + 标记软删）。
+    incremental: true,
     entries: items.map((e) => ({
       id: e.id,
       direction: e.direction,
@@ -61,6 +74,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       note: e.note,
       imageUrls: parseImageUrls(e.imageUrls),
       occurredAt: e.occurredAt.toISOString(),
+      updatedAt: e.updatedAt.toISOString(),
+      deletedAt: e.deletedAt?.toISOString() ?? null,
     })),
     nextCursor,
   });

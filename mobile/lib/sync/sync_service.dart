@@ -404,49 +404,105 @@ class SyncService {
     return _opDao.pendingDeleteServerIds(entityTypes);
   }
 
+  /// 由本地水线（epoch ms）生成发给服务端的 since（UTC ISO）。
+  /// 回拨 10s 抵消设备/服务端时钟偏差，避免漏拉；增量 upsert 幂等，重叠无害。
+  /// 返回 null 表示尚无水线（首拉，走全量对账）。
+  String? _sinceParam(int? lastPullAt) {
+    if (lastPullAt == null) return null;
+    const skewMs = 10000;
+    final safe = lastPullAt - skewMs;
+    return DateTime.fromMillisecondsSinceEpoch(safe, isUtc: true)
+        .toUtc()
+        .toIso8601String();
+  }
+
+  /// 取一行服务端 updatedAt 的 epoch ms（UTC），用于推进本地水线。
+  /// 水线取「本次拉到的最新服务端时间戳」而非设备时钟，可彻底规避设备/服务端
+  /// 时钟偏差导致的漏拉。
+  int? _updatedAtMs(Map<String, dynamic> j) {
+    final v = j['updatedAt'];
+    if (v is String) {
+      final dt = DateTime.tryParse(v);
+      if (dt != null) return dt.toUtc().millisecondsSinceEpoch;
+    }
+    return null;
+  }
+
   Future<void> _pullGeneral(String ledgerId, String serverLedgerId) async {
-    final entries = await _general.list(serverLedgerId);
+    final lastPullAt = (await _ledgerDao.getById(ledgerId))?.lastPullAt;
+    final since = _sinceParam(lastPullAt);
+    final res = await _general.list(serverLedgerId, since: since);
+    final entries = res.rows;
+    final incremental = res.incremental;
+
     final existing = await _generalDao.listByLedger(ledgerId);
     final map = <String, String>{};
     for (final e in existing) {
       if (e.serverId != null) map[e.serverId!] = e.id;
     }
+    int? maxUpdated;
     for (final j in entries) {
       final sid = j['id'] as String;
       final localId = map[sid] ?? _uuid.v4();
       await _generalDao.insert(GeneralEntry.fromApi(j, ledgerId, localId: localId));
+      final u = _updatedAtMs(j);
+      if (u != null && (maxUpdated == null || u > maxUpdated)) maxUpdated = u;
     }
 
-    // 对账：删本地已同步但服务端已软删的行（未同步的本地新建保留）。
-    final serverIds = <String>{for (final j in entries) j['id'] as String};
-    await _generalDao.deleteSyncedNotIn(ledgerId, serverIds);
+    if (!incremental || since == null) {
+      // 全量对账（首拉 / 旧服务端不支持增量）：删本地已同步但服务端已软删的行
+      // （未同步的本地新建 server_id 为 null，不会被删，防离线记账丢失）。
+      final serverIds = <String>{for (final j in entries) j['id'] as String};
+      await _generalDao.deleteSyncedNotIn(ledgerId, serverIds);
+    }
+    // 增量模式只 upsert 变更行（含软删，fromApi 已写 deletedAt），禁止 deleteSyncedNotIn
+    // 否则会把未返回的已同步本地行误删。水线推进到本次最新服务端时间戳。
+    await _ledgerDao.updateLastPullAt(
+        ledgerId, maxUpdated ?? DateTime.now().toUtc().millisecondsSinceEpoch);
   }
 
   Future<void> _pullWork(String ledgerId, String serverLedgerId) async {
-    final entries = await _work.list(serverLedgerId);
+    final lastPullAt = (await _ledgerDao.getById(ledgerId))?.lastPullAt;
+    final since = _sinceParam(lastPullAt);
+    final res = await _work.list(serverLedgerId, since: since);
+    final entries = res.rows;
+    final incremental = res.incremental;
+
     final existing = await _workDao.listByLedger(ledgerId);
     final map = <String, String>{};
     for (final e in existing) {
       if (e.serverId != null) map[e.serverId!] = e.id;
     }
+    int? maxUpdated;
     for (final j in entries) {
       final sid = j['id'] as String;
       final localId = map[sid] ?? _uuid.v4();
       await _workDao.insert(WorkEntry.fromApi(j, ledgerId, localId: localId));
+      final u = _updatedAtMs(j);
+      if (u != null && (maxUpdated == null || u > maxUpdated)) maxUpdated = u;
     }
 
-    // 对账：删本地已同步但服务端已软删的行（未同步的本地新建保留）。
-    final serverIds = <String>{for (final j in entries) j['id'] as String};
-    await _workDao.deleteSyncedNotIn(ledgerId, serverIds);
+    if (!incremental || since == null) {
+      final serverIds = <String>{for (final j in entries) j['id'] as String};
+      await _workDao.deleteSyncedNotIn(ledgerId, serverIds);
+    }
+    await _ledgerDao.updateLastPullAt(
+        ledgerId, maxUpdated ?? DateTime.now().toUtc().millisecondsSinceEpoch);
   }
 
   Future<void> _pullTaoyuan(String ledgerId, String serverLedgerId) async {
-    final events = await _events.list(serverLedgerId);
+    final lastPullAt = (await _ledgerDao.getById(ledgerId))?.lastPullAt;
+    final since = _sinceParam(lastPullAt);
+    final res = await _events.list(serverLedgerId, since: since);
+    final events = res.rows;
+    final incremental = res.incremental;
+
     final existing = await _eventDao.listByLedger(ledgerId);
     final map = <String, String>{};
     for (final e in existing) {
       if (e.serverId != null) map[e.serverId!] = e.id;
     }
+    int? maxUpdated;
     for (final j in events) {
       final sid = j['id'] as String;
       final localId = map[sid] ?? _uuid.v4();
@@ -470,15 +526,21 @@ class SyncService {
           await _eventDao.update(cur.copyWith(contentImages: imgs));
         }
       }
+      final u = _updatedAtMs(j);
+      if (u != null && (maxUpdated == null || u > maxUpdated)) maxUpdated = u;
     }
 
-    // 对账：删本地已同步但服务端已软删的活动（金额级联清理由 DAO 处理）。
-    final serverIds = <String>{for (final j in events) j['id'] as String};
-    await _eventDao.deleteSyncedNotIn(ledgerId, serverIds);
+    if (!incremental || since == null) {
+      // 对账：删本地已同步但服务端已软删的活动（金额级联清理由 DAO 处理）。
+      final serverIds = <String>{for (final j in events) j['id'] as String};
+      await _eventDao.deleteSyncedNotIn(ledgerId, serverIds);
+    }
+    await _ledgerDao.updateLastPullAt(
+        ledgerId, maxUpdated ?? DateTime.now().toUtc().millisecondsSinceEpoch);
   }
 
   Future<void> _pullTravel(String ledgerId, String serverLedgerId) async {
-    // 成员先拉，建立 serverId -> localId
+    // 成员先拉，建立 serverId -> localId（成员变更少且无增量端点，始终全量）。
     final members = await _trip.listMembers(serverLedgerId);
     final existingMembers = await _tripDao.listMembers(ledgerId);
     final memberMap = <String, String>{};
@@ -492,13 +554,35 @@ class SyncService {
       memberMap[sid] = localId;
     }
 
-    // 花费 + 分摊
-    final expenses = await _trip.listExpenses(serverLedgerId, all: true);
+    // 花费 + 分摊：增量或全量（视服务端能力与本地水线）。
+    final lastPullAt = (await _ledgerDao.getById(ledgerId))?.lastPullAt;
+    final since = _sinceParam(lastPullAt);
+    List<Map<String, dynamic>> expenses;
+    bool incremental;
+    if (since != null) {
+      final r = await _trip.listExpenses(serverLedgerId, since: since);
+      expenses = r.rows;
+      incremental = r.incremental;
+      if (!incremental) {
+        // 服务端忽略/不支持增量（旧服务端）：since 命中默认游标分页会返回截断页，
+        // 直接当全量对账会误删数据。回退 all=1 全量拉取，保证集合完整。[向后兼容]
+        final full = await _trip.listExpenses(serverLedgerId, all: true);
+        expenses = full.rows;
+        incremental = full.incremental;
+      }
+    } else {
+      // 首拉（无水位）：直接全量。
+      final full = await _trip.listExpenses(serverLedgerId, all: true);
+      expenses = full.rows;
+      incremental = full.incremental;
+    }
+
     final existingExp = await _tripDao.listExpenses(ledgerId);
     final expMap = <String, String>{};
     for (final e in existingExp) {
       if (e.serverId != null) expMap[e.serverId!] = e.id;
     }
+    int? maxUpdated;
     for (final j in expenses) {
       final sid = j['id'] as String;
       final localId = expMap[sid] ?? _uuid.v4();
@@ -517,13 +601,18 @@ class SyncService {
           shareCents: sm['shareCents'] as int,
         ));
       }
+      final u = _updatedAtMs(j);
+      if (u != null && (maxUpdated == null || u > maxUpdated)) maxUpdated = u;
     }
 
-    // 对账：成员与花费各自清理本地已同步但服务端已移除的行
-    //（花费的分摊级联清理由 DAO 处理）。
+    // 成员对账始终全量（成员无增量端点）；花费按增量/全量分支。
     final memberServerIds = <String>{for (final j in members) j['id'] as String};
     await _tripDao.deleteSyncedMembersNotIn(ledgerId, memberServerIds);
-    final expServerIds = <String>{for (final j in expenses) j['id'] as String};
-    await _tripDao.deleteSyncedExpensesNotIn(ledgerId, expServerIds);
+    if (!incremental || since == null) {
+      final expServerIds = <String>{for (final j in expenses) j['id'] as String};
+      await _tripDao.deleteSyncedExpensesNotIn(ledgerId, expServerIds);
+    }
+    await _ledgerDao.updateLastPullAt(
+        ledgerId, maxUpdated ?? DateTime.now().toUtc().millisecondsSinceEpoch);
   }
 }

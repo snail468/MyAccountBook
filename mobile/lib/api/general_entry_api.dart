@@ -6,23 +6,30 @@ class GeneralEntryApi {
   final ApiClient _client;
   GeneralEntryApi(this._client);
 
-  /// 列表（按 occurredAt 倒序）。服务端游标分页，这里循环拉全量，
-  /// 供同步对账使用——只有拿到完整集合，才能安全清理服务端已软删的本地行。
-  Future<List<Map<String, dynamic>>> list(String ledgerId) async {
+  /// 列表（增量同步用）。[since] 为上次拉取水线（ISO）；传 null 表示全量。
+  /// 返回条目集合与 `incremental` 能力标志：为 true 时服务端只返回变更行，
+  /// 调用方应做「增量应用」（upsert 变更 + 由 fromApi 写入软删），而非全量对账。
+  Future<({List<Map<String, dynamic>> rows, bool incremental})> list(
+    String ledgerId, {
+    String? since,
+  }) async {
     final all = <Map<String, dynamic>>[];
     String? cursor;
+    bool incremental = false;
     do {
       final q = <String, String>{'limit': '200'};
       if (cursor != null) q['cursor'] = cursor;
+      if (since != null) q['since'] = since;
       final data = await _client.get('/ledgers/$ledgerId/entries', query: q);
       if (data is Map && data['entries'] is List) {
         all.addAll(List<Map<String, dynamic>>.from(data['entries'] as List));
+        incremental = data['incremental'] as bool? ?? incremental;
         cursor = data['nextCursor'] as String?;
       } else {
         break;
       }
     } while (cursor != null);
-    return all;
+    return (rows: all, incremental: incremental);
   }
 
   /// 新建。返回服务端 id（cuid）。[e.clientId] 用于幂等。

@@ -6,13 +6,20 @@ class EventApi {
   final ApiClient _client;
   EventApi(this._client);
 
-  /// 活动列表（按 ledgerId 拉某本桃源账本）。
-  Future<List<Map<String, dynamic>>> list(String ledgerId) async {
-    final data = await _client.get('/events', query: {'ledgerId': ledgerId});
-    if (data is Map && data['events'] is List) {
-      return List<Map<String, dynamic>>.from(data['events'] as List);
-    }
-    return [];
+  /// 活动列表（按 ledgerId 拉某本桃源账本）。增量同步用：[since] 为水线（ISO），
+  /// null 表示全量；返回活动集合与 `incremental` 能力标志。
+  Future<({List<Map<String, dynamic>> rows, bool incremental})> list(
+    String ledgerId, {
+    String? since,
+  }) async {
+    final q = <String, String>{'ledgerId': ledgerId};
+    if (since != null) q['since'] = since;
+    final data = await _client.get('/events', query: q);
+    final rows = (data is Map && data['events'] is List)
+        ? List<Map<String, dynamic>>.from(data['events'] as List)
+        : <Map<String, dynamic>>[];
+    final incremental = (data is Map ? data['incremental'] as bool? : null) ?? false;
+    return (rows: rows, incremental: incremental);
   }
 
   /// 新建活动。返回服务端 id（cuid）。[e.clientId] 用于幂等。

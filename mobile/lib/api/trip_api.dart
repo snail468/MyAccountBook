@@ -39,15 +39,25 @@ class TripApi {
     await _client.delete('/ledgers/$ledgerId/members/$memberId');
   }
 
-  /// 花费列表。传 [all]=true 拉全量（结算统计用）。
-  Future<List<Map<String, dynamic>>> listExpenses(String ledgerId,
-      {bool all = false}) async {
-    final data = await _client.get('/ledgers/$ledgerId/expenses',
-        query: all ? {'all': '1'} : null);
-    if (data is Map && data['expenses'] is List) {
-      return List<Map<String, dynamic>>.from(data['expenses'] as List);
-    }
-    return [];
+  /// 花费列表。传 [all]=true 拉全量（结算统计用）；[since] 为增量水线（ISO）。
+  /// 返回花费集合与 `incremental` 能力标志。
+  Future<({List<Map<String, dynamic>> rows, bool incremental})> listExpenses(
+    String ledgerId, {
+    bool all = false,
+    String? since,
+  }) async {
+    final q = <String, String>{};
+    if (all) q['all'] = '1';
+    if (since != null) q['since'] = since;
+    final data = await _client.get(
+      '/ledgers/$ledgerId/expenses',
+      query: q.isNotEmpty ? q : null,
+    );
+    final rows = (data is Map && data['expenses'] is List)
+        ? List<Map<String, dynamic>>.from(data['expenses'] as List)
+        : <Map<String, dynamic>>[];
+    final incremental = (data is Map ? data['incremental'] as bool? : null) ?? false;
+    return (rows: rows, incremental: incremental);
   }
 
   /// 新增花费。[allocation] 为 [{memberId(服务端id), weight}]，由服务端用最大余额法

@@ -38,14 +38,21 @@ export async function GET(req: Request) {
   );
   if (ledgerId instanceof Response) return ledgerId;
 
+  const sinceParam = url.searchParams.get('since');
+  const since = sinceParam ? new Date(sinceParam) : null;
+
   const events = await prisma.event.findMany({
-    where: { ledgerId, deletedAt: null },
+    where: since
+      ? { ledgerId, OR: [{ updatedAt: { gt: since } }, { deletedAt: { gt: since } }] }
+      : { ledgerId, deletedAt: null },
     orderBy: { publishedAt: 'desc' },
   });
 
   const iso = (d: Date | null) => d?.toISOString() ?? null;
 
   return NextResponse.json({
+    // 能力标志：客户端据此从「全量对账」切换为「增量应用」。
+    incremental: true,
     events: events.map((e) => ({
       id: e.id,
       ledgerId: e.ledgerId,
@@ -69,6 +76,7 @@ export async function GET(req: Request) {
       status: e.status,
       note: e.note,
       parentId: e.parentId,
+      updatedAt: iso(e.updatedAt),
       deletedAt: iso(e.deletedAt),
     })),
   });

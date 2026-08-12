@@ -19,6 +19,8 @@ class Ledger {
   // 协同共享：服务端标记当前用户是否为 owner，以及 owner 用户名（用于前缀显示）。
   final bool? isOwn;
   final String? ownerName;
+  // 增量同步水线：上次成功拉取该账本条目变更的时间戳（epoch ms）。null = 尚未拉过。
+  final int? lastPullAt;
 
   Ledger({
     required this.id,
@@ -39,6 +41,7 @@ class Ledger {
     this.synced = 1,
     this.isOwn,
     this.ownerName,
+    this.lastPullAt,
   });
 
   factory Ledger.fromDb(Map<String, dynamic> m) => Ledger(
@@ -60,6 +63,7 @@ class Ledger {
         synced: m['synced'] as int? ?? 1,
         isOwn: (m['is_own'] as int? ?? 0) == 1 ? true : (m['is_own'] == null ? null : false),
         ownerName: m['owner_name'] as String?,
+        lastPullAt: m['last_pull_at'] as int?,
       );
 
   Map<String, dynamic> toDb() => {
@@ -81,6 +85,7 @@ class Ledger {
         'synced': synced,
         'is_own': isOwn == true ? 1 : 0,
         'owner_name': ownerName,
+        'last_pull_at': lastPullAt,
       };
 
   /// 从服务端 JSON 构造（拉取同步时用）。
@@ -135,6 +140,7 @@ class Ledger {
     int? synced,
     bool? isOwn,
     String? ownerName,
+    int? lastPullAt,
   }) =>
       Ledger(
         id: id ?? this.id,
@@ -155,6 +161,7 @@ class Ledger {
         synced: synced ?? this.synced,
         isOwn: isOwn ?? this.isOwn,
         ownerName: ownerName ?? this.ownerName,
+        lastPullAt: lastPullAt ?? this.lastPullAt,
       );
 
   /// 协同共享账本显示名：他人所有（且服务端带回 ownerName）时加「owner · 」前缀。

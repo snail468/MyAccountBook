@@ -33,21 +33,30 @@ export async function GET(req: Request) {
   const dirParam = url.searchParams.get('direction');
   const direction =
     dirParam === 'income' || dirParam === 'expense' ? dirParam : undefined;
+  // 增量同步：?since=<ISO> 只返回水位之后的变更（新建/编辑/软删）。
+  const sinceParam = url.searchParams.get('since');
+  const since = sinceParam ? new Date(sinceParam) : null;
 
   const rows = await prisma.entry.findMany({
     where: {
       ledgerId,
-      ...NOT_DELETED,
+      ...(since
+        ? { OR: [{ updatedAt: { gt: since } }, { deletedAt: { gt: since } }] }
+        : NOT_DELETED),
       ...(direction ? { direction } : {}),
-      ...cursorWhere(cursor),
+      ...cursorWhere(since ? null : cursor),
     },
     orderBy: TIME_DESC_ORDER,
-    take: limit + 1,
+    take: since ? undefined : limit + 1,
   });
 
-  const { items, nextCursor } = slicePage(rows, limit);
+  const { items, nextCursor } = since
+    ? { items: rows, nextCursor: null }
+    : slicePage(rows, limit);
 
   return NextResponse.json({
+    // 能力标志：客户端据此从「全量对账」切换为「增量应用」。
+    incremental: true,
     entries: items.map((e) => ({
       id: e.id,
       yearMonth: e.yearMonth,
@@ -57,6 +66,8 @@ export async function GET(req: Request) {
       note: e.note,
       occurredAt: e.occurredAt.toISOString(),
       refundedAt: e.refundedAt?.toISOString() ?? null,
+      updatedAt: e.updatedAt.toISOString(),
+      deletedAt: e.deletedAt?.toISOString() ?? null,
     })),
     nextCursor,
   });

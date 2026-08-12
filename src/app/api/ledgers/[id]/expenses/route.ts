@@ -66,6 +66,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const all = url.searchParams.get('all') === '1';
   const phaseParam = url.searchParams.get('phase');
   const phase = phaseParam === 'pre' || phaseParam === 'during' ? phaseParam : undefined;
+  // 增量同步：?since=<ISO> 只返回水位之后的变更（新建/编辑/软删）。
+  const sinceParam = url.searchParams.get('since');
+  const since = sinceParam ? new Date(sinceParam) : null;
 
   const include = {
     splits: true,
@@ -102,6 +105,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     payerId: e.payerId,
     payerName: e.payer.displayName,
     splits: e.splits.map((s) => ({ memberId: s.memberId, shareCents: s.shareCents })),
+    updatedAt: e.updatedAt.toISOString(),
+    deletedAt: e.deletedAt?.toISOString() ?? null,
   });
 
   if (all) {
@@ -110,7 +115,20 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       include,
       orderBy: TIME_DESC_ORDER,
     });
-    return NextResponse.json({ expenses: rows.map(serialize), nextCursor: null });
+    return NextResponse.json({ incremental: true, expenses: rows.map(serialize), nextCursor: null });
+  }
+
+  // 增量同步：仅返回 updatedAt/deletedAt 在水位之后的变更（不分页）。
+  if (since) {
+    const rows = await prisma.tripExpense.findMany({
+      where: {
+        ledgerId: id,
+        OR: [{ updatedAt: { gt: since } }, { deletedAt: { gt: since } }],
+      },
+      include,
+      orderBy: TIME_DESC_ORDER,
+    });
+    return NextResponse.json({ incremental: true, expenses: rows.map(serialize), nextCursor: null });
   }
 
   const limit = parsePageSize(url.searchParams.get('limit'));
@@ -124,7 +142,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   });
 
   const { items, nextCursor } = slicePage(rows, limit);
-  return NextResponse.json({ expenses: items.map(serialize), nextCursor });
+  return NextResponse.json({ incremental: true, expenses: items.map(serialize), nextCursor });
 }
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
