@@ -32,6 +32,7 @@ export async function POST(req: Request) {
     select: {
       id: true,
       username: true,
+      role: true,
       passwordHash: true,
       sessionVersion: true,
       failedLoginCount: true,
@@ -97,5 +98,10 @@ export async function POST(req: Request) {
 
   await issueSession(user);
 
-  return NextResponse.json({ ok: true, username: user.username, needsOnboarding });
+  return NextResponse.json({
+    ok: true,
+    username: user.username,
+    role: user.role,
+    needsOnboarding,
+  });
 }

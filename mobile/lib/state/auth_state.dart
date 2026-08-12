@@ -15,6 +15,11 @@ class AuthState extends ChangeNotifier {
   bool _initialized = false;
   bool _authed = false;
   String? _username;
+  /// 当前登录用户角色（'admin' / 'user'）。来自登录响应，持久化到
+  /// shared_preferences，重启后恢复。未登录/未取到时兜底为 'admin'，
+  /// 避免老服务端(未返回 role)或首启瞬间把管理员误判成普通用户而丢失「用户管理」。
+  /// 一旦服务端返回明确 'user'，即按普通用户限制（[#6]）。
+  String? _role;
 
   /// 记住的用户名（启动探测后填充，供登录页预填）。
   String? _rememberedUsername;
@@ -31,21 +36,23 @@ class AuthState extends ChangeNotifier {
   /// 登录密码（供银行卡解锁门验密；为空说明尚未登录，需先登录）。
   String? get loginPassword => _loginPassword;
 
-  /// 角色。网页端从会话读 `user.role`；本地优先单用户应用等价于管理员
-  /// （拥有全部账本与数据），故固定为 'admin'，让首页「用户管理」卡片可见。
-  String get role => 'admin';
+  /// 角色。优先用服务端返回并持久化的真实角色；未取到(老服务端/首启)时兜底
+  /// 'admin'，保证管理员权限不丢失。普通用户(role='user')将限制用户管理等管理动作。[#6]
+  String get role => _role ?? 'admin';
 
   /// 记住的用户名（非空才可用于预填登录页）。
   String? get rememberedUsername => _rememberedUsername;
 
   static const String _kRememberUser = 'remember_username';
   static const String _kRememberPass = 'remember_password';
+  static const String _kRememberRole = 'remember_role';
 
   Future<void> init() async {
     _authed = await _api.hasSessionCookie();
     // 读取记住的凭据用于预填（不自动登录：cookie 失效需用户重新验证）。
     final prefs = await SharedPreferences.getInstance();
     _rememberedUsername = prefs.getString(_kRememberUser);
+    _role = prefs.getString(_kRememberRole);
     // 预载记住的密码，使已登录会话（cookie 仍有效）进入银行卡页时解锁门可直接验密。
     _loginPassword = prefs.getString(_kRememberPass);
     // 启动恢复用户名：单用户应用里"记住的用户名"即当前登录用户。若不回填，
@@ -58,11 +65,14 @@ class AuthState extends ChangeNotifier {
   }
 
   Future<void> login(String username, String password) async {
-    _username = await _auth.login(username, password);
+    final data = await _auth.login(username, password);
+    _username = data['username'] as String? ?? username;
+    _role = _normalizeRole(data['role']);
     _authed = true;
     _loginPassword = password;
     // 持久化以便重启后仍可验密（与网页端无此 UI 不冲突，仅为本地解锁门服务）。
     await saveRememberMe(username, password);
+    await _saveRole();
     notifyListeners();
   }
 
@@ -74,6 +84,23 @@ class AuthState extends ChangeNotifier {
     _rememberedUsername = username;
   }
 
+  /// 持久化角色（登录/注册成功后调用）。
+  Future<void> _saveRole() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (_role != null) {
+      await prefs.setString(_kRememberRole, _role!);
+    } else {
+      await prefs.remove(_kRememberRole);
+    }
+  }
+
+  /// 仅保留 'admin' / 'user'，其它一律视为普通用户（兜底安全）。
+  String? _normalizeRole(dynamic r) {
+    if (r == 'admin') return 'admin';
+    if (r == 'user') return 'user';
+    return null;
+  }
+
   /// 清除记住的密码（保留用户名），用于未勾选或退出登录时。
   Future<void> clearRememberPassword() async {
     final prefs = await SharedPreferences.getInstance();
@@ -82,10 +109,13 @@ class AuthState extends ChangeNotifier {
   }
 
   Future<void> register(String username, String password) async {
-    _username = await _auth.register(username, password);
+    final data = await _auth.register(username, password);
+    _username = data['username'] as String? ?? username;
+    _role = _normalizeRole(data['role']);
     _authed = true;
     _loginPassword = password;
     await saveRememberMe(username, password);
+    await _saveRole();
     notifyListeners();
   }
 
@@ -94,8 +124,11 @@ class AuthState extends ChangeNotifier {
     _authed = false;
     _username = null;
     _loginPassword = null;
+    _role = null;
     // 退出登录时清除记住的密码（保留用户名，便于下次预填）。
     await clearRememberPassword();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_kRememberRole);
     notifyListeners();
   }
 }

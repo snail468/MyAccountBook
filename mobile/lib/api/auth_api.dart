@@ -7,27 +7,24 @@ class AuthApi {
 
   AuthApi(this._client);
 
-  /// 返回登录后的用户名（用于本地展示）。会话靠 Cookie，不返回 token。
-  Future<String> login(String username, String password) async {
+  /// 登录。会话靠 Cookie，不返回 token。返回服务端完整响应
+  /// （含 username / role），供 [AuthState] 提取角色做权限判断。[#6]
+  Future<Map<String, dynamic>> login(String username, String password) async {
     final data = await _client.post('/auth/login', {
       'username': username,
       'password': password,
     });
-    if (data is Map && data['username'] is String) {
-      return data['username'] as String;
-    }
-    return username;
+    if (data is Map) return Map<String, dynamic>.from(data);
+    return {'username': username};
   }
 
-  Future<String> register(String username, String password) async {
+  Future<Map<String, dynamic>> register(String username, String password) async {
     final data = await _client.post('/auth/register', {
       'username': username,
       'password': password,
     });
-    if (data is Map && data['username'] is String) {
-      return data['username'] as String;
-    }
-    return username;
+    if (data is Map) return Map<String, dynamic>.from(data);
+    return {'username': username};
   }
 
   Future<void> logout() async {

@@ -35,32 +35,36 @@ class _UsersPageState extends State<UsersPage> {
   }
 
   Future<void> _load() async {
-    // 在线时先把服务端全部用户落到本地 family_members（按 username 去重），
-    // 让管理员能看到所有用户；服务端角色/加入日期以服务端为准回写本地。
-    // 失败（离线/非管理员）静默降级，沿用本地数据。[#6]
-    try {
-      final serverUsers = await AdminApi(ApiClient.instance).listUsers();
-      final dao = FamilyMemberDao();
-      for (final su in serverUsers) {
-        final name = su['username'] as String?;
-        if (name == null || name.isEmpty) continue;
-        final role = (su['role'] as String?) ?? 'member';
-        final joined = _isoToDate(su['joinedAt'] as String?);
-        final existing = await dao.findByName(name);
-        if (existing == null) {
-          await dao.insert(AppUser(
-            id: su['id']?.toString() ?? const Uuid().v4(),
-            name: name,
-            role: role,
-            joinedDate: joined,
-            isSelf: false,
-          ));
-        } else {
-          await dao.update(existing.copyWith(role: role, joinedDate: joined));
+    // 仅管理员拉取服务端全量用户并落地本地（按 username 去重），从而看到所有用户；
+    // 普通用户只看到自己（下方注入的 isSelf 记录）。服务端 GET /api/admin/users
+    // 本身也 requireAdmin，普通用户调用会 403，这里提前按本地角色判定，避免无谓请求。[#6]
+    final auth = context.read<AuthState>();
+    final isAdmin = auth.role == 'admin';
+    if (isAdmin) {
+      try {
+        final serverUsers = await AdminApi(ApiClient.instance).listUsers();
+        final dao = FamilyMemberDao();
+        for (final su in serverUsers) {
+          final name = su['username'] as String?;
+          if (name == null || name.isEmpty) continue;
+          final role = (su['role'] as String?) ?? 'member';
+          final joined = _isoToDate(su['joinedAt'] as String?);
+          final existing = await dao.findByName(name);
+          if (existing == null) {
+            await dao.insert(AppUser(
+              id: su['id']?.toString() ?? const Uuid().v4(),
+              name: name,
+              role: role,
+              joinedDate: joined,
+              isSelf: false,
+            ));
+          } else {
+            await dao.update(existing.copyWith(role: role, joinedDate: joined));
+          }
         }
+      } catch (_) {
+        // 离线或鉴权失败：忽略，沿用本地 family_members。
       }
-    } catch (_) {
-      // 离线或鉴权失败：忽略，沿用本地 family_members。
     }
 
     final list = await FamilyMemberDao().listAll();
@@ -68,7 +72,6 @@ class _UsersPageState extends State<UsersPage> {
     // 注入当前登录用户（网页端 AdminUserList 含自己并标记「（我）」）。
     // family_members 表与登录 users 表隔离，这里把 auth 用户名合成一条 isSelf 记录置顶；
     // 若列表里已有同名成员则直接标记 isSelf，避免重复。[#6]
-    final auth = context.read<AuthState>();
     if (auth.username != null && auth.username!.isNotEmpty) {
       final idx = list.indexWhere((u) => u.name == auth.username);
       if (idx >= 0) {
@@ -79,7 +82,7 @@ class _UsersPageState extends State<UsersPage> {
           AppUser(
             id: 'self',
             name: auth.username!,
-            role: 'admin',
+            role: auth.role,
             joinedDate: _today(),
             isSelf: true,
           ),
@@ -163,6 +166,8 @@ class _UsersPageState extends State<UsersPage> {
   @override
   Widget build(BuildContext context) {
     context.watch<ThemeState>();
+    final auth = context.watch<AuthState>();
+    final isAdmin = auth.role == 'admin';
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
     final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
@@ -185,26 +190,27 @@ class _UsersPageState extends State<UsersPage> {
                   title: '用户管理',
                   subtitle: '家庭成员 · 角色与权限',
                 ),
-                AppPrimaryButton(
-                  label: '+ 新建用户',
-                  onPressed: () => showModalBottomSheet(
-                    context: context,
-                    isScrollControlled: true,
-                    builder: (_) => _AddUserSheet(
-                      onSave: (name, role, password) async {
-                        await _add(name, role, password);
-                        if (mounted) Navigator.of(context).pop();
-                      },
-                    ),
-                  ).then((_) {
-                    if (mounted) _load();
-                  }),
-                ),
-                const SizedBox(height: 8),
+                if (isAdmin)
+                  AppPrimaryButton(
+                    label: '+ 新建用户',
+                    onPressed: () => showModalBottomSheet(
+                      context: context,
+                      isScrollControlled: true,
+                      builder: (_) => _AddUserSheet(
+                        onSave: (name, role, password) async {
+                          await _add(name, role, password);
+                          if (mounted) Navigator.of(context).pop();
+                        },
+                      ),
+                    ).then((_) {
+                      if (mounted) _load();
+                    }),
+                  ),
+                if (isAdmin) const SizedBox(height: 8),
                 if (_loading)
                   _hint('加载中…', ink400)
                 else if (_users.isEmpty)
-                  _hint('还没有其他用户', ink500)
+                  _hint(isAdmin ? '还没有其他用户' : '仅能看到你自己', ink500)
                 else
                   ..._users.map(
                     (u) => _UserTile(
@@ -214,6 +220,7 @@ class _UsersPageState extends State<UsersPage> {
                       ink400: ink400,
                       blue: blue,
                       red: red,
+                      canManage: isAdmin,
                       onCycle: _cycleRole,
                       onReset: _resetPassword,
                       onRemove: _remove,
@@ -258,6 +265,7 @@ class _UserTile extends StatelessWidget {
   final Color ink400;
   final Color blue;
   final Color red;
+  final bool canManage;
   final Future<void> Function(AppUser) onCycle;
   final Future<void> Function(AppUser) onReset;
   final Future<void> Function(AppUser) onRemove;
@@ -269,6 +277,7 @@ class _UserTile extends StatelessWidget {
     required this.ink400,
     required this.blue,
     required this.red,
+    this.canManage = true,
     required this.onCycle,
     required this.onReset,
     required this.onRemove,
@@ -321,29 +330,30 @@ class _UserTile extends StatelessWidget {
               Text('加入 ${user.joinedDate}',
                   style: TextStyle(color: ink500, fontSize: 13)),
               const SizedBox(height: 8),
-              Row(
-                children: [
-                  GestureDetector(
-                    onTap: () => onReset(user),
-                    child: Text('重置密码',
-                        style: TextStyle(color: ink500, fontSize: 13)),
-                  ),
-                  const SizedBox(width: 16),
-                  GestureDetector(
-                    onTap: canCycle ? () => onCycle(user) : null,
-                    child: Text(isAdmin ? '降级为普通用户' : '升为管理员',
-                        style: TextStyle(
-                            color: canCycle ? ink500 : ink400, fontSize: 13)),
-                  ),
-                  const SizedBox(width: 16),
-                  GestureDetector(
-                    onTap: deletable ? () => onRemove(user) : null,
-                    child: Text('删除',
-                        style: TextStyle(
-                            color: deletable ? red : ink400, fontSize: 13)),
-                  ),
-                ],
-              ),
+              if (canManage)
+                Row(
+                  children: [
+                    GestureDetector(
+                      onTap: () => onReset(user),
+                      child: Text('重置密码',
+                          style: TextStyle(color: ink500, fontSize: 13)),
+                    ),
+                    const SizedBox(width: 16),
+                    GestureDetector(
+                      onTap: canCycle ? () => onCycle(user) : null,
+                      child: Text(isAdmin ? '降级为普通用户' : '升为管理员',
+                          style: TextStyle(
+                              color: canCycle ? ink500 : ink400, fontSize: 13)),
+                    ),
+                    const SizedBox(width: 16),
+                    GestureDetector(
+                      onTap: deletable ? () => onRemove(user) : null,
+                      child: Text('删除',
+                          style: TextStyle(
+                              color: deletable ? red : ink400, fontSize: 13)),
+                    ),
+                  ],
+                ),
             ],
           ),
         ),

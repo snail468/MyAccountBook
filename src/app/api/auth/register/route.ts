@@ -93,6 +93,7 @@ export async function POST(req: Request) {
   return NextResponse.json({
     ok: true,
     username: user.username,
+    role: user.role,
     bootstrap: isBootstrap,
     viaInvite,
     createdBy: creatorRole,

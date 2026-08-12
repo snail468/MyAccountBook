@@ -20,6 +20,7 @@ import '../widgets/authenticated_image.dart';
 import '../widgets/image_picker_field.dart';
 import '../widgets/money.dart';
 import '../widgets/page_header.dart';
+import '../widgets/image_viewer.dart';
 
 // ───────────────────────── 常量（对齐网页端 types.ts / RewardMethod） ─────────────────────────
 
@@ -847,7 +848,14 @@ class _EventCardState extends State<_EventCard> {
                     spacing: 8,
                     runSpacing: 8,
                     children: images
-                        .map((u) => _Thumb(url: u, isDark: isDark))
+                        .asMap()
+                        .entries
+                        .map((e) => _Thumb(
+                              url: e.value,
+                              isDark: isDark,
+                              allUrls: images,
+                              index: e.key,
+                            ))
                         .toList(),
                   ),
                 ),
@@ -1073,26 +1081,20 @@ class _Checkbox extends StatelessWidget {
 class _Thumb extends StatelessWidget {
   final String url;
   final bool isDark;
-  const _Thumb({required this.url, required this.isDark});
+  final List<String> allUrls;
+  final int index;
+  const _Thumb({
+    required this.url,
+    required this.isDark,
+    required this.allUrls,
+    required this.index,
+  });
 
   @override
   Widget build(BuildContext context) {
     final surface = isDark ? AppColors.darkSurface : AppColors.lightInk100;
     return InkWell(
-      onTap: () => showDialog(
-        context: context,
-        builder: (_) => Dialog(
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: AuthenticatedImage(
-              url: url,
-              fit: BoxFit.contain,
-              errorWidget:
-                  Container(color: surface, child: const Icon(Icons.broken_image)),
-            ),
-          ),
-        ),
-      ),
+      onTap: () => openImageViewer(context, allUrls, index),
       child: SizedBox(
         width: 96,
         height: 96,
