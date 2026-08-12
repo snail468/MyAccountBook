@@ -331,11 +331,13 @@ class SyncService {
     // server_id -> local_id 映射（来自本地库，保证复用同一 local id）。
     final localByServer = <String, String>{};
     final existingCreatedAt = <String, int?>{}; // server_id -> 原始 created_at[R2]
+    final existingByServer = <String, BankCard>{}; // server_id -> 本地行（保留卡号用）
     final existing = await _bankDao.listAllIncludingDeleted();
     for (final c in existing) {
       if (c.serverId != null && c.serverId!.isNotEmpty) {
         localByServer[c.serverId!] = c.id;
         existingCreatedAt[c.serverId!] = c.createdAt;
+        existingByServer[c.serverId!] = c;
       }
     }
 
@@ -346,7 +348,13 @@ class SyncService {
       final localId = localByServer[sid] ?? _uuid.v4();
       // 已存在行复用原有 created_at，避免 pull 重置时间戳打乱创建顺序[R2]。
       final prevCreated = localByServer[sid] != null ? existingCreatedAt[sid] : null;
-      await _bankDao.upsert(BankCard.fromApi(j, localId: localId, createdAt: prevCreated));
+      // 保留本地已存卡号：未解锁拉取时服务端不返回 number，勿用 null 覆盖。[#5]
+      final prev = existingByServer[sid];
+      final number = (j['number'] as String?) ?? prev?.number;
+      await _bankDao.upsert(
+        BankCard.fromApi(j, localId: localId, createdAt: prevCreated)
+            .copyWith(number: number),
+      );
       localByServer[sid] = localId;
       pulled.add(sid);
     }

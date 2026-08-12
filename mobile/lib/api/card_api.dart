@@ -35,4 +35,10 @@ class CardApi {
   Future<void> delete(String id) async {
     await _client.delete('/cards/$id');
   }
+
+  /// POST /api/cards/unlock —— 页面级解锁（验登录密码）。
+  /// 成功后服务端会话解锁，随后 GET /api/cards 才会返回解密后的完整卡号 [#5]。
+  Future<void> unlock(String password) async {
+    await _client.post('/cards/unlock', {'password': password});
+  }
 }

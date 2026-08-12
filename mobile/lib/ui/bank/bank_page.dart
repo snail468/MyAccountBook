@@ -6,6 +6,9 @@ import 'package:uuid/uuid.dart';
 import '../../theme/design_tokens.dart';
 import '../../state/theme_state.dart';
 import '../../state/auth_state.dart';
+import '../../api/card_api.dart';
+import '../../api/api_client.dart';
+import '../../core/exceptions.dart';
 import '../../data/local/bank_card_dao.dart';
 import '../../data/models/bank_card.dart';
 import '../widgets/app_card.dart';
@@ -105,7 +108,10 @@ class _BankPageState extends State<BankPage> {
                   subtitle: '加密存储卡号 · 查看需验密码',
                 ),
                 if (!_unlocked)
-                  _UnlockGate(onUnlock: _onUnlocked)
+                  _UnlockGate(onUnlock: () {
+                    _onUnlocked();
+                    _load();
+                  })
                 else ...[
                   AppCard(
                     frosted: false,
@@ -269,6 +275,46 @@ class _UnlockGateState extends State<_UnlockGate> {
       });
       return;
     }
+    // 本地密码匹配后，真正调服务端解锁（对齐网页端 CardsUnlockGate）。
+    // 解锁成功后 GET /api/cards 返回完整卡号，写回本地库，卡片才能显示完整卡号。[#5]
+    try {
+      await CardApi(ApiClient.instance).unlock(input);
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _error = e.message;
+      });
+      return;
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _error = '解锁失败：$e';
+      });
+      return;
+    }
+    try {
+      final unlocked = await CardApi(ApiClient.instance).list();
+      final locals = await BankCardDao().listAll();
+      final byServer = <String, BankCard>{};
+      for (final c in locals) {
+        if (c.serverId != null) byServer[c.serverId!] = c;
+      }
+      for (final j in unlocked) {
+        final sid = j['id'] as String?;
+        if (sid == null) continue;
+        final local = byServer[sid];
+        if (local == null) continue;
+        final num = j['number'] as String?;
+        if (num != null && num.isNotEmpty) {
+          await BankCardDao().upsert(local.copyWith(number: num));
+        }
+      }
+    } catch (_) {
+      // 卡号写回失败不阻塞解锁：用户至少能看到本地已存卡号，下次同步再补。
+    }
+    if (!mounted) return;
     widget.onUnlock();
   }
 
