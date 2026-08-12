@@ -65,7 +65,7 @@ class SearchDao {
     final ledgerNames = <String, String>{};
     try {
       final ledgers = await LedgerDao().listAll();
-      for (final l in ledgers) ledgerNames[l.id] = l.name;
+      for (final l in ledgers) ledgerNames[l.id] = l.displayName;
     } catch (_) {
       // 忽略：徽标回退到来源文案
     }

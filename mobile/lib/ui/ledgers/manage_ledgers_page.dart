@@ -333,7 +333,7 @@ class _LedgerTile extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(ledger.name,
+                      Text(ledger.displayName,
                           style: TextStyle(color: ink900, fontSize: 15)),
                       const SizedBox(height: 2),
                       Text(_kindLabel(ledger.kind),
@@ -394,7 +394,7 @@ class _RecycledTile extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          ledger.name,
+                          ledger.displayName,
                           style: TextStyle(
                             color: ink400,
                             fontSize: 15,

@@ -16,6 +16,9 @@ class Ledger {
   final int? endDate;
   final String? tripBudget;
   final int synced;
+  // 协同共享：服务端标记当前用户是否为 owner，以及 owner 用户名（用于前缀显示）。
+  final bool? isOwn;
+  final String? ownerName;
 
   Ledger({
     required this.id,
@@ -34,6 +37,8 @@ class Ledger {
     this.endDate,
     this.tripBudget,
     this.synced = 1,
+    this.isOwn,
+    this.ownerName,
   });
 
   factory Ledger.fromDb(Map<String, dynamic> m) => Ledger(
@@ -53,6 +58,8 @@ class Ledger {
         endDate: m['end_date'] as int?,
         tripBudget: m['trip_budget'] as String?,
         synced: m['synced'] as int? ?? 1,
+        isOwn: (m['is_own'] as int? ?? 0) == 1 ? true : (m['is_own'] == null ? null : false),
+        ownerName: m['owner_name'] as String?,
       );
 
   Map<String, dynamic> toDb() => {
@@ -72,6 +79,8 @@ class Ledger {
         'end_date': endDate,
         'trip_budget': tripBudget,
         'synced': synced,
+        'is_own': isOwn == true ? 1 : 0,
+        'owner_name': ownerName,
       };
 
   /// 从服务端 JSON 构造（拉取同步时用）。
@@ -92,6 +101,8 @@ class Ledger {
         endDate: _toMillis(j['endDate']),
         tripBudget: j['tripBudget'] as String?,
         synced: 1,
+        isOwn: j['isOwn'] as bool?,
+        ownerName: j['ownerName'] as String?,
       );
 
   static int? _toMillis(dynamic v) {
@@ -122,6 +133,8 @@ class Ledger {
     int? endDate,
     String? tripBudget,
     int? synced,
+    bool? isOwn,
+    String? ownerName,
   }) =>
       Ledger(
         id: id ?? this.id,
@@ -140,5 +153,12 @@ class Ledger {
         endDate: endDate ?? this.endDate,
         tripBudget: tripBudget ?? this.tripBudget,
         synced: synced ?? this.synced,
+        isOwn: isOwn ?? this.isOwn,
+        ownerName: ownerName ?? this.ownerName,
       );
+
+  /// 协同共享账本显示名：他人所有（且服务端带回 ownerName）时加「owner · 」前缀。
+  /// 本地自建或未同步（ownerName 为空）账本不加前缀，避免误标。
+  String get displayName =>
+      (ownerName != null && isOwn != true) ? '$ownerName · $name' : name;
 }

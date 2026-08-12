@@ -500,7 +500,7 @@ class _BodyState extends State<_Body> {
               PageHeader(
                 icon: '🌸',
                 title: '桃源账本',
-                subtitle: '${store.ledger.name} · 发布 → 预测 → 公示 → 发钱',
+                subtitle: '${store.ledger.displayName} · 发布 → 预测 → 公示 → 发钱',
                 actions: store.pending > 0
                     ? [_PendingBadge(count: store.pending)]
                     : null,

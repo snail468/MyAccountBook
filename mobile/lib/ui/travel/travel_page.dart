@@ -348,7 +348,7 @@ class _TravelBodyState extends State<_TravelBody> {
             children: [
               PageHeader(
                 icon: state.ledger.icon ?? '✈️',
-                title: state.ledger.name,
+                title: state.ledger.displayName,
                 subtitle: '',
                 actions: [
                   if (state.pending > 0) _PendingBadge(count: state.pending),

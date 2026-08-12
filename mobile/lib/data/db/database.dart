@@ -11,7 +11,7 @@ class AppDatabase {
   AppDatabase._internal();
   static final AppDatabase instance = AppDatabase._internal();
 
-  static const int _version = 5;
+  static const int _version = 6;
   Database? _db;
 
   Future<Database> get database async {
@@ -54,6 +54,10 @@ class AppDatabase {
     // 银行卡补 number 列（完整卡号，落库经混淆）。均幂等迁移。
     if (oldV < 5) {
       await _migrateToV5(db);
+    }
+    // 版本 6：账本补 is_own / owner_name 列（协同共享账本首页加 owner 前缀用）。幂等迁移。
+    if (oldV < 6) {
+      await _migrateToV6(db);
     }
   }
 
@@ -147,6 +151,15 @@ class AppDatabase {
     });
   }
 
+  /// 升级到 v6：账本补 is_own（是否本人所有）/ owner_name（owner 用户名）列。
+  /// 协同共享账本在首页加 owner 前缀用；按 PRAGMA 探测缺失列后仅 ALTER ADD（幂等）。
+  Future<void> _migrateToV6(Database db) async {
+    await _addColumnsIfMissing(db, 'ledgers', const {
+      'is_own': 'INTEGER NOT NULL DEFAULT 0',
+      'owner_name': 'TEXT',
+    });
+  }
+
   /// 对指定表探测列，仅 ALTER ADD 缺失列（幂等）。
   Future<void> _addColumnsIfMissing(
     Database db,
@@ -192,6 +205,8 @@ class AppDatabase {
         start_date INTEGER,
         end_date INTEGER,
         trip_budget TEXT,
+        is_own INTEGER NOT NULL DEFAULT 0,
+        owner_name TEXT,
         synced INTEGER NOT NULL DEFAULT 1
       );
     ''');

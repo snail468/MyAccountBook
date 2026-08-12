@@ -445,7 +445,7 @@ class _AddRuleSheetState extends State<AddRuleSheet> {
       var name = '普通账本';
       for (final l in _ledgers) {
         if (l.id == _ledgerId) {
-          name = l.name;
+          name = l.displayName;
           break;
         }
       }
@@ -552,7 +552,7 @@ class _AddRuleSheetState extends State<AddRuleSheet> {
                     const DropdownMenuItem(
                         value: 'work', child: Text('工作账本')),
                     for (final l in _ledgers)
-                      DropdownMenuItem(value: l.id, child: Text(l.name)),
+                      DropdownMenuItem(value: l.id, child: Text(l.displayName)),
                   ],
                   onChanged: (v) {
                     if (v == null) return;

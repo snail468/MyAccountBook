@@ -59,7 +59,7 @@ class _GeneralLedgerScaffold extends StatelessWidget {
             children: [
               PageHeader(
                 icon: state.ledger.icon ?? '📒',
-                title: state.ledger.name,
+                title: state.ledger.displayName,
                 subtitle: '普通账本',
                 actions: <Widget>[
                   _HeaderAction(

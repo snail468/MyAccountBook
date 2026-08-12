@@ -202,7 +202,7 @@ class _ShareReadOnly extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(ledger.name,
+                    Text(ledger.displayName,
                         style: TextStyle(
                             color: ink900,
                             fontSize: 18,

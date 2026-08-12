@@ -35,7 +35,7 @@ class _TrashPageState extends State<TrashPage> {
     final deleted = await GeneralEntryDao().listDeleted();
     final ledgers = await LedgerDao().listAllIncludingDeleted();
     _ledgerNames.clear();
-    for (final l in ledgers) _ledgerNames[l.id] = l.name;
+    for (final l in ledgers) _ledgerNames[l.id] = l.displayName;
     if (!mounted) return;
     _items
       ..clear()

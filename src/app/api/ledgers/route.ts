@@ -38,6 +38,13 @@ export async function GET(_req: Request) {
       startDate: true,
       endDate: true,
       tripBudget: true,
+      members: {
+        select: {
+          userId: true,
+          role: true,
+          user: { select: { username: true } },
+        },
+      },
     },
   });
 
@@ -55,21 +62,30 @@ export async function GET(_req: Request) {
     startDate: Date | null;
     endDate: Date | null;
     tripBudget: string | null;
-  }) => ({
-    id: l.id,
-    kind: l.kind,
-    name: l.name,
-    icon: l.icon,
-    color: l.color,
-    order: l.order,
-    archived: l.archived,
-    budgetCents: l.budgetCents,
-    customCategories: l.customCategories,
-    baseCurrency: l.baseCurrency,
-    startDate: l.startDate?.toISOString() ?? null,
-    endDate: l.endDate?.toISOString() ?? null,
-    tripBudget: l.tripBudget,
-  });
+    members: { userId: string; role: string; user: { username: string | null } }[];
+  }) => {
+    const owner = l.members.find((m) => m.role === 'owner');
+    const isOwn = l.members.some(
+      (m) => m.userId === user.id && m.role === 'owner',
+    );
+    return {
+      id: l.id,
+      kind: l.kind,
+      name: l.name,
+      icon: l.icon,
+      color: l.color,
+      order: l.order,
+      archived: l.archived,
+      isOwn,
+      ownerName: owner?.user.username ?? null,
+      budgetCents: l.budgetCents,
+      customCategories: l.customCategories,
+      baseCurrency: l.baseCurrency,
+      startDate: l.startDate?.toISOString() ?? null,
+      endDate: l.endDate?.toISOString() ?? null,
+      tripBudget: l.tripBudget,
+    };
+  };
 
   return NextResponse.json({ ledgers: ledgers.map(serialize) });
 }

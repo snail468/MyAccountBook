@@ -184,7 +184,7 @@ class _HomePageState extends State<HomePage> {
         components.add(IncomeComponent(
           key: 'general:${l.id}',
           letter: letterFor(),
-          name: '${l.name} · 进项',
+          name: '${l.displayName} · 进项',
           cents: cum.income,
           sign: 1,
         ));
@@ -194,7 +194,7 @@ class _HomePageState extends State<HomePage> {
         components.add(IncomeComponent(
           key: 'general-expense:${l.id}',
           letter: letterFor(),
-          name: '${l.name} · 出项',
+          name: '${l.displayName} · 出项',
           cents: cum.expense,
           sign: -1,
         ));
@@ -204,7 +204,7 @@ class _HomePageState extends State<HomePage> {
         components.add(IncomeComponent(
           key: 'travel-expense:${l.id}',
           letter: letterFor(),
-          name: '${l.name} · 出项',
+          name: '${l.displayName} · 出项',
           cents: spent,
           sign: -1,
         ));
@@ -245,7 +245,7 @@ class _HomePageState extends State<HomePage> {
         if (overCount > 0) {
           overByLedger[l.id] = OverLedger(
             ledgerId: l.id,
-            ledgerName: l.name,
+            ledgerName: l.displayName,
             overCount: overCount,
           );
           overCountMap[l.id] = overCount;
@@ -426,7 +426,7 @@ class _HomePageState extends State<HomePage> {
               for (final c in _ledgerCards) {
                 add(LedgerFeatureCard(
                   icon: _kindIcon(c.ledger.kind),
-                  title: c.ledger.name,
+                  title: c.ledger.displayName,
                   subtitle: c.summary,
                   badge: c.overCount > 0 ? '超支 ${c.overCount}' : null,
                   onTap: () => _openLedger(c.ledger),
@@ -438,7 +438,7 @@ class _HomePageState extends State<HomePage> {
                 final n = _sharedWorkCount[l.id] ?? 0;
                 add(LedgerFeatureCard(
                   icon: l.icon ?? '💼',
-                  title: l.name,
+                  title: l.displayName,
                   subtitle: '共享账本 · $n 条记录',
                   onTap: () => _openLedger(l),
                 ));
@@ -447,7 +447,7 @@ class _HomePageState extends State<HomePage> {
                 final n = _sharedTaoyuanCount[l.id] ?? 0;
                 add(LedgerFeatureCard(
                   icon: l.icon ?? '🌸',
-                  title: l.name,
+                  title: l.displayName,
                   subtitle: n > 0 ? '共享账本 · $n 个待处理活动' : '共享账本',
                   onTap: () => _openLedger(l),
                 ));
