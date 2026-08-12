@@ -87,6 +87,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     note: string | null;
     imageUrls: string | null;
     occurredAt: Date;
+    updatedAt: Date;
+    deletedAt: Date | null;
     payerId: string;
     payer: { displayName: string };
     splits: { memberId: string; shareCents: number }[];
