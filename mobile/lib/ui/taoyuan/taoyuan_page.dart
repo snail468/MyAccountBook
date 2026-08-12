@@ -16,6 +16,7 @@ import '../../theme/design_tokens.dart';
 import '../widgets/app_card.dart';
 import '../widgets/app_primary_button.dart';
 import '../widgets/app_text_field.dart';
+import '../widgets/image_picker_field.dart';
 import '../widgets/money.dart';
 import '../widgets/page_header.dart';
 
@@ -1672,7 +1673,7 @@ class _EditEventSheetState extends State<EditEventSheet> {
   late final TextEditingController _reward;
   late final TextEditingController _topicTag;
   late final TextEditingController _note;
-  late final TextEditingController _imageText;
+  List<String> _images = const [];
   late final TextEditingController _amount;
   late final TextEditingController _custom;
 
@@ -1695,9 +1696,7 @@ class _EditEventSheetState extends State<EditEventSheet> {
     _reward = TextEditingController(text: e?.reward ?? '');
     _topicTag = TextEditingController(text: e?.topicTag ?? '');
     _note = TextEditingController(text: e?.note ?? '');
-    _imageText = TextEditingController(
-      text: _parseImages(e?.contentImages).join('\n'),
-    );
+    _images = _parseImages(e?.contentImages);
     _amount = TextEditingController();
     _custom = TextEditingController();
     _methods = parseRewardMethods(e?.rewardMethods, e?.rewardMethod);
@@ -1718,7 +1717,6 @@ class _EditEventSheetState extends State<EditEventSheet> {
     _reward.dispose();
     _topicTag.dispose();
     _note.dispose();
-    _imageText.dispose();
     _amount.dispose();
     _custom.dispose();
     super.dispose();
@@ -1773,7 +1771,7 @@ class _EditEventSheetState extends State<EditEventSheet> {
     setState(() => _saving = true);
     try {
       final now = DateTime.now();
-      final imagesJson = _imagesToJson(_imageText.text);
+      final imagesJson = _imagesToJson(_images.join('\n'));
       final e = (widget.event ??
               TaoyuanEvent(
                 id: const Uuid().v4(),
@@ -1900,8 +1898,13 @@ class _EditEventSheetState extends State<EditEventSheet> {
               ),
             ),
             _Field(
-              label: '活动图片链接（每行一个 URL）',
-              child: AppTextField(hint: 'https://...', controller: _imageText),
+              label: '活动图片',
+              child: ImagePickerField(
+                value: _images,
+                onChanged: (v) => setState(() => _images = v),
+                max: 9,
+                label: '活动图片',
+              ),
             ),
             _Field(
               label: '活动奖励描述',

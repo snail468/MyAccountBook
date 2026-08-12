@@ -13,6 +13,7 @@ import '../../theme/design_tokens.dart';
 import '../widgets/app_card.dart';
 import '../widgets/app_primary_button.dart';
 import '../widgets/app_text_field.dart';
+import '../widgets/image_picker_field.dart';
 import '../widgets/money.dart';
 import '../widgets/page_header.dart';
 
@@ -1036,9 +1037,10 @@ class _EntryFormSheetState extends State<_EntryFormSheet> {
           const SizedBox(height: 12),
           AppTextField(controller: _note, hint: '备注'),
           const SizedBox(height: 12),
-          _ImageUrlsField(
+          ImagePickerField(
             value: _imageUrls,
             onChanged: (v) => setState(() => _imageUrls = v),
+            label: '小票/图片',
           ),
           const SizedBox(height: 12),
           InkWell(
@@ -1079,174 +1081,6 @@ class _EntryFormSheetState extends State<_EntryFormSheet> {
   }
 }
 
-/// 多图选择（1:1 对齐网页端 ImageUploader：缩略图网格 + 新增 + 删除，最多 4 张）。
-///
-/// 本地优先版无上传后端，沿用 [GeneralEntry.imageUrls]（字符串列表）存储图片链接，
-/// 交互形态与网页端一致：网格缩略图、点击新增填链接、右上角删除。
-class _ImageUrlsField extends StatefulWidget {
-  final List<String> value;
-  final ValueChanged<List<String>> onChanged;
-  const _ImageUrlsField({required this.value, required this.onChanged});
-
-  @override
-  State<_ImageUrlsField> createState() => _ImageUrlsFieldState();
-}
-
-class _ImageUrlsFieldState extends State<_ImageUrlsField> {
-  static const int _max = 4;
-  final _url = TextEditingController();
-
-  @override
-  void dispose() {
-    _url.dispose();
-    super.dispose();
-  }
-
-  void _add(String url) {
-    final v = url.trim();
-    if (v.isEmpty || widget.value.length >= _max) return;
-    widget.onChanged(<String>[...widget.value, v]);
-  }
-
-  void _remove(int i) {
-    final next = <String>[...widget.value]..removeAt(i);
-    widget.onChanged(next);
-  }
-
-  Future<void> _showAddDialog() async {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final hint = isDark ? AppColors.darkInk400 : AppColors.lightInk400;
-    final fill = isDark ? AppColors.darkSurface : AppColors.lightSurface;
-    final border = isDark ? AppColors.darkBorder : AppColors.lightBorder;
-    _url.clear();
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('添加图片链接'),
-        content: TextField(
-          controller: _url,
-          autofocus: true,
-          decoration: InputDecoration(
-            hintText: 'https://...',
-            hintStyle: TextStyle(color: hint, fontSize: 13),
-            isCollapsed: true,
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-            filled: true,
-            fillColor: fill,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: border, width: 1),
-            ),
-          ),
-          onSubmitted: (_) => Navigator.of(ctx).pop(true),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('取消')),
-          TextButton(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text('添加')),
-        ],
-      ),
-    );
-    if (ok == true) _add(_url.text);
-  }
-
-  Widget _thumb(String url) {
-    return Image.network(
-      AppConfig.resolveImageUrl(url),
-      fit: BoxFit.cover,
-      width: double.infinity,
-      height: double.infinity,
-      errorBuilder: (_, __, ___) => const Center(
-        child: Icon(Icons.broken_image_outlined,
-            size: 28, color: AppColors.lightInk400),
-      ),
-      loadingBuilder: (_, child, progress) =>
-          progress == null ? child : const Center(child: CircularProgressIndicator(strokeWidth: 2)),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
-    final ink400 = isDark ? AppColors.darkInk400 : AppColors.lightInk400;
-    final tileBg = isDark ? AppColors.darkSurface : AppColors.lightSurfaceSubtle;
-    final dashed = isDark ? AppColors.darkBorderDashed : AppColors.lightBorderDashed;
-    final red = isDark ? AppColors.darkSemanticRed : AppColors.lightSemanticRed;
-    final iconColor = isDark ? AppColors.darkInk100 : AppColors.lightSurface;
-    final addIcon =
-        isDark ? AppColors.darkInk400 : AppColors.lightInk400;
-
-    final children = <Widget>[
-      for (var i = 0; i < widget.value.length; i++)
-        Stack(
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: Container(color: tileBg, child: _thumb(widget.value[i])),
-            ),
-            Positioned(
-              top: 4,
-              right: 4,
-              child: InkWell(
-                borderRadius: BorderRadius.circular(12),
-                onTap: () => _remove(i),
-                child: Container(
-                  width: 22,
-                  height: 22,
-                  decoration: BoxDecoration(
-                    color: red,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  alignment: Alignment.center,
-                  child: Icon(Icons.close, size: 14, color: iconColor),
-                ),
-              ),
-            ),
-          ],
-        ),
-      if (widget.value.length < _max)
-        InkWell(
-          borderRadius: BorderRadius.circular(12),
-          onTap: _showAddDialog,
-          child: Container(
-            decoration: BoxDecoration(
-              color: tileBg,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                  color: dashed, width: 2),
-            ),
-            child: Center(child: Icon(Icons.add, size: 28, color: addIcon)),
-          ),
-        ),
-    ];
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('小票/图片',
-            style: TextStyle(color: ink500, fontSize: 12)),
-        const SizedBox(height: 8),
-        GridView.count(
-          crossAxisCount: 3,
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          mainAxisSpacing: 8,
-          crossAxisSpacing: 8,
-          childAspectRatio: 1,
-          children: children,
-        ),
-        const SizedBox(height: 4),
-        Text('输入图片链接，最多 $_max 张',
-            style: TextStyle(color: ink400, fontSize: 10)),
-      ],
-    );
-  }
-}
 
 // ---------------------------------------------------------------------------
 // 弹窗：账本设置

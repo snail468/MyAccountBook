@@ -89,6 +89,11 @@ jobs:
           sed -i 's#</manifest>#<uses-permission android:name="android.permission.INTERNET"/>\n</manifest>#' \
             mobile/android/app/src/main/AndroidManifest.xml
 
+      - name: Ensure image-read permissions (image_picker gallery on Android <13)
+        run: |
+          sed -i 's#</manifest>#<uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>\n<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>\n</manifest>#' \
+            mobile/android/app/src/main/AndroidManifest.xml
+
       - name: Pub get
         working-directory: mobile
         run: flutter pub get
