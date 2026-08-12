@@ -16,7 +16,8 @@ export 'page_back_button.dart';
 class PageHeader extends StatelessWidget {
   final String icon;
   final String title;
-  final String subtitle;
+  /// 副标题，可选。为 null 或空串时不渲染（对齐网页端部分页面无副标题）。
+  final String? subtitle;
   /// 标题行右侧的附加操作（如账本的协作/设置图标）。默认 null，向后兼容。
   final List<Widget>? actions;
 
@@ -24,7 +25,7 @@ class PageHeader extends StatelessWidget {
     super.key,
     required this.icon,
     required this.title,
-    required this.subtitle,
+    this.subtitle,
     this.actions,
   });
 
@@ -63,8 +64,10 @@ class PageHeader extends StatelessWidget {
                           color: ink900,
                           fontSize: 22,
                           fontWeight: FontWeight.w700)),
-                  const SizedBox(height: 2),
-                  Text(subtitle, style: TextStyle(color: ink500, fontSize: 13)),
+                  if (subtitle != null && subtitle!.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(subtitle!, style: TextStyle(color: ink500, fontSize: 13)),
+                  ],
                 ],
               ),
             ),
