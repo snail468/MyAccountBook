@@ -76,22 +76,38 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      final s = context.read<LedgerListState>();
-      await s.load();
-      try {
-        await s.sync();
-      } catch (_) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('同步失败，请查看下方错误')),
-          );
-        }
-      }
-      await _loadSummary();
-      // 首次启动自动弹出「使用引导」（对齐网页端 ?welcome=1 的落地页引导）。
-      await OnboardingGuide.maybeShowOnFirstLaunch(context);
+    // 本地优先启动：先渲染本地已缓存账本与汇总（即时），再后台同步。[#2]
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _bootstrap();
     });
+  }
+
+  /// 先展示本地数据（即时），再后台做「先推后拉」同步，完成后刷新汇总。
+  /// 不再阻塞首屏等待服务端全量拉取，符合「本地存一份数据、重开即显示」的诉求。[#2]
+  Future<void> _bootstrap() async {
+    final s = context.read<LedgerListState>();
+    await s.load(); // 本地库，瞬时
+    if (!mounted) return;
+    await _loadSummary(); // 用本地数据即时渲染首页卡片
+    // 后台同步：先推本地改动，再从服务端拉取（目前仍为全量，但不再阻塞 UI）。
+    _syncInBackground(s);
+    // 首次启动自动弹出「使用引导」（对齐网页端 ?welcome=1 的落地页引导）。
+    await OnboardingGuide.maybeShowOnFirstLaunch(context);
+  }
+
+  /// 后台同步（不阻塞首屏）。完成后用最新数据刷新首页汇总；
+  /// 失败则提示但仍保留已渲染的本地缓存数据。[#2]
+  Future<void> _syncInBackground(LedgerListState s) async {
+    try {
+      await s.sync();
+      if (!mounted) return;
+      await _loadSummary();
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('同步失败，已显示本地缓存数据')),
+      );
+    }
   }
 
   /// 汇总首页真实数据（对齐网页端 loadDashboard 的口径）。
@@ -315,7 +331,9 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthState>();
-    final ledgers = context.watch<LedgerListState>().all;
+    final listState = context.watch<LedgerListState>();
+    final ledgers = listState.all;
+    final syncing = listState.syncing;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
     final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
@@ -336,7 +354,8 @@ class _HomePageState extends State<HomePage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('${auth.username ?? ''} · 心愿便利贴',
+                      Text(
+                          '${auth.username ?? ''} · 心愿便利贴${syncing ? ' · 同步中…' : ''}',
                           style: TextStyle(color: ink500, fontSize: 14)),
                       const SizedBox(height: 8),
                       GestureDetector(
