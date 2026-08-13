@@ -220,14 +220,13 @@ class _UsersPageState extends State<UsersPage> {
     final red = isDark ? AppColors.darkSemanticRed : AppColors.lightSemanticRed;
 
     return Scaffold(
-      body: Container(
-        color: pageBg,
-        child: SafeArea(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(24, 56, 24, 24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+      backgroundColor: pageBg,
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(24, 56, 24, 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
                 const PageHeader(
                   icon: '👥',
                   title: '用户管理',
@@ -542,8 +541,8 @@ class _AddUserSheetState extends State<_AddUserSheet> {
           const SizedBox(height: 16),
         ],
       ),
-    );
-  }
+    ),
+  );
 }
 
 Future<bool> _confirm(

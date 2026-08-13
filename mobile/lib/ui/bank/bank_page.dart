@@ -108,14 +108,13 @@ class _BankPageState extends State<BankPage> {
     final pageBg = isDark ? AppColors.darkPageBg : AppColors.lightPageBg;
 
     return Scaffold(
-      body: Container(
-        color: pageBg,
-        child: SafeArea(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(24, 56, 24, 24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+      backgroundColor: pageBg,
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(24, 56, 24, 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
                 const PageHeader(
                   icon: '💳',
                   title: '银行卡',
@@ -205,8 +204,7 @@ class _BankPageState extends State<BankPage> {
             ),
           ),
         ),
-      ),
-    );
+      );
   }
 }
 

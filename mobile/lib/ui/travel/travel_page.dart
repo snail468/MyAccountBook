@@ -342,9 +342,9 @@ class _TravelBodyState extends State<_TravelBody> {
     }
     final hasBudget = totalBaseCents != null || perCur.isNotEmpty;
 
-    return Container(
-      color: pageBg,
-      child: SafeArea(
+    return Scaffold(
+      backgroundColor: pageBg,
+      body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(24, 56, 24, 24),
           child: Column(

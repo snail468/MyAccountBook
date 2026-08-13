@@ -22,9 +22,9 @@ class SettingsPage extends StatelessWidget {
     final border = isDark ? AppColors.darkBorder : AppColors.lightBorder;
     final pageBg = isDark ? AppColors.darkPageBg : AppColors.lightPageBg;
 
-    return Container(
-      color: pageBg,
-      child: SafeArea(
+    return Scaffold(
+      backgroundColor: pageBg,
+      body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(24, 56, 24, 24),
           child: Column(

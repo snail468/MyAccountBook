@@ -492,13 +492,16 @@ class _BodyState extends State<_Body> {
       (groups[e.status] ??= []).add(e);
     }
 
-    return Stack(
-      children: [
-        SingleChildScrollView(
-          padding: EdgeInsets.fromLTRB(24, 56, 24, _selecting ? 104 : 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+    return Scaffold(
+      backgroundColor: pageBg,
+      body: SafeArea(
+        child: Stack(
+          children: [
+            SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(24, 56, 24, _selecting ? 104 : 24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
               PageHeader(
                 icon: '🌸',
                 title: '桃源账本',
@@ -577,7 +580,9 @@ class _BodyState extends State<_Body> {
             ),
           ),
       ],
-    );
+    ),
+  ),
+);
   }
 }
 

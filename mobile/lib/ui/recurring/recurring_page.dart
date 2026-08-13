@@ -43,11 +43,12 @@ class _Body extends StatelessWidget {
     final green = isDark ? AppColors.darkSemanticGreen : AppColors.lightSemanticGreen;
     final red = isDark ? AppColors.darkSemanticRed : AppColors.lightSemanticRed;
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(24, 56, 24, 24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+    return SafeArea(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(24, 56, 24, 24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
           const PageHeader(
             icon: '🔁',
             title: '周期记账',
@@ -182,8 +183,8 @@ class _Body extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
+    ),
+  );
 }
 
 /// 周期规则卡片（1:1 还原 RecurringClient 的 rules.map 区块）。

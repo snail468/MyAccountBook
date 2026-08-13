@@ -89,34 +89,30 @@ class _WorkSummaryPageState extends State<WorkSummaryPage> {
 
   /// 生成月份列表（对齐网页 makeMonthList）：当前月往前 11 个月，
   /// 若最早记录更早则从最早月开始；倒序（最新在前）。
+  /// 使用 DateTime 做月份运算，避免手动跨年计算在边界月份出错。
   List<String> _monthList() {
     final now = DateTime.now();
-    final curY = now.year;
-    final curM = now.month;
-    int startY = curY;
-    int startM = curM - 11;
+    final current = DateTime(now.year, now.month, 1);
 
+    // 默认展示最近 12 个月（含当前月）
+    DateTime start = DateTime(now.year, now.month - 11, 1);
+
+    // 若最早记录更早，则追溯到最早月
     String? earliest;
     for (final k in _byMonth.keys) {
       if (earliest == null || k.compareTo(earliest) < 0) earliest = k;
     }
     if (earliest != null) {
-      final ey = int.parse(earliest.split('-')[0]);
-      final em = int.parse(earliest.split('-')[1]);
-      if (ey < startY || (ey == startY && em < startM)) {
-        startY = ey;
-        startM = em;
-      }
-    }
-    while (startM <= 0) {
-      startM += 12;
-      startY -= 1;
+      final parts = earliest.split('-');
+      final em = DateTime(int.parse(parts[0]), int.parse(parts[1]), 1);
+      if (em.isBefore(start)) start = em;
     }
 
     final months = <String>[];
-    var y = startY;
-    var m = startM;
-    while (y < curY || (y == curY && m <= curM)) {
+    var y = start.year;
+    var m = start.month;
+    while (DateTime(y, m, 1).isBefore(current) ||
+        (y == current.year && m == current.month)) {
       months.add('$y-${m.toString().padLeft(2, '0')}');
       m += 1;
       if (m > 12) {
@@ -149,9 +145,9 @@ class _WorkSummaryPageState extends State<WorkSummaryPage> {
         '${now.year}-${now.month.toString().padLeft(2, '0')}';
     final months = _monthList();
 
-    return Container(
-      color: pageBg,
-      child: SafeArea(
+    return Scaffold(
+      backgroundColor: pageBg,
+      body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(24, 56, 24, 24),
           child: Column(
@@ -385,7 +381,6 @@ class _WorkSummaryPageState extends State<WorkSummaryPage> {
         ),
       ),
     );
-  }
 }
 
 /// 汇总小块（标签 + 金额 / 文本）。

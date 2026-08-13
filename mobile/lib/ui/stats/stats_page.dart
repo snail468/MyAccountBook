@@ -58,9 +58,9 @@ class _StatsBody extends StatelessWidget {
     final avgMonthlyExpense =
         activeMonths > 0 ? (totalExpense / activeMonths).round() : 0;
 
-    return Container(
-      color: pageBgColor,
-      child: SafeArea(
+    return Scaffold(
+      backgroundColor: pageBgColor,
+      body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(24, 56, 24, 24),
           child: Column(

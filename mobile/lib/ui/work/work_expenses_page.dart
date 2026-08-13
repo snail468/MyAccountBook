@@ -258,9 +258,9 @@ class _WorkExpensesPageState extends State<WorkExpensesPage> {
     final refundPct =
         _total > 0 ? (_refundedTotal / _total * 100).round() : 0;
 
-    return Container(
-      color: pageBg,
-      child: SafeArea(
+    return Scaffold(
+      backgroundColor: pageBg,
+      body: SafeArea(
         child: Stack(
           children: [
             SingleChildScrollView(
@@ -826,7 +826,6 @@ class _ExpenseRow extends StatelessWidget {
                           color: refunded ? ink400 : ink900,
                           fontSize: 14,
                           fontWeight: FontWeight.w500,
-                          decoration: refunded ? TextDecoration.lineThrough : null,
                         ),
                       ),
                     ),
@@ -857,7 +856,6 @@ class _ExpenseRow extends StatelessWidget {
                       style: TextStyle(
                         color: refunded ? ink400 : ink500,
                         fontSize: 12,
-                        decoration: refunded ? TextDecoration.lineThrough : null,
                       ),
                     ),
                   ),
@@ -876,7 +874,6 @@ class _ExpenseRow extends StatelessWidget {
               color: refunded ? ink400 : red,
               fontSize: 16,
               fontWeight: FontWeight.w600,
-              decoration: refunded ? TextDecoration.lineThrough : null,
             ),
           ),
         ],

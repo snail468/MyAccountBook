@@ -78,9 +78,9 @@ class _Body extends StatelessWidget {
     final yearLabel = parts[0];
     final monthLabel = int.parse(parts[1]);
 
-    return Container(
-      color: pageBg,
-      child: SafeArea(
+    return Scaffold(
+      backgroundColor: pageBg,
+      body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(24, 56, 24, 24),
           child: Column(
