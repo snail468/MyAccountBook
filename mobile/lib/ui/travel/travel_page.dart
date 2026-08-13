@@ -298,8 +298,12 @@ class _TravelBodyState extends State<_TravelBody> {
         .toList()
       ..sort((a, b) => b.netCents.compareTo(a.netCents));
 
-    String nameOf(String id) =>
-        state.members.where((m) => m.id == id).firstOrNull?.displayName ?? id;
+    // 结算 key 可能是 TripMember.id 或关联用户的 userId（服务端 payerId/memberId
+    // 有时会传 userId），两边都查才能显示同伴名而非原始 ID [#3]
+    String nameOf(String id) => state.members
+        .where((m) => m.id == id || m.userId == id)
+        .firstOrNull
+        ?.displayName ?? id;
 
     final startStr = state.ledger.startDate != null
         ? _ymd(DateTime.fromMillisecondsSinceEpoch(state.ledger.startDate!))
@@ -1693,8 +1697,11 @@ class _SettlementSheetContent extends StatelessWidget {
     final members = st.members;
     final expenses = st.expenses.where((e) => e.deletedAt == null).toList();
 
-    String nameOf(String id) =>
-        members.where((m) => m.id == id).firstOrNull?.displayName ?? id;
+    // 结算单分享：同行成员 ID / 关联用户 userId 都解析为 displayName [#3]
+    String nameOf(String id) => members
+        .where((m) => m.id == id || m.userId == id)
+        .firstOrNull
+        ?.displayName ?? id;
 
     final startStr = ledger.startDate != null
         ? _ymd(DateTime.fromMillisecondsSinceEpoch(ledger.startDate!))
@@ -3479,9 +3486,11 @@ class _FunReportSheet extends StatelessWidget {
             _Net(m.id, m.displayName, balances[m.id] ?? 0, m.settled))
         .toList()
       ..sort((a, b) => b.netCents.compareTo(a.netCents));
-    String nameOf(String id) =>
-        state.members.where((m) => m.id == id).firstOrNull?.displayName ??
-        id;
+    // 统计面板最优结算：同伴 ID 与关联 userId 都解析为 displayName [#3]
+    String nameOf(String id) => state.members
+        .where((m) => m.id == id || m.userId == id)
+        .firstOrNull
+        ?.displayName ?? id;
 
     return Container(
       decoration: BoxDecoration(

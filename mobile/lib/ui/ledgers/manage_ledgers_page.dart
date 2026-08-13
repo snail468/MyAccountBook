@@ -110,8 +110,10 @@ class _ManageLedgersPageState extends State<ManageLedgersPage> {
     final maxOrder = _all.isEmpty
         ? 0
         : _all.map((l) => l.order).reduce((a, b) => a > b ? a : b);
-    final hasWork = active.any((l) => l.kind == 'work');
-    final hasTaoyuan = active.any((l) => l.kind == 'taoyuan');
+    // 只有“属于自己的”工作/桃源账本才限制再添加；协同共享的不算 [#4]
+    final hasOwnWork = active.any((l) => l.kind == 'work' && l.isOwn == true);
+    final hasOwnTaoyuan =
+        active.any((l) => l.kind == 'taoyuan' && l.isOwn == true);
 
     return Scaffold(
       body: Container(
@@ -159,8 +161,8 @@ class _ManageLedgersPageState extends State<ManageLedgersPage> {
                     backgroundColor: Colors.transparent,
                     builder: (_) => _AddLedgerSheet(
                       maxOrder: maxOrder,
-                      hasWork: hasWork,
-                      hasTaoyuan: hasTaoyuan,
+                      hasOwnWork: hasOwnWork,
+                      hasOwnTaoyuan: hasOwnTaoyuan,
                     ),
                   ).then((_) {
                     if (mounted) _load();
@@ -473,13 +475,13 @@ class _ActionButton extends StatelessWidget {
 
 class _AddLedgerSheet extends StatefulWidget {
   final int maxOrder;
-  final bool hasWork;
-  final bool hasTaoyuan;
+  final bool hasOwnWork;
+  final bool hasOwnTaoyuan;
 
   const _AddLedgerSheet({
     required this.maxOrder,
-    required this.hasWork,
-    required this.hasTaoyuan,
+    required this.hasOwnWork,
+    required this.hasOwnTaoyuan,
   });
 
   @override
@@ -617,8 +619,10 @@ class _AddLedgerSheetState extends State<_AddLedgerSheet> {
           children: [
             if (_step == 0)
               ..._kPresets.map((p) {
-                final disabled = (p.kind == 'work' && widget.hasWork) ||
-                    (p.kind == 'taoyuan' && widget.hasTaoyuan);
+                // 仅当用户已拥有该类型的自有账本时才禁用；共享账本不限制再添加自己的 [#4]
+                final disabled =
+                    (p.kind == 'work' && widget.hasOwnWork) ||
+                        (p.kind == 'taoyuan' && widget.hasOwnTaoyuan);
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 12),
                   child: AppCard(

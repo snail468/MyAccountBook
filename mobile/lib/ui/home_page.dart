@@ -9,6 +9,7 @@ import '../theme/app_theme.dart';
 import '../theme/design_tokens.dart';
 import 'routes.dart';
 import 'work/work_summary_page.dart';
+import 'work/work_expenses_page.dart';
 import 'recurring/recurring_page.dart';
 import 'bank/bank_page.dart';
 import 'stats/stats_page.dart';
@@ -418,7 +419,12 @@ class _HomePageState extends State<HomePage> {
                   icon: '💼',
                   title: _ownWork!.displayName,
                   subtitle: '按月记录进项与出项',
-                  onTap: () => _openLedger(_ownWork!),
+                  // 工作账本入口统一进多月总览（WorkSummaryPage），
+                  // 单月视图通过总览里的月份卡片进入；修复与“工作出项汇总”入口搞混 [#2]
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                        builder: (_) => const WorkSummaryPage()),
+                  ),
                 ));
               }
               if (_ownWork != null) {
@@ -435,9 +441,10 @@ class _HomePageState extends State<HomePage> {
                       ),
                     ],
                   ),
+                  // “工作出项汇总”应对齐网页 /work/expenses，进应收/出项/批量回款页 [#2]
                   onTap: () => Navigator.of(context).push(
                     MaterialPageRoute(
-                        builder: (_) => const WorkSummaryPage()),
+                        builder: (_) => const WorkExpensesPage()),
                   ),
                 ));
               }

@@ -11,7 +11,7 @@ class AppDatabase {
   AppDatabase._internal();
   static final AppDatabase instance = AppDatabase._internal();
 
-  static const int _version = 7;
+  static const int _version = 8;
   Database? _db;
 
   Future<Database> get database async {
@@ -62,6 +62,11 @@ class AppDatabase {
     // 版本 7：账本补 last_pull_at 列（增量同步水线）。幂等迁移。
     if (oldV < 7) {
       await _migrateToV7(db);
+    }
+    // 版本 8：银行卡补 note 列（服务端 note 字段此前 v5 迁移已加，但 v2 建表
+    // 遗漏导致新装库缺失；此处幂等补列 + 新装表结构修正）。
+    if (oldV < 8) {
+      await _migrateToV8(db);
     }
   }
 
@@ -168,6 +173,14 @@ class AppDatabase {
   Future<void> _migrateToV7(Database db) async {
     await _addColumnsIfMissing(db, 'ledgers', const {
       'last_pull_at': 'INTEGER',
+    });
+  }
+
+  /// 升级到 v8：银行卡补 note 列。新装库在 _createV2Tables 已含 note；
+  /// 旧 v7 新装库（因 _createV2Tables 遗漏 note）通过此处幂等补列。
+  Future<void> _migrateToV8(Database db) async {
+    await _addColumnsIfMissing(db, 'bank_cards', const {
+      'note': 'TEXT',
     });
   }
 
@@ -425,6 +438,7 @@ class AppDatabase {
         server_id TEXT,
         alias TEXT,
         holder TEXT,
+        note TEXT,
         synced INTEGER NOT NULL DEFAULT 1,
         number TEXT
       );
