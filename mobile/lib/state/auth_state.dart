@@ -21,6 +21,10 @@ class AuthState extends ChangeNotifier {
   /// 一旦服务端返回明确 'user'，即按普通用户限制（[#6]）。
   String? _role;
 
+  /// 标记本次登录是否切换到了「不同的用户」（相对上次本地登录用户）。
+  /// 登录流程据此在进首页前清空上一用户的本地数据，避免缓存串号 [#2]。
+  bool _userSwitched = false;
+
   /// 记住的用户名（启动探测后填充，供登录页预填）。
   String? _rememberedUsername;
 
@@ -46,6 +50,7 @@ class AuthState extends ChangeNotifier {
   static const String _kRememberUser = 'remember_username';
   static const String _kRememberPass = 'remember_password';
   static const String _kRememberRole = 'remember_role';
+  static const String _kLastLocalUser = 'last_local_user';
 
   Future<void> init() async {
     _authed = await _api.hasSessionCookie();
@@ -73,7 +78,20 @@ class AuthState extends ChangeNotifier {
     // 持久化以便重启后仍可验密（与网页端无此 UI 不冲突，仅为本地解锁门服务）。
     await saveRememberMe(username, password);
     await _saveRole();
+    // 检测是否切换到不同用户：是则在进首页前清空上一用户本地数据 [#2]
+    final prefs = await SharedPreferences.getInstance();
+    final prev = prefs.getString(_kLastLocalUser);
+    _userSwitched = (prev != null && prev != _username);
+    await prefs.setString(_kLastLocalUser, _username!);
     notifyListeners();
+  }
+
+  /// 消费「切换用户」标记：返回 true 表示本次登录切换到了不同用户，
+  /// 调用方据此清空本地全部业务数据并重置缓存。读取后清零，保证只触发一次 [#2]。
+  bool consumeUserSwitch() {
+    final v = _userSwitched;
+    _userSwitched = false;
+    return v;
   }
 
   /// 登录成功后，若用户勾选「记住登录信息」则保存明文凭据；否则清除已保存的密码。
@@ -116,11 +134,16 @@ class AuthState extends ChangeNotifier {
     _loginPassword = password;
     await saveRememberMe(username, password);
     await _saveRole();
+    final prefs = await SharedPreferences.getInstance();
+    final prev = prefs.getString(_kLastLocalUser);
+    _userSwitched = (prev != null && prev != _username);
+    await prefs.setString(_kLastLocalUser, _username!);
     notifyListeners();
   }
 
   Future<void> logout() async {
-    await _auth.logout();
+    // 立即本地退出：清状态 + 清会话 Cookie + 通知，UI 立刻切到登录页，
+    // 不等服务端响应（服务端可能在弱网/不可达时拖慢退出）[#1]。
     _authed = false;
     _username = null;
     _loginPassword = null;
@@ -129,6 +152,9 @@ class AuthState extends ChangeNotifier {
     await clearRememberPassword();
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_kRememberRole);
+    await _api.clearSession();
     notifyListeners();
+    // 后台通知服务端销毁会话（失败不影响本地退出）。
+    _auth.logoutServer().catchError((_) {});
   }
 }

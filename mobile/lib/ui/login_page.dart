@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../state/auth_state.dart';
+import '../state/ledger_list_state.dart';
+import '../sync/sync_service.dart';
 import '../theme/app_theme.dart';
 import '../theme/design_tokens.dart';
 import 'register_page.dart';
@@ -41,7 +43,13 @@ class _LoginPageState extends State<LoginPage> {
     final user = _user.text.trim();
     final pass = _pass.text;
     try {
-      await context.read<AuthState>().login(user, pass);
+      final auth = context.read<AuthState>();
+      await auth.login(user, pass);
+      // 切换到不同用户：清空上一用户本地数据 + 重置账本缓存，避免旧数据串号 [#2]
+      if (auth.consumeUserSwitch()) {
+        await SyncService.instance.wipeLocalData();
+        if (mounted) context.read<LedgerListState>().resetCache();
+      }
       // 登录成功后由 RootSwitcher 据 authed 切到首页，首页负责首次同步。
     } catch (_) {
       if (mounted) setState(() => _error = '用户名或密码错误');

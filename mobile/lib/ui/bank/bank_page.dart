@@ -11,6 +11,7 @@ import '../../api/api_client.dart';
 import '../../core/exceptions.dart';
 import '../../data/local/bank_card_dao.dart';
 import '../../data/models/bank_card.dart';
+import '../../sync/sync_service.dart';
 import '../widgets/app_card.dart';
 import '../widgets/app_primary_button.dart';
 import '../widgets/app_text_field.dart';
@@ -37,7 +38,16 @@ class _BankPageState extends State<BankPage> {
   @override
   void initState() {
     super.initState();
-    _load();
+    // 进入即先从服务端拉取银行卡（解锁后含完整卡号），再读本地展示 [#5]
+    _refreshFromServer();
+  }
+
+  /// 从服务端拉取银行卡后刷新本地展示：解锁后服务端返回完整卡号，
+  /// 故解锁或进入页面都应触发一次，解决卡号/卡信息不从服务端同步的问题 [#5]。
+  Future<void> _refreshFromServer() async {
+    await SyncService.instance.pullBankCards();
+    if (!mounted) return;
+    await _load();
   }
 
   @override
@@ -110,7 +120,7 @@ class _BankPageState extends State<BankPage> {
                 if (!_unlocked)
                   _UnlockGate(onUnlock: () {
                     _onUnlocked();
-                    _load();
+                    _refreshFromServer();
                   })
                 else ...[
                   AppCard(

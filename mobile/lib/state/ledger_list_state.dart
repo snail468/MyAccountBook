@@ -83,6 +83,16 @@ class LedgerListState extends ChangeNotifier {
     _lastSyncAt = null;
   }
 
+  /// 清空内存缓存并重置节流（切换用户时调用）：避免上一用户的账本列表残留在
+  /// 首页/汇总，下一用户进首页先看到空白再被同步填充 [#2]。
+  void resetCache() {
+    _all = [];
+    _allIncludingDeleted = [];
+    _lastSyncAt = null;
+    _error = null;
+    notifyListeners();
+  }
+
   Future<bool> _doSync() async {
     _syncing = true;
     _error = null;

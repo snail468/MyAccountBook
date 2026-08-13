@@ -190,6 +190,29 @@ class AppDatabase {
     }
   }
 
+  /// 清空全部本地业务数据（切换登录用户时用）：删除除 `users` 本地会话缓存外的
+  /// 所有业务表行，保留表结构与索引。避免上一用户的数据残留在首页/汇总 [#2]。
+  Future<void> wipeAllData() async {
+    final db = await database;
+    const tables = [
+      'event_amounts',
+      'taoyuan_events',
+      'trip_splits',
+      'trip_expenses',
+      'trip_members',
+      'general_entries',
+      'work_entries',
+      'recurring_rules',
+      'bank_cards',
+      'pending_ops',
+      'family_members',
+      'ledgers',
+    ];
+    for (final t in tables) {
+      await db.delete(t);
+    }
+  }
+
   /// 建全部表 + 索引（新装库用）。
   Future<void> _createTables(Database db) async {
     await db.execute('''

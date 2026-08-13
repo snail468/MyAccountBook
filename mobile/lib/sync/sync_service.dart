@@ -28,6 +28,7 @@ import '../data/local/bank_card_dao.dart';
 import '../data/local/recurring_rule_dao.dart';
 import '../data/local/pending_op_dao.dart';
 import '../data/models/pending_op.dart';
+import '../data/db/database.dart';
 import 'connectivity.dart';
 
 /// 离线优先的同步引擎。
@@ -63,6 +64,21 @@ class SyncService {
   final PendingOpDao _opDao = PendingOpDao();
 
   bool _syncing = false;
+
+  /// 清空本地全部业务数据（切换登录用户时调用，避免旧用户数据串号）[#2]。
+  Future<void> wipeLocalData() async {
+    await AppDatabase.instance.wipeAllData();
+  }
+
+  /// 仅拉取银行卡（解锁后/进入银行卡页时调用，此时服务端返回完整卡号）。
+  /// 非致命：任何错误（离线/未配置 CARD_SECRET/鉴权失败）静默跳过，绝不中断 [#5]。
+  Future<void> pullBankCards() async {
+    try {
+      await _pullCards();
+    } catch (_) {
+      // 银行卡拉取失败不影响其它功能。
+    }
+  }
 
   // ---------------- 入队 ----------------
 

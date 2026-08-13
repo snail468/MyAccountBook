@@ -15,4 +15,28 @@ class AdminApi {
     }
     return const [];
   }
+
+  /// POST /api/admin/users -> 新建用户（服务端落库，全量用户可见）。
+  Future<void> createUser(String username, String password, String role) async {
+    await _client.post('/admin/users', {
+      'username': username,
+      'password': password,
+      'role': role,
+    });
+  }
+
+  /// PATCH /api/admin/users/[id] -> 修改角色（'admin' | 'user'）。
+  Future<void> setRole(String id, String role) async {
+    await _client.patch('/admin/users/$id', {'role': role});
+  }
+
+  /// PATCH /api/admin/users/[id] -> 重置密码（强制对方下线）。
+  Future<void> resetPassword(String id, String newPassword) async {
+    await _client.patch('/admin/users/$id', {'password': newPassword});
+  }
+
+  /// DELETE /api/admin/users/[id] -> 删除用户（连带其账本数据）。
+  Future<void> deleteUser(String id) async {
+    await _client.delete('/admin/users/$id');
+  }
 }

@@ -6,6 +6,7 @@ import '../../state/theme_state.dart';
 import '../../state/auth_state.dart';
 import '../../api/api_client.dart';
 import '../../api/admin_api.dart';
+import '../../core/exceptions.dart';
 import '../../data/local/family_member_dao.dart';
 import '../../data/models/app_user.dart';
 import '../widgets/app_card.dart';
@@ -34,12 +35,22 @@ class _UsersPageState extends State<UsersPage> {
     _load();
   }
 
-  Future<void> _load() async {
-    // 仅管理员拉取服务端全量用户并落地本地（按 username 去重），从而看到所有用户；
-    // 普通用户只看到自己（下方注入的 isSelf 记录）。服务端 GET /api/admin/users
-    // 本身也 requireAdmin，普通用户调用会 403，这里提前按本地角色判定，避免无谓请求。[#6]
+  Future<void> _load({bool background = false}) async {
     final auth = context.read<AuthState>();
     final isAdmin = auth.role == 'admin';
+
+    // 阶段一：先用本地 family_members 即时展示，避免每次进入都重新加载转圈 [#6]
+    if (!background) {
+      final local = await FamilyMemberDao().listAll();
+      if (!mounted) return;
+      _setUsers(local, auth);
+      _loading = false;
+      setState(() {});
+    }
+
+    // 阶段二：管理员在线拉取服务端全量用户并落地本地（按 username 去重），
+    // 从而看到所有用户；普通用户只看到自己。服务端 GET /api/admin/users 本身
+    // requireAdmin，这里提前按本地角色判定，避免无谓请求。[#6]
     if (isAdmin) {
       try {
         final serverUsers = await AdminApi(ApiClient.instance).listUsers();
@@ -69,9 +80,13 @@ class _UsersPageState extends State<UsersPage> {
 
     final list = await FamilyMemberDao().listAll();
     if (!mounted) return;
-    // 注入当前登录用户（网页端 AdminUserList 含自己并标记「（我）」）。
-    // family_members 表与登录 users 表隔离，这里把 auth 用户名合成一条 isSelf 记录置顶；
-    // 若列表里已有同名成员则直接标记 isSelf，避免重复。[#6]
+    _setUsers(list, auth);
+    _loading = false;
+    setState(() {});
+  }
+
+  /// 用本地列表构建展示用 _users，并注入当前登录用户（标记「（我）」）。[#6]
+  void _setUsers(List<AppUser> list, AuthState auth) {
     if (auth.username != null && auth.username!.isNotEmpty) {
       final idx = list.indexWhere((u) => u.name == auth.username);
       if (idx >= 0) {
@@ -92,24 +107,26 @@ class _UsersPageState extends State<UsersPage> {
     _users
       ..clear()
       ..addAll(list);
-    _loading = false;
-    setState(() {});
   }
 
+  String _errMsg(Object e) => e is ApiException ? e.message : e.toString();
+
   Future<void> _add(String name, String role, String password) async {
-    final u = AppUser(
-      id: const Uuid().v4(),
-      name: name,
-      role: role,
-      joinedDate: _today(),
-      isSelf: false,
-      password: password,
-    );
-    await FamilyMemberDao().insert(u);
+    try {
+      await AdminApi(ApiClient.instance).createUser(name, password, role);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('已创建用户')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('创建失败：${_errMsg(e)}')),
+      );
+    }
   }
 
   /// 重置某用户密码（对齐网页端 AdminUserList.resetPwd：先输入新密码 ≥ 6 位，
-  /// 确认后落库 family_members.password）。
+  /// 确认后调用服务端 PATCH /api/admin/users/[id]，强制对方下线）。[#6]
   Future<void> _resetPassword(AppUser u) async {
     final newPwd = await _promptPassword(
       context,
@@ -132,20 +149,36 @@ class _UsersPageState extends State<UsersPage> {
       confirmText: '重置',
     );
     if (!ok || !mounted) return;
-    await FamilyMemberDao().update(u.copyWith(password: newPwd));
-    if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(const SnackBar(content: Text('已重置')));
+    try {
+      await AdminApi(ApiClient.instance).resetPassword(u.id, newPwd);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('已重置')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('重置失败：${_errMsg(e)}')),
+      );
+    }
   }
 
   Future<void> _cycleRole(AppUser u) async {
     final next = u.role == 'admin' ? 'member' : 'admin';
-    await FamilyMemberDao().update(u.copyWith(role: next));
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(next == 'admin' ? '已升为管理员' : '已降级为普通用户')),
-    );
-    await _load();
+    try {
+      // 服务端升降级（PATCH /api/admin/users/[id]），随后重新拉取，
+      // 使改动真正生效并在列表刷新（本地 family_members 仅是缓存）。[#6]
+      await AdminApi(ApiClient.instance).setRole(u.id, next);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(next == 'admin' ? '已升为管理员' : '已降级为普通用户')),
+      );
+      await _load(background: true);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('操作失败：${_errMsg(e)}')),
+      );
+    }
   }
 
   Future<void> _remove(AppUser u) async {
@@ -156,11 +189,19 @@ class _UsersPageState extends State<UsersPage> {
       confirmText: '删除',
     );
     if (!ok || !mounted) return;
-    await FamilyMemberDao().delete(u.id);
-    if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(const SnackBar(content: Text('已删除')));
-    await _load();
+    try {
+      // 服务端删除（DELETE /api/admin/users/[id]），随后重新拉取。[#6]
+      await AdminApi(ApiClient.instance).deleteUser(u.id);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('已删除')));
+      await _load(background: true);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('删除失败：${_errMsg(e)}')),
+      );
+    }
   }
 
   @override

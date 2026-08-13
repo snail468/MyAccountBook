@@ -35,6 +35,12 @@ class AuthApi {
     }
   }
 
+  /// 仅通知服务端销毁会话（不清除本地 Cookie）。供 [AuthState.logout] 在本地已
+  /// 立即退出后后台调用，避免阻塞 UI [#1]。
+  Future<void> logoutServer() async {
+    await _client.post('/auth/logout', null);
+  }
+
   /// 修改密码（对齐网页端 ChangePasswordButton → PATCH /api/auth/password）。
   /// 成功后其它设备的会话会失效，需要重新登录；当前设备不受影响。
   Future<void> changePassword(String currentPassword, String newPassword) async {

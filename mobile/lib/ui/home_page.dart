@@ -130,17 +130,17 @@ class _HomePageState extends State<HomePage> {
           ledgers.where((l) => l.kind == AppConfig.kindTravel).toList();
 
       // 网页端只把"自己创建的第一本"工作/桃源计入首页综合视图。
-      _ownWork = workLedgers.isNotEmpty ? workLedgers.first : null;
-      _ownTaoyuan = taoyuanLedgers.isNotEmpty ? taoyuanLedgers.first : null;
+      // 以服务端 isOwn 判定归属（而非位置）：被共享给我的账本即便排序靠前也不误判为"我的"，
+      // 从而正确归入下方共享段并用 owner 前缀显示 [#3]。
+      _ownWork = _pickOwn(workLedgers);
+      _ownTaoyuan = _pickOwn(taoyuanLedgers);
 
       // ---- 共享 work/taoyuan 卡片（对齐网页端 sharedWork/taoyuanLedgers） ----
-      // 本地无 userId，沿用 own=同类型首本口径：首本之外视为被共享给我的账本。
-      final sharedWorkLedgers = workLedgers.length > 1
-          ? workLedgers.sublist(1)
-          : const <Ledger>[];
-      final sharedTaoyuanLedgers = taoyuanLedgers.length > 1
-          ? taoyuanLedgers.sublist(1)
-          : const <Ledger>[];
+      // 非本人所有的账本（isOwn!=true）视为被共享给我的；其标题走 displayName 自动带 owner 前缀 [#3]。
+      final sharedWorkLedgers =
+          workLedgers.where((l) => l != _ownWork && l.isOwn != true).toList();
+      final sharedTaoyuanLedgers =
+          taoyuanLedgers.where((l) => l != _ownTaoyuan && l.isOwn != true).toList();
       final sharedWorkCount = <String, int>{};
       for (final l in sharedWorkLedgers) {
         sharedWorkCount[l.id] =
@@ -323,6 +323,14 @@ class _HomePageState extends State<HomePage> {
     return spent;
   }
 
+  /// 从同类型账本列表中挑选"我的"那一本：优先 isOwn==true；若都无标记
+  /// （本地新建尚未同步），兜底取第一本，避免自家账本被误判为共享 [#3]。
+  Ledger? _pickOwn(List<Ledger> list) {
+    final owned = list.where((l) => l.isOwn == true).toList();
+    if (owned.isNotEmpty) return owned.first;
+    return list.isNotEmpty ? list.first : null;
+  }
+
   void _openLedger(Ledger ledger) {
     Navigator.of(context)
         .push(MaterialPageRoute(builder: (_) => pageForLedger(ledger)));
@@ -408,7 +416,7 @@ class _HomePageState extends State<HomePage> {
               if (_ownWork != null) {
                 add(LedgerFeatureCard(
                   icon: '💼',
-                  title: '工作账本',
+                  title: _ownWork!.displayName,
                   subtitle: '按月记录进项与出项',
                   onTap: () => _openLedger(_ownWork!),
                 ));
@@ -436,7 +444,7 @@ class _HomePageState extends State<HomePage> {
               if (_ownTaoyuan != null) {
                 add(LedgerFeatureCard(
                   icon: '🌸',
-                  title: '桃源账本',
+                  title: _ownTaoyuan!.displayName,
                   subtitle: '活动发布 → 预测 → 公示 → 发钱',
                   badge: _pendingCount > 0 ? '$_pendingCount' : null,
                   onTap: () => _openLedger(_ownTaoyuan!),
