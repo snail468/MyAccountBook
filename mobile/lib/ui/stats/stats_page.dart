@@ -294,7 +294,7 @@ class _SummaryCard extends StatelessWidget {
               style: TextStyle(
                 color: color,
                 fontSize: 18,
-                fontWeight: FontWeight.w700,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ],

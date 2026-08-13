@@ -33,6 +33,8 @@ class _BankPageState extends State<BankPage> {
   final List<BankCard> _cards = [];
   bool _loading = true;
   bool _unlocked = false;
+  /// 最近一次银行卡同步的错误（null 表示成功）。用于 UI 提示，避免静默吞错 [#5]
+  String? _cardError;
   Timer? _lockTimer;
 
   @override
@@ -44,9 +46,11 @@ class _BankPageState extends State<BankPage> {
 
   /// 从服务端拉取银行卡后刷新本地展示：解锁后服务端返回完整卡号，
   /// 故解锁或进入页面都应触发一次，解决卡号/卡信息不从服务端同步的问题 [#5]。
+  /// 同时捕获同步错误用于 UI 提示（此前被静默吞掉）。
   Future<void> _refreshFromServer() async {
-    await SyncService.instance.pullBankCards();
+    final err = await SyncService.instance.pullBankCards();
     if (!mounted) return;
+    _cardError = err;
     await _load();
   }
 
@@ -121,8 +125,8 @@ class _BankPageState extends State<BankPage> {
                   _UnlockGate(onUnlock: () {
                     _onUnlocked();
                     _refreshFromServer();
-                  })
-                else ...[
+                  }),
+                if (_unlocked) ...<Widget>[
                   AppCard(
                     frosted: false,
                     child: Padding(
@@ -165,31 +169,38 @@ class _BankPageState extends State<BankPage> {
                     }),
                   ),
                   const SizedBox(height: 8),
-                  if (_loading)
-                    _hint('加载中…', ink400)
-                  else if (_cards.isEmpty)
-                    _hint('还没有记录任何卡片', ink500)
-                  else
-                    ..._cards.map(
-                      (c) => _BankCardTile(
-                        card: c,
-                        onEdit: () => showModalBottomSheet(
-                          context: context,
-                          isScrollControlled: true,
-                          builder: (_) => _CardSheet(
-                            initial: c,
-                            onSave: (updated) async {
-                              await _saveCard(updated);
-                              if (mounted) Navigator.of(context).pop();
-                            },
-                          ),
-                        ).then((_) {
-                          if (mounted) _load();
-                        }),
-                        onRemove: _remove,
-                      ),
-                    ),
                 ],
+                // 锁态也展示已从服务端拉取的（打码）卡片：对齐网页端「进页面先看到尾号」，
+                // 不再把整列藏在解锁门后面。解锁后 _refreshFromServer 会补回完整卡号 [#5]
+                if (_loading)
+                  _hint('加载中…', ink400)
+                else if (_cards.isEmpty)
+                  _hint(
+                    _cardError != null
+                        ? '银行卡同步失败：$_cardError'
+                        : '还没有记录任何卡片',
+                    ink500,
+                  )
+                else
+                  ..._cards.map(
+                    (c) => _BankCardTile(
+                      card: c,
+                      onEdit: () => showModalBottomSheet(
+                        context: context,
+                        isScrollControlled: true,
+                        builder: (_) => _CardSheet(
+                          initial: c,
+                          onSave: (updated) async {
+                            await _saveCard(updated);
+                            if (mounted) Navigator.of(context).pop();
+                          },
+                        ),
+                      ).then((_) {
+                        if (mounted) _load();
+                      }),
+                      onRemove: _remove,
+                    ),
+                  ),
               ],
             ),
           ),
@@ -325,8 +336,10 @@ class _UnlockGateState extends State<_UnlockGate> {
         ).copyWith(number: j['number'] as String?);
         await BankCardDao().upsert(card);
       }
-    } catch (_) {
-      // 卡号写回失败不阻塞解锁：用户至少能看到本地已存卡号，下次同步再补。
+    } catch (e) {
+      // 卡号写回失败不阻塞解锁：用户至少能看到本地已存卡号，下次同步再补。[#5]
+      // ignore: avoid_print
+      print('银行卡解锁后写回失败：$e');
     }
     if (!mounted) return;
     widget.onUnlock();

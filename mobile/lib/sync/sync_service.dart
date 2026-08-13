@@ -71,12 +71,18 @@ class SyncService {
   }
 
   /// 仅拉取银行卡（解锁后/进入银行卡页时调用，此时服务端返回完整卡号）。
-  /// 非致命：任何错误（离线/未配置 CARD_SECRET/鉴权失败）静默跳过，绝不中断 [#5]。
-  Future<void> pullBankCards() async {
+  ///
+  /// 返回 null 表示成功；非 null 为失败原因（便于 UI 提示，而非静默吞掉）。
+  /// 仍保持非致命：调用方不应因银行卡失败而中断整体流程 [#5]。
+  Future<String?> pullBankCards() async {
     try {
       await _pullCards();
-    } catch (_) {
-      // 银行卡拉取失败不影响其它功能。
+      return null;
+    } on ApiException catch (e) {
+      // 暴露真实错误：503=服务端未配置 CARD_SECRET；401=会话失效；其它=服务端异常 [#5]
+      return e.message;
+    } catch (e) {
+      return e.toString();
     }
   }
 

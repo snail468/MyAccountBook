@@ -182,7 +182,7 @@ class _WorkSummaryPageState extends State<WorkSummaryPage> {
                                   style: TextStyle(
                                       color: ink900,
                                       fontSize: 16,
-                                      fontWeight: FontWeight.w700)),
+                                      fontWeight: FontWeight.w600)),
                               const SizedBox(height: 4),
                               Text('应收出项 · 回款进度 · 批量回款',
                                   style: TextStyle(color: ink500, fontSize: 12)),
@@ -416,12 +416,12 @@ class _Stat extends StatelessWidget {
         text != null
             ? Text(text!,
                 style: TextStyle(
-                    color: color, fontSize: 18, fontWeight: FontWeight.w700))
+                    color: color, fontSize: 18, fontWeight: FontWeight.w600))
             : Money(
                 cents: cents,
                 sign: sign,
                 style: TextStyle(
-                    color: color, fontSize: 18, fontWeight: FontWeight.w700),
+                    color: color, fontSize: 18, fontWeight: FontWeight.w600),
               ),
       ],
     );

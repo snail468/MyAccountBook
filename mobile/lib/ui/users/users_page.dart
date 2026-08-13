@@ -58,7 +58,8 @@ class _UsersPageState extends State<UsersPage> {
         for (final su in serverUsers) {
           final name = su['username'] as String?;
           if (name == null || name.isEmpty) continue;
-          final role = (su['role'] as String?) ?? 'member';
+          // 服务端角色枚举为 'admin' / 'user'，兜底必须对齐，不能用本地 'member' [#6]
+          final role = (su['role'] as String?) ?? 'user';
           final joined = _isoToDate(su['joinedAt'] as String?);
           final existing = await dao.findByName(name);
           if (existing == null) {
@@ -163,7 +164,8 @@ class _UsersPageState extends State<UsersPage> {
   }
 
   Future<void> _cycleRole(AppUser u) async {
-    final next = u.role == 'admin' ? 'member' : 'admin';
+    // 降级时发 'user'（服务端枚举为 'admin'/'user'，'member' 会被 400 拒绝）[#6]
+    final next = u.role == 'admin' ? 'user' : 'admin';
     try {
       // 服务端升降级（PATCH /api/admin/users/[id]），随后重新拉取，
       // 使改动真正生效并在列表刷新（本地 family_members 仅是缓存）。[#6]
@@ -455,7 +457,8 @@ class _AddUserSheet extends StatefulWidget {
 class _AddUserSheetState extends State<_AddUserSheet> {
   final _name = TextEditingController();
   final _password = TextEditingController();
-  String _role = 'member';
+  // 默认值对齐服务端枚举 'user'（'member' 会被服务端 400 拒绝）[#6]
+  String _role = 'user';
 
   @override
   void dispose() {
@@ -501,8 +504,8 @@ class _AddUserSheetState extends State<_AddUserSheet> {
                 Expanded(
                   child: _RoleChip(
                     label: '普通用户',
-                    selected: _role == 'member',
-                    onTap: () => setState(() => _role = 'member'),
+                    selected: _role == 'user',
+                    onTap: () => setState(() => _role = 'user'),
                   ),
                 ),
                 Expanded(

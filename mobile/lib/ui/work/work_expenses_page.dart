@@ -339,7 +339,7 @@ class _WorkExpensesPageState extends State<WorkExpensesPage> {
                               style: TextStyle(
                                   color: ink900,
                                   fontSize: 20,
-                                  fontWeight: FontWeight.w700),
+                                  fontWeight: FontWeight.w600),
                             ),
                           ],
                         ),
@@ -450,7 +450,7 @@ class _WorkExpensesPageState extends State<WorkExpensesPage> {
               Money(
                 cents: _total,
                 style: TextStyle(
-                    color: ink900, fontSize: 30, fontWeight: FontWeight.w700),
+                    color: ink900, fontSize: 30, fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 12),
               Row(
@@ -869,13 +869,13 @@ class _ExpenseRow extends StatelessWidget {
               style: TextStyle(
                   color: refunded ? ink400 : red,
                   fontSize: 16,
-                  fontWeight: FontWeight.w700)),
+                  fontWeight: FontWeight.w600)),
           Money(
             cents: entry.amountCents,
             style: TextStyle(
               color: refunded ? ink400 : red,
               fontSize: 16,
-              fontWeight: FontWeight.w700,
+              fontWeight: FontWeight.w600,
               decoration: refunded ? TextDecoration.lineThrough : null,
             ),
           ),

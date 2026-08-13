@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../api/api_client.dart';
 import '../api/auth_api.dart';
+import '../sync/sync_service.dart';
 
 /// 登录态。Cookie 由 [ApiClient] 持久化，这里只维护内存态 + 启动探测。
 ///
@@ -83,6 +84,12 @@ class AuthState extends ChangeNotifier {
     final prev = prefs.getString(_kLastLocalUser);
     _userSwitched = (prev != null && prev != _username);
     await prefs.setString(_kLastLocalUser, _username!);
+    // 切换用户：在 notifyListeners()（触发 RootSwitcher 重建首页）【之前】先清空
+    // 本地全部业务数据，确保首页首帧 s.load() 读到的是空库，而非上一用户的账本，
+    // 彻底消除「同步中」时段闪现旧用户数据的串号问题 [#2]。
+    if (_userSwitched) {
+      await SyncService.instance.wipeLocalData();
+    }
     notifyListeners();
   }
 

@@ -1749,7 +1749,7 @@ class _SettlementSheetContent extends StatelessWidget {
           children: [
             Text('${ledger.icon ?? '✈️'} ${ledger.name}',
                 style: const TextStyle(
-                    color: ink900, fontSize: 22, fontWeight: FontWeight.bold)),
+                    color: ink900, fontSize: 22, fontWeight: FontWeight.w600)),
             const SizedBox(height: 6),
             Text(range.isNotEmpty ? '旅游 AA 结算单 · $range' : '旅游 AA 结算单',
                 style: const TextStyle(color: ink500, fontSize: 13)),
@@ -1758,7 +1758,7 @@ class _SettlementSheetContent extends StatelessWidget {
             const SizedBox(height: 12),
             Text('账目明细（${expenses.length} 笔）',
                 style: const TextStyle(
-                    color: accent, fontSize: 15, fontWeight: FontWeight.bold)),
+                    color: accent, fontSize: 15, fontWeight: FontWeight.w600)),
             const SizedBox(height: 8),
             if (dates.isEmpty)
               const Text('还没有任何记录',
@@ -1770,7 +1770,7 @@ class _SettlementSheetContent extends StatelessWidget {
                     style: const TextStyle(
                         color: accent,
                         fontSize: 13,
-                        fontWeight: FontWeight.bold)),
+                        fontWeight: FontWeight.w600)),
                 const SizedBox(height: 4),
                 for (final e in byDate[d]!) ...[
                   Row(
@@ -1802,7 +1802,7 @@ class _SettlementSheetContent extends StatelessWidget {
             const SizedBox(height: 12),
             Text('总账单',
                 style: const TextStyle(
-                    color: accent, fontSize: 15, fontWeight: FontWeight.bold)),
+                    color: accent, fontSize: 15, fontWeight: FontWeight.w600)),
             const SizedBox(height: 8),
             Row(
               children: [
@@ -1810,14 +1810,14 @@ class _SettlementSheetContent extends StatelessWidget {
                     style: TextStyle(
                         color: ink900,
                         fontSize: 16,
-                        fontWeight: FontWeight.bold)),
+                        fontWeight: FontWeight.w600)),
                 const Spacer(),
                 Money(
                     cents: totalSpent,
                     style: const TextStyle(
                         color: ink900,
                         fontSize: 16,
-                        fontWeight: FontWeight.bold)),
+                        fontWeight: FontWeight.w600)),
                 const SizedBox(width: 4),
                 Text(base, style: const TextStyle(color: ink400, fontSize: 12)),
               ],
@@ -1838,7 +1838,7 @@ class _SettlementSheetContent extends StatelessWidget {
             const SizedBox(height: 12),
             Text('成员净额',
                 style: const TextStyle(
-                    color: accent, fontSize: 14, fontWeight: FontWeight.bold)),
+                    color: accent, fontSize: 14, fontWeight: FontWeight.w600)),
             const SizedBox(height: 6),
             for (final entry in balances.entries) ...[
               Padding(
@@ -1879,7 +1879,7 @@ class _SettlementSheetContent extends StatelessWidget {
             const SizedBox(height: 12),
             Text('最优结算',
                 style: const TextStyle(
-                    color: accent, fontSize: 14, fontWeight: FontWeight.bold)),
+                    color: accent, fontSize: 14, fontWeight: FontWeight.w600)),
             const SizedBox(height: 6),
             if (error != null)
               const Text(

@@ -107,7 +107,7 @@ class _Body extends StatelessWidget {
                           style: TextStyle(
                               color: ink900,
                               fontSize: 28,
-                              fontWeight: FontWeight.w700)),
+                              fontWeight: FontWeight.w600)),
                       const SizedBox(height: 14),
                       Text('进项',
                           style: TextStyle(color: ink500, fontSize: 12)),
@@ -117,7 +117,7 @@ class _Body extends StatelessWidget {
                         style: TextStyle(
                             color: ink900,
                             fontSize: 26,
-                            fontWeight: FontWeight.w700),
+                            fontWeight: FontWeight.w600),
                       ),
                       const SizedBox(height: 8),
                       Row(
@@ -367,7 +367,7 @@ class _EntryCard extends StatelessWidget {
                 style: TextStyle(
                     color: refunded ? ink400 : amountColor,
                     fontSize: 16,
-                    fontWeight: FontWeight.w700,
+                    fontWeight: FontWeight.w600,
                     decoration: refunded ? TextDecoration.lineThrough : null),
               ),
               // 回款按钮（仅出项）
@@ -480,7 +480,7 @@ class _RefundDialogState extends State<_RefundDialog> {
         children: [
           Text('确认回款',
               style: TextStyle(
-                  color: ink900, fontSize: 18, fontWeight: FontWeight.w700)),
+                  color: ink900, fontSize: 18, fontWeight: FontWeight.w600)),
           const SizedBox(height: 4),
           Text(
               '${widget.entry.category} · ${money.Money.formatPlain(widget.entry.amountCents)} 元',
@@ -711,7 +711,7 @@ class _EntryFormSheetState extends State<_EntryFormSheet> {
           children: [
             Text(widget.editing == null ? '记一笔' : '编辑记录',
                 style: TextStyle(
-                    color: ink900, fontSize: 18, fontWeight: FontWeight.w700)),
+                    color: ink900, fontSize: 18, fontWeight: FontWeight.w600)),
             const SizedBox(height: 16),
 
             // 方向
