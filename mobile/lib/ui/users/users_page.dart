@@ -541,8 +541,8 @@ class _AddUserSheetState extends State<_AddUserSheet> {
           const SizedBox(height: 16),
         ],
       ),
-    ),
-  );
+    );
+  }
 }
 
 Future<bool> _confirm(
