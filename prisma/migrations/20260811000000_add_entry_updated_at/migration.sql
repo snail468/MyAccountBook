@@ -2,7 +2,13 @@
 -- 桃源活动(Event) 已有 updatedAt，无需处理。
 -- 客户端同步时传 ?since=<updatedAt>，服务端仅返回 updatedAt>since 或
 -- deletedAt>since 的变更行（含软删），实现「只拉变更」而非全量拉取。
+--
+-- 注意：默认值必须用**常量字面量**，不能用 CURRENT_TIMESTAMP。
+-- 容器里 Prisma 引擎捆绑的 SQLite < 3.35.0 在 ALTER TABLE ADD COLUMN 时
+-- 拒绝「非恒定默认值」（报 P3018: Cannot add a column with non-constant default），
+-- 导致迁移失败、容器 crashloop。常量默认对所有 SQLite 版本都安全；
+-- 存量行拿到固定时间戳，之后由 Prisma 在每次写入时更新为真实时间。
 
-ALTER TABLE "GeneralEntry" ADD COLUMN "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP;
-ALTER TABLE "Entry" ADD COLUMN "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP;
-ALTER TABLE "TripExpense" ADD COLUMN "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE "GeneralEntry" ADD COLUMN "updatedAt" DATETIME NOT NULL DEFAULT '2026-08-13T00:00:00Z';
+ALTER TABLE "Entry" ADD COLUMN "updatedAt" DATETIME NOT NULL DEFAULT '2026-08-13T00:00:00Z';
+ALTER TABLE "TripExpense" ADD COLUMN "updatedAt" DATETIME NOT NULL DEFAULT '2026-08-13T00:00:00Z';

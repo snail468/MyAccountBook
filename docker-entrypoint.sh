@@ -47,8 +47,24 @@ else
       su-exec nextjs:nodejs ${PRISMA} migrate resolve --applied 0_init
       # 这次失败就是真失败，让 set -e 把容器带下去，不要静默启动一个 schema 不对的服务
       su-exec nextjs:nodejs ${PRISMA} migrate deploy
+    # P3009 = 上次有迁移在「应用阶段」失败，_prisma_migrations 留下 failed 记录，
+    # 导致之后每次 deploy 直接拒绝（crashloop）。典型诱因就是本仓库的
+    # 20260811000000 迁移：老 SQLite 不支持 ADD COLUMN ... DEFAULT CURRENT_TIMESTAMP
+    # （P3018 非恒定默认值）。该失败发生在 ALTER 语句本身，未实际改动表结构，
+    # 因此把记录标记为 rolled-back 后重新 deploy 是安全的。
+    elif echo "${migrate_out}" | grep -q 'P3009'; then
+      echo "[entrypoint] 检测到上次失败的迁移(P3009)，将其标记为 rolled-back 后重试..."
+      failed=$(echo "${migrate_out}" | grep -oE '`[0-9a-zA-Z_]+` migration started at' | head -1 | sed -E 's/`([0-9a-zA-Z_]+)` migration started at/\1/')
+      if [ -n "$failed" ]; then
+        su-exec nextjs:nodejs ${PRISMA} migrate resolve --rolled-back "$failed"
+        # 重跑；若 SQL 仍有问题则如实失败，让容器退出暴露错误
+        su-exec nextjs:nodejs ${PRISMA} migrate deploy
+      else
+        echo "[entrypoint] 无法从输出解析失败迁移名，退出。" >&2
+        exit 1
+      fi
     else
-      echo "[entrypoint] 迁移失败，且不是可自愈的 P3005，退出。" >&2
+      echo "[entrypoint] 迁移失败，且不是可自愈的 P3005/P3009，退出。" >&2
       exit 1
     fi
   fi
