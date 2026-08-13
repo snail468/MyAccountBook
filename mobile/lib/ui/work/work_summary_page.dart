@@ -381,6 +381,7 @@ class _WorkSummaryPageState extends State<WorkSummaryPage> {
         ),
       ),
     );
+  }
 }
 
 /// 汇总小块（标签 + 金额 / 文本）。

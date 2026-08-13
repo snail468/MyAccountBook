@@ -182,9 +182,10 @@ class _Body extends StatelessWidget {
             ),
           ),
         ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 /// 周期规则卡片（1:1 还原 RecurringClient 的 rules.map 区块）。

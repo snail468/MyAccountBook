@@ -272,7 +272,6 @@ class _UsersPageState extends State<UsersPage> {
             ),
           ),
         ),
-      ),
     );
   }
 }
