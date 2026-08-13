@@ -199,17 +199,18 @@ TripMember tripMemberFromApi(Map<String, dynamic> j, String ledgerId,
 }
 
 TripExpense tripExpenseFromApi(Map<String, dynamic> j, String ledgerId,
-    {String? localId}) {
+    {String? localId, Map<String, String>? memberIdMap}) {
   final occurred =
       j['occurredAt'] is String ? DateTime.tryParse(j['occurredAt']) : null;
   final imgs = j['imageUrls'];
   final deleted =
       j['deletedAt'] is String ? DateTime.tryParse(j['deletedAt']) : null;
+  final serverPayerId = j['payerId'] as String;
   return TripExpense(
     id: localId ?? (j['id'] as String),
     serverId: j['id'] as String,
     ledgerId: ledgerId,
-    payerId: j['payerId'] as String,
+    payerId: memberIdMap?[serverPayerId] ?? serverPayerId,
     title: j['title'] as String,
     category: j['category'] as String,
     phase: j['phase'] as String,

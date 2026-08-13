@@ -608,7 +608,8 @@ class SyncService {
     for (final j in expenses) {
       final sid = j['id'] as String;
       final localId = expMap[sid] ?? _uuid.v4();
-      await _tripDao.insertExpense(tripExpenseFromApi(j, ledgerId, localId: localId));
+      await _tripDao.insertExpense(tripExpenseFromApi(j, ledgerId,
+          localId: localId, memberIdMap: memberMap));
       final splits = (j['splits'] as List? ?? []);
       await _tripDao.deleteSplitsForExpense(localId);
       for (final s in splits) {
