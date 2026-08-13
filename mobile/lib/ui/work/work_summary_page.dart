@@ -43,8 +43,9 @@ class _WorkSummaryPageState extends State<WorkSummaryPage> {
   @override
   void initState() {
     super.initState();
-    // 首帧后再异步加载，避免 build 期间触碰 context。
-    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+    // 即点即开：initState 中立即启动加载，数据就绪后首帧即刷新，
+    // 避免 postFrame 导致的额外一帧空白。[#4]
+    _load();
   }
 
   /// 加载并合并所有工作账本的按月汇总（复用 [WorkEntryDao.totalsByMonth]）。
@@ -54,9 +55,13 @@ class _WorkSummaryPageState extends State<WorkSummaryPage> {
       await state.load();
       final ledgers = state.byKind(AppConfig.kindWork);
 
+      // 并行查询各工作账本，减少首屏等待。
+      final monthlyList = await Future.wait(
+        ledgers.map((l) => WorkEntryDao().totalsByMonth(l.id)),
+      );
+
       final merged = <String, ({int income, int expense})>{};
-      for (final ledger in ledgers) {
-        final monthly = await WorkEntryDao().totalsByMonth(ledger.id);
+      for (final monthly in monthlyList) {
         monthly.forEach((ym, totals) {
           final cur = merged[ym] ?? (income: 0, expense: 0);
           merged[ym] = (
@@ -89,36 +94,27 @@ class _WorkSummaryPageState extends State<WorkSummaryPage> {
 
   /// 生成月份列表（对齐网页 makeMonthList）：当前月往前 11 个月，
   /// 若最早记录更早则从最早月开始；倒序（最新在前）。
-  /// 使用 DateTime 做月份运算，避免手动跨年计算在边界月份出错。
+  /// 使用 DateTime 做月份递增，让 Dart 自动处理跨年，避免边界月计算出错。
   List<String> _monthList() {
     final now = DateTime.now();
     final current = DateTime(now.year, now.month, 1);
 
     // 默认展示最近 12 个月（含当前月）
-    DateTime start = DateTime(now.year, now.month - 11, 1);
+    var start = DateTime(now.year, now.month - 11, 1);
 
     // 若最早记录更早，则追溯到最早月
-    String? earliest;
-    for (final k in _byMonth.keys) {
-      if (earliest == null || k.compareTo(earliest) < 0) earliest = k;
-    }
-    if (earliest != null) {
+    if (_byMonth.isNotEmpty) {
+      final earliest = _byMonth.keys.reduce((a, b) => a.compareTo(b) < 0 ? a : b);
       final parts = earliest.split('-');
       final em = DateTime(int.parse(parts[0]), int.parse(parts[1]), 1);
       if (em.isBefore(start)) start = em;
     }
 
     final months = <String>[];
-    var y = start.year;
-    var m = start.month;
-    while (DateTime(y, m, 1).isBefore(current) ||
-        (y == current.year && m == current.month)) {
-      months.add('$y-${m.toString().padLeft(2, '0')}');
-      m += 1;
-      if (m > 12) {
-        m = 1;
-        y += 1;
-      }
+    var d = start;
+    while (!d.isAfter(current)) {
+      months.add('${d.year}-${d.month.toString().padLeft(2, '0')}');
+      d = DateTime(d.year, d.month + 1, 1);
     }
     return months.reversed.toList();
   }
@@ -148,6 +144,7 @@ class _WorkSummaryPageState extends State<WorkSummaryPage> {
     return Scaffold(
       backgroundColor: pageBg,
       body: SafeArea(
+        top: false,
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(24, 56, 24, 24),
           child: Column(

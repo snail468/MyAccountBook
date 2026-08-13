@@ -42,7 +42,12 @@ class StatsState extends ChangeNotifier {
   /// 否（还没满一年）时网页端显示「还没满一年」，环比卡永远有数据。
   bool hasYoy = true;
 
+  /// 是否正在加载（首帧为 true，load 完成后置 false）。[#4]
+  /// 用于统计页在加载期间显示「加载中…」占位，避免首屏从 0 跳变到数据。
+  bool loading = true;
+
   Future<void> load() async {
+    loading = true;
     try {
       final now = DateTime.now();
       const months = 13;
@@ -107,6 +112,7 @@ class StatsState extends ChangeNotifier {
       yoyExpense = 0;
       hasYoy = true;
     }
+    loading = false;
     notifyListeners();
   }
 

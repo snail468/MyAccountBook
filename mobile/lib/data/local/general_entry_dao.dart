@@ -39,6 +39,19 @@ class GeneralEntryDao {
     return rows.map(GeneralEntry.fromDb).toList();
   }
 
+  /// 同步专用：含已软删行，用于建立 server_id -> local_id 映射，
+  /// 避免服务端软删条目因本地查不到而重复插入。
+  Future<List<GeneralEntry>> listByLedgerIncludingDeleted(String ledgerId) async {
+    final db = await _db.database;
+    final rows = await db.query(
+      'general_entries',
+      where: 'ledger_id = ?',
+      whereArgs: [ledgerId],
+      orderBy: 'occurred_at DESC',
+    );
+    return rows.map(GeneralEntry.fromDb).toList();
+  }
+
   Future<GeneralEntry?> getById(String id) async {
     final db = await _db.database;
     final rows =

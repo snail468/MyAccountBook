@@ -345,6 +345,7 @@ class _TravelBodyState extends State<_TravelBody> {
     return Scaffold(
       backgroundColor: pageBg,
       body: SafeArea(
+        top: false,
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(24, 56, 24, 24),
           child: Column(
@@ -368,6 +369,12 @@ class _TravelBodyState extends State<_TravelBody> {
                   ),
                 ],
               ),
+              if (state.loading)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text('加载中…',
+                      style: TextStyle(color: ink500, fontSize: 13)),
+                ),
               _SummaryCard(
                 baseCurrency: base,
                 total: preTotal + duringTotal,

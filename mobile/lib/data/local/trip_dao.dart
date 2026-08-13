@@ -90,6 +90,19 @@ class TripDao {
     return rows.map(TripExpense.fromDb).toList();
   }
 
+  /// 同步专用：含已软删行，用于建立 server_id -> local_id 映射，
+  /// 避免服务端软删条目因本地查不到而重复插入。
+  Future<List<TripExpense>> listExpensesIncludingDeleted(String ledgerId) async {
+    final db = await _db.database;
+    final rows = await db.query(
+      'trip_expenses',
+      where: 'ledger_id = ?',
+      whereArgs: [ledgerId],
+      orderBy: 'occurred_at DESC',
+    );
+    return rows.map(TripExpense.fromDb).toList();
+  }
+
   Future<void> softDeleteExpense(String id) async {
     final db = await _db.database;
     await db.update(

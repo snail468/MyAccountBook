@@ -49,6 +49,19 @@ class EventDao {
     return rows.map(TaoyuanEvent.fromDb).toList();
   }
 
+  /// 同步专用：含已软删行，用于建立 server_id -> local_id 映射，
+  /// 避免服务端软删条目因本地查不到而重复插入。
+  Future<List<TaoyuanEvent>> listByLedgerIncludingDeleted(String ledgerId) async {
+    final db = await _db.database;
+    final rows = await db.query(
+      'taoyuan_events',
+      where: 'ledger_id = ?',
+      whereArgs: [ledgerId],
+      orderBy: 'published_at DESC',
+    );
+    return rows.map(TaoyuanEvent.fromDb).toList();
+  }
+
   Future<TaoyuanEvent?> getById(String id) async {
     final db = await _db.database;
     final rows =

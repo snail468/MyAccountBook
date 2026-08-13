@@ -45,6 +45,7 @@ class _GeneralLedgerScaffold extends StatelessWidget {
     final state = context.watch<GeneralState>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final pageBg = isDark ? AppColors.darkPageBg : AppColors.lightPageBg;
+    final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
     final showBudget =
         state.ledger.budgetCents != null && state.ledger.budgetCents! > 0;
     final showWeek = state.customCategories.budgetsWeekly.isNotEmpty;
@@ -52,6 +53,7 @@ class _GeneralLedgerScaffold extends StatelessWidget {
     return Scaffold(
       backgroundColor: pageBg,
       body: SafeArea(
+        top: false,
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(24, 56, 24, 24),
           child: Column(
@@ -72,23 +74,31 @@ class _GeneralLedgerScaffold extends StatelessWidget {
                   ),
                 ],
               ),
-              const _SyncCard(),
-              const SizedBox(height: 16),
-              const _SummaryCard(),
-              if (showBudget) ...<Widget>[
+              if (state.loading)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text('加载中…',
+                      style: TextStyle(color: ink500, fontSize: 13)),
+                )
+              else ...[
+                const _SyncCard(),
                 const SizedBox(height: 16),
-                const _BudgetCard(),
-              ],
-              const SizedBox(height: 16),
-              const _MonthCategoryCard(),
-              if (showWeek) ...<Widget>[
+                const _SummaryCard(),
+                if (showBudget) ...<Widget>[
+                  const SizedBox(height: 16),
+                  const _BudgetCard(),
+                ],
                 const SizedBox(height: 16),
-                const _WeekCategoryCard(),
+                const _MonthCategoryCard(),
+                if (showWeek) ...<Widget>[
+                  const SizedBox(height: 16),
+                  const _WeekCategoryCard(),
+                ],
+                const SizedBox(height: 16),
+                const _AddButton(),
+                const SizedBox(height: 16),
+                const _EntryList(),
               ],
-              const SizedBox(height: 16),
-              const _AddButton(),
-              const SizedBox(height: 16),
-              const _EntryList(),
             ],
           ),
         ),

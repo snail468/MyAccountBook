@@ -41,12 +41,18 @@ class GeneralState extends ChangeNotifier {
   /// 离线待同步操作数（[PendingOpDao.pendingCount]）。
   int pendingCount = 0;
 
+  /// 是否正在加载本地数据（首次 load 为 true）。
+  bool loading = true;
+
   int get net => monthIncome - monthExpense;
 
   Future<void> load() async {
+    loading = true;
+    notifyListeners();
     _entries = await _dao.listByLedger(ledger.id);
     await _reloadSummary();
     pendingCount = await PendingOpDao().pendingCount();
+    loading = false;
     notifyListeners();
   }
 

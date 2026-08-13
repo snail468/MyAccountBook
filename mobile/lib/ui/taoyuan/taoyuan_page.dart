@@ -374,9 +374,7 @@ class TaoyuanPage extends StatelessWidget {
       create: (_) => _TaoyuanStore(ledger)..load(),
       child: Scaffold(
         backgroundColor: pageBg,
-        body: SafeArea(
-          child: const _Body(),
-        ),
+        body: const _Body(),
       ),
     );
   }
@@ -495,6 +493,7 @@ class _BodyState extends State<_Body> {
     return Scaffold(
       backgroundColor: pageBg,
       body: SafeArea(
+        top: false,
         child: Stack(
           children: [
             SingleChildScrollView(

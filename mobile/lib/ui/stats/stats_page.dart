@@ -61,6 +61,7 @@ class _StatsBody extends StatelessWidget {
     return Scaffold(
       backgroundColor: pageBgColor,
       body: SafeArea(
+        top: false,
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(24, 56, 24, 24),
           child: Column(
@@ -71,7 +72,15 @@ class _StatsBody extends StatelessWidget {
                 title: '统计',
                 subtitle: '全部账本 · 最近 12 个月',
               ),
-              if (!hasData)
+              if (state.loading)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 48),
+                  child: Center(
+                    child: Text('加载中…',
+                        style: TextStyle(color: ink500, fontSize: 13)),
+                  ),
+                )
+              else if (!hasData)
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 48),
                   child: Center(

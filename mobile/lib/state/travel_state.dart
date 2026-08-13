@@ -53,9 +53,15 @@ class TravelState extends ChangeNotifier {
     notifyListeners();
   }
 
+  bool loading = true;
+
   Future<void> load() async {
+    loading = true;
+    notifyListeners();
     await loadMembers();
     await loadExpenses();
+    loading = false;
+    notifyListeners();
   }
 
   // ---- 成员（需联网）----

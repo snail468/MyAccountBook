@@ -74,7 +74,8 @@ class _WorkExpensesPageState extends State<WorkExpensesPage> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+    // 即点即开：initState 中立即启动加载，减少空白帧。[#4]
+    _load();
   }
 
   WorkState _stateFor(String ledgerId) {
@@ -92,8 +93,10 @@ class _WorkExpensesPageState extends State<WorkExpensesPage> {
       _ledgers = lstate.byKind(AppConfig.kindWork);
 
       final all = <WorkEntry>[];
-      for (final ledger in _ledgers) {
-        final rows = await WorkEntryDao().listByLedger(ledger.id);
+      final rowsList = await Future.wait(
+        _ledgers.map((l) => WorkEntryDao().listByLedger(l.id)),
+      );
+      for (final rows in rowsList) {
         for (final e in rows) {
           if (e.direction == 'expense') all.add(e);
         }
@@ -261,6 +264,7 @@ class _WorkExpensesPageState extends State<WorkExpensesPage> {
     return Scaffold(
       backgroundColor: pageBg,
       body: SafeArea(
+        top: false,
         child: Stack(
           children: [
             SingleChildScrollView(

@@ -121,6 +121,10 @@ class SearchState extends ChangeNotifier {
 
   List<SearchResult> _results = const [];
   int _visible = kSearchPageSize;
+  bool _loading = true;
+
+  /// 是否正在加载（首次/筛选变化时 true，结果回来后 false）。
+  bool get loading => _loading;
 
   /// 当前页展示的结果（按 [kSearchPageSize] 分页）。
   List<SearchResult> get filtered {
@@ -132,6 +136,8 @@ class SearchState extends ChangeNotifier {
   bool get hasMore => _visible < _results.length;
 
   Future<void> load() async {
+    _loading = true;
+    notifyListeners();
     try {
       _results = await SearchDao().searchAll(SearchFilters(
         query: _query,
@@ -148,6 +154,7 @@ class SearchState extends ChangeNotifier {
       _results = const [];
     }
     _visible = kSearchPageSize;
+    _loading = false;
     notifyListeners();
   }
 

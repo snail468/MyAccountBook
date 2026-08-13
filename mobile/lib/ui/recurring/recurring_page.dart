@@ -44,6 +44,7 @@ class _Body extends StatelessWidget {
     final red = isDark ? AppColors.darkSemanticRed : AppColors.lightSemanticRed;
 
     return SafeArea(
+      top: false,
       child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(24, 56, 24, 24),
         child: Column(

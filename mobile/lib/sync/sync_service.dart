@@ -457,7 +457,7 @@ class SyncService {
     final entries = res.rows;
     final incremental = res.incremental;
 
-    final existing = await _generalDao.listByLedger(ledgerId);
+    final existing = await _generalDao.listByLedgerIncludingDeleted(ledgerId);
     final map = <String, String>{};
     for (final e in existing) {
       if (e.serverId != null) map[e.serverId!] = e.id;
@@ -490,7 +490,7 @@ class SyncService {
     final entries = res.rows;
     final incremental = res.incremental;
 
-    final existing = await _workDao.listByLedger(ledgerId);
+    final existing = await _workDao.listByLedgerIncludingDeleted(ledgerId);
     final map = <String, String>{};
     for (final e in existing) {
       if (e.serverId != null) map[e.serverId!] = e.id;
@@ -519,7 +519,7 @@ class SyncService {
     final events = res.rows;
     final incremental = res.incremental;
 
-    final existing = await _eventDao.listByLedger(ledgerId);
+    final existing = await _eventDao.listByLedgerIncludingDeleted(ledgerId);
     final map = <String, String>{};
     for (final e in existing) {
       if (e.serverId != null) map[e.serverId!] = e.id;
@@ -599,7 +599,7 @@ class SyncService {
       incremental = full.incremental;
     }
 
-    final existingExp = await _tripDao.listExpenses(ledgerId);
+    final existingExp = await _tripDao.listExpensesIncludingDeleted(ledgerId);
     final expMap = <String, String>{};
     for (final e in existingExp) {
       if (e.serverId != null) expMap[e.serverId!] = e.id;

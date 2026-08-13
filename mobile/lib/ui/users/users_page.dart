@@ -222,6 +222,7 @@ class _UsersPageState extends State<UsersPage> {
     return Scaffold(
       backgroundColor: pageBg,
       body: SafeArea(
+        top: false,
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(24, 56, 24, 24),
           child: Column(

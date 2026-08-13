@@ -21,7 +21,7 @@ class SearchPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ChangeNotifierProvider(
-      create: (_) => SearchState(),
+      create: (_) => SearchState()..load(),
       child: const _Body(),
     );
   }
@@ -35,18 +35,7 @@ class _Body extends StatefulWidget {
 }
 
 class _BodyState extends State<_Body> {
-  bool _loading = false;
   bool _panelOpen = false;
-
-  @override
-  void initState() {
-    super.initState();
-    // 首次加载由本页触发，便于在结果回来前展示「搜索中…」加载态。
-    _loading = true;
-    context.read<SearchState>().load().whenComplete(() {
-      if (mounted) setState(() => _loading = false);
-    });
-  }
 
   void _openDetail(SearchResult r) {
     showModalBottomSheet(
@@ -72,6 +61,7 @@ class _BodyState extends State<_Body> {
     return Scaffold(
       backgroundColor: pageBg,
       body: SafeArea(
+        top: false,
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(24, 56, 24, 24),
           child: Column(
@@ -116,7 +106,7 @@ class _BodyState extends State<_Body> {
 
       // ---- 结果 ----
       const SectionLabel('结果'),
-      if (_loading)
+      if (state.loading)
         _Hint(text: '搜索中…', color: ink400)
       else if (results.isEmpty)
         _Hint(
