@@ -111,6 +111,16 @@ class LedgerDao {
     );
   }
 
+  /// 清空所有账本的增量水线，强制下次同步走全量拉取。
+  ///
+  /// 增量同步只回拉「水线之后的变更」，无法补回本地因历史同步抖动而丢失、
+  /// 但其服务端 updatedAt 又早于水线的历史行。只有全量对账（since=null）才能
+  /// 把这类行补回来。供手动「重新同步 / 修复数据」使用。[Bug2]
+  Future<void> resetAllLastPullAt() async {
+    final db = await _db.database;
+    await db.update('ledgers', {'last_pull_at': null});
+  }
+
   /// 拉取对账 + 级联：删本地「已同步但服务端已删除」的账本，并清掉其下全部本地
   /// 子数据（金额/分摊引用父表，先清子再清父）。绝不删未同步(server_id 为 null)
   /// 的本地账本（待推送的新建）。

@@ -72,9 +72,18 @@ class LedgerListState extends ChangeNotifier {
     return _doSync();
   }
 
-  /// 忽略节流，立即全量同步（手动刷新场景）。
+  /// 忽略节流，立即全量同步（手动刷新 / 修复数据场景）。
+  ///
+  /// 先清空所有账本的增量水线，使本次同步对每本账本都走「全量对账」
+  /// （since=null → 服务端返回全部未删行 + deleteSyncedNotIn 对账），
+  /// 从而把服务端有、但本地因历史同步抖动而丢失的历史行补回来。[Bug2]
   Future<bool> forceSync() async {
     _lastSyncAt = null;
+    try {
+      await _dao.resetAllLastPullAt();
+    } catch (_) {
+      // 清空水线失败不影响后续常规同步；最坏仍是增量拉取。
+    }
     return _doSync();
   }
 

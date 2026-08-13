@@ -92,6 +92,17 @@ class _WorkSummaryPageState extends State<WorkSummaryPage> {
     }
   }
 
+  /// 下拉刷新：强制全量重新同步（清空增量水线 → 全量对账），把服务端有、
+  /// 但本地因历史同步抖动而缺失的历史行（如 8 月）补回来，再重载汇总。[Bug2]
+  Future<void> _onRefresh() async {
+    try {
+      await context.read<LedgerListState>().forceSync();
+    } catch (_) {
+      // 同步失败：保留已渲染的本地缓存数据，不阻断刷新手势。
+    }
+    if (mounted) await _load();
+  }
+
   /// 生成月份列表（对齐网页 makeMonthList）：当前月往前 11 个月，
   /// 若最早记录更早则从最早月开始；倒序（最新在前）。
   /// 使用 DateTime 做月份递增，让 Dart 自动处理跨年，避免边界月计算出错。
@@ -145,8 +156,10 @@ class _WorkSummaryPageState extends State<WorkSummaryPage> {
       backgroundColor: pageBg,
       body: SafeArea(
         top: false,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(24, 56, 24, 24),
+        child: RefreshIndicator(
+          onRefresh: _onRefresh,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(24, 56, 24, 24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -372,9 +385,10 @@ class _WorkSummaryPageState extends State<WorkSummaryPage> {
                       ),
                     ),
                   );
-                }),
+                }              ),
             ],
           ),
+        ),
         ),
       ),
     );
