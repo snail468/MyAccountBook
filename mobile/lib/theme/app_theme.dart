@@ -39,6 +39,11 @@ class AppTheme {
           borderRadius: BorderRadius.circular(16),
         ),
       ),
+      // 防御性修复：强制所有 Material 文本样式无下划线，避免某些继承/主题路径给文字
+      // 带来异常黄线（[#4] 工作账本/统计/搜索等页面文字下方出现双黄线）。
+      textTheme: ThemeData(brightness: brightness, useMaterial3: true)
+          .textTheme
+          .apply(decoration: TextDecoration.none),
       appBarTheme: AppBarTheme(
         backgroundColor:
             dark ? AppColors.darkPageBg : AppColors.lightPageBg,

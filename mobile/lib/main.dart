@@ -60,7 +60,12 @@ class AppRoot extends StatelessWidget {
         return MediaQuery(
           data: MediaQuery.of(context)
               .copyWith(textScaler: TextScaler.linear(themeState.fontScale)),
-          child: _GlassFrame(child: child!),
+          // 防御性修复 [#4]：再包一层 DefaultTextStyle，确保没有任何继承路径能给文字加下划线。
+          // 显式设置 TextDecoration.underline 的链接文本不受影响。
+          child: DefaultTextStyle.merge(
+            style: const TextStyle(decoration: TextDecoration.none),
+            child: _GlassFrame(child: child!),
+          ),
         );
       },
       home: const RootSwitcher(),
