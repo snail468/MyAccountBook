@@ -305,6 +305,7 @@ class _WorkSummaryPageState extends State<WorkSummaryPage> {
                     padding: const EdgeInsets.only(bottom: 12),
                     child: AppCard(
                       radius: 24,
+                      color: cardBg,
                       onTap: ledgerForMonth == null
                           ? null
                           : () => Navigator.of(context).push(

@@ -19,12 +19,17 @@ class AppCard extends StatelessWidget {
   final bool frosted;
   final double radius;
 
+  /// 显式填充色（如当前月高亮卡的深色底）。
+  /// 传入时强制用实色填充并跳过玻璃磨砂，确保颜色一定生效；为 null 时沿用主题默认。
+  final Color? color;
+
   const AppCard({
     super.key,
     required this.child,
     this.onTap,
     this.frosted = true,
     this.radius = 16,
+    this.color,
   });
 
   @override
@@ -33,12 +38,15 @@ class AppCard extends StatelessWidget {
     final isDark = theme.brightness == Brightness.dark;
     final glass = frosted && context.watch<ThemeState>().style == AppStyle.glass;
 
-    final borderColor = glass
+    // 显式 color 时跳过玻璃磨砂（否则半透明会盖掉实色），保证高亮底色可见。
+    final useGlass = glass && color == null;
+    final borderColor = useGlass
         ? (isDark ? AppColors.darkGlassCardBorder : AppColors.glassCardBorder)
         : (isDark ? AppColors.darkBorder : AppColors.lightBorder);
-    final fillColor = glass
-        ? (isDark ? AppColors.darkGlassCardFill : AppColors.glassCardFill)
-        : (isDark ? AppColors.darkSurface : AppColors.lightSurface);
+    final fillColor = color ??
+        (useGlass
+            ? (isDark ? AppColors.darkGlassCardFill : AppColors.glassCardFill)
+            : (isDark ? AppColors.darkSurface : AppColors.lightSurface));
 
     final container = Container(
       decoration: BoxDecoration(
@@ -46,7 +54,7 @@ class AppCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(radius),
         border: Border.all(color: borderColor, width: 1),
         // 玻璃态：柔和投影，对齐网页端 `0 8px 24px -12px rgba(31,38,135,0.2)`。
-        boxShadow: glass
+        boxShadow: useGlass
             ? [
                 BoxShadow(
                   color: isDark
@@ -64,7 +72,8 @@ class AppCard extends StatelessWidget {
 
     // 玻璃态：用 BackdropFilter 对卡片背后的渐变桌布做 24px 磨砂，叠加半透明填充
     // = 网页端 frosted glass 观感。ClipRRect 保证模糊区域被裁成圆角。
-    final glassed = glass
+    // 显式 color 时跳过玻璃磨砂（useGlass 已为 false），保证实色高亮底可见。
+    final glassed = useGlass
         ? ClipRRect(
             borderRadius: BorderRadius.circular(radius),
             child: BackdropFilter(
