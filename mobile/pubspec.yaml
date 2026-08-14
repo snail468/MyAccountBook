@@ -29,6 +29,8 @@ dependencies:
   image_picker: ">=1.1.2 <1.2.0"
   # 指纹 / 面容识别（生物识别锁）[#4]
   local_auth: ^2.2.0
+  # 点击音效：首页/其它页两段 mp3（对齐网页端 home.mp3 / global.mp3）[#2]
+  audioplayers: ^6.1.0
 
 dev_dependencies:
   flutter_test:
@@ -37,3 +39,7 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/logo.png
+    - assets/audio/home.mp3
+    - assets/audio/global.mp3

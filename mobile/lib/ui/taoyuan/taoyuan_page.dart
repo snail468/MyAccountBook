@@ -64,13 +64,6 @@ const List<String> _kRewardMethods = [
   'merch',
 ];
 
-/// 状态推进到下一阶段；paid 之后返回 null。
-String? _nextStatus(String status) {
-  final i = _kStatusOrder.indexOf(status);
-  if (i < 0 || i >= _kStatusOrder.length - 1) return null;
-  return _kStatusOrder[i + 1];
-}
-
 /// 状态 pill 配色（品牌色，跨主题固定）。
 ({Color bg, Color fg, String label}) _statusPill(String status, bool isDark) {
   final label = _kStatusPill[status] ?? status;
@@ -261,26 +254,6 @@ class _TaoyuanStore extends ChangeNotifier {
   Future<void> deleteEvent(String id) async {
     await _dao.deleteAmountsByEvent(id);
     await _dao.softDeleteEvent(id);
-    await load();
-  }
-
-  /// 单条推进到下一阶段。
-  Future<void> advanceStage(TaoyuanEvent e) async {
-    final next = _nextStatus(e.status);
-    if (next == null) return;
-    await _dao.update(e.copyWith(status: next, synced: 0));
-    await load();
-  }
-
-  /// 批量推进（MergeBar 简化版）：把若干活动一起推到下一阶段。
-  Future<void> advanceMany(List<String> ids) async {
-    for (final id in ids) {
-      final e = _find(id);
-      if (e == null) continue;
-      final next = _nextStatus(e.status);
-      if (next == null) continue;
-      await _dao.update(e.copyWith(status: next, synced: 0));
-    }
     await load();
   }
 
@@ -718,7 +691,6 @@ class _EventCardState extends State<_EventCard> {
     final methods = parseRewardMethods(event.rewardMethods, event.rewardMethod);
     final images = _parseImages(event.contentImages);
     final pill = _statusPill(event.status, isDark);
-    final next = _nextStatus(event.status);
     final merged = widget.children.isNotEmpty;
 
     final stages = ['predicted', 'announced', 'paid'];
@@ -921,16 +893,6 @@ class _EventCardState extends State<_EventCard> {
                 Padding(
                   padding: const EdgeInsets.only(top: 12),
                   child: afterTaxCard,
-                ),
-              // 推进下一阶段
-              if (!widget.selecting && next != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 10),
-                  child: _AdvanceButton(
-                    label: '推进到${_kStatusPill[next]}',
-                    isDark: isDark,
-                    onTap: () => widget.store.advanceStage(event),
-                  ),
                 ),
               // 合并后的子活动（可展开 / 摘出）
               if (merged)
@@ -1198,41 +1160,6 @@ Widget _stageSumWidget(List<EventAmount> amounts, Color ink900, Color ink400) {
     text,
     style: TextStyle(color: ink900, fontSize: 13, fontWeight: FontWeight.bold),
   );
-}
-
-class _AdvanceButton extends StatelessWidget {
-  final String label;
-  final bool isDark;
-  final VoidCallback onTap;
-  const _AdvanceButton({
-    required this.label,
-    required this.isDark,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
-    final border = isDark ? AppColors.darkBorder : AppColors.lightBorder;
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        decoration: BoxDecoration(
-          border: Border.all(color: border),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Center(
-          child: Text(
-            label,
-            style: TextStyle(color: ink500, fontSize: 13, fontWeight: FontWeight.w600),
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 // ───────────────────────── MergeBar（合并子活动） ─────────────────────────

@@ -4,6 +4,7 @@ import '../../state/theme_state.dart';
 import '../../theme/design_tokens.dart';
 import 'app_primary_button.dart';
 import 'app_switch.dart';
+import 'click_fx.dart';
 
 /// 首页「外观」快捷面板（👁 浮动按钮入口），对齐设计稿 2:139。
 ///
@@ -165,9 +166,11 @@ class AppearanceSheet extends StatelessWidget {
   }
 }
 
-/// 试听「点击光效」：对齐网页端 previewFx 的 light 部分，在屏幕中心播一段
-/// 品牌粉涟漪（无音视频资源，声音部分本地暂不实现）。光效关闭时给轻提示。
+/// 试听「点击光效」：对齐网页端 previewFx（light + sound）。
+/// 先播 global 音效（修复"试听没声音"），再在屏幕中心播一段紫色星空涟漪。
 void _previewClickFx(BuildContext context, ThemeState ts) {
+  // 试听：播放 global 音效（对齐网页端 previewFx 用 'global' 键）
+  clickFxPreviewSound();
   if (!ts.effectOn) {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('点击光效已关闭，开启后试听可见涟漪')),
@@ -187,7 +190,8 @@ void _previewClickFx(BuildContext context, ThemeState ts) {
   });
 }
 
-/// 屏幕中心涟漪：scale 1→6、opacity 1→0（对齐网页端 RIPPLE_SCALE/DURATION）。
+/// 屏幕中心涟漪：紫色径向涟漪 + 白色星芒，scale 1→6、opacity 1→0
+/// （对齐网页端 RIPPLE_SCALE/DURATION 与星芒 burst）。
 class _ClickRipple extends StatefulWidget {
   const _ClickRipple();
 
@@ -222,25 +226,71 @@ class _ClickRippleState extends State<_ClickRipple>
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final accent = isDark ? AppColors.darkBrandPink : AppColors.lightBrandPink;
+    // 对齐网页端：紫色径向涟漪 + 白色星芒（_scale 1→6）
+    final e = (_scale.value - 1) / 5; // 0 → 1
     return Opacity(
       opacity: _opacity.value,
-      child: Transform.scale(
-        scale: _scale.value,
-        child: Container(
-          width: 20,
-          height: 20,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: RadialGradient(
-              colors: [accent.withOpacity(0.7), accent.withOpacity(0)],
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Transform.scale(
+            scale: _scale.value,
+            child: Container(
+              width: 20,
+              height: 20,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: RadialGradient(
+                  colors: [_kPreviewRipple, _kPreviewRipple.withOpacity(0)],
+                ),
+              ),
             ),
           ),
-        ),
+          Transform.rotate(
+            angle: e * 1.5708,
+            child: Transform.scale(
+              scale: 1 + e * 2,
+              child: CustomPaint(
+                size: const Size(12, 12),
+                painter: _PreviewSparklePainter(),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
+}
+
+/// 网页端紫色涟漪色 rgba(139,109,208,0.7) → Flutter 0xB3≈0.7 透明度。
+const Color _kPreviewRipple = Color(0xB38B6DD0);
+
+/// 白色 4 角星（对齐网页端 clip-path 8 点星 polygon，0.9 透明度）。
+class _PreviewSparklePainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    const paint = Paint()
+      ..color = const Color(0xE6FFFFFF)
+      ..style = PaintingStyle.fill;
+    final cx = size.width / 2;
+    final cy = size.height / 2;
+    final h = size.width / 2;
+    final inner = h * 0.2; // 网页端 0.1 偏离 = 半幅的 0.2
+    final path = Path()
+      ..moveTo(cx, cy - h)
+      ..lineTo(cx + inner, cy - inner)
+      ..lineTo(cx + h, cy)
+      ..lineTo(cx + inner, cy + inner)
+      ..lineTo(cx, cy + h)
+      ..lineTo(cx - inner, cy + inner)
+      ..lineTo(cx - h, cy)
+      ..lineTo(cx - inner, cy - inner)
+      ..close();
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter old) => false;
 }
 
 /// 界面风格选项 chip：默认 / 液态玻璃，均可选。

@@ -178,32 +178,18 @@ class _LoginPageState extends State<LoginPage> {
   }
 }
 
-/// 应用品牌标识：圆角渐变卡片 + 便利贴 emoji，置于登录页顶部。
+/// 应用品牌标识：使用 app 的 logo 图标（assets/logo.png，即 app 图标本体）。
 class _BrandMark extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final pink = isDark ? AppColors.darkBrandPink : AppColors.lightBrandPink;
-    return Container(
-      width: 72,
-      height: 72,
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [pink, pink.withOpacity(0.65)],
-        ),
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: pink.withOpacity(0.35),
-            blurRadius: 16,
-            offset: const Offset(0, 6),
-          ),
-        ],
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: Image.asset(
+        'assets/logo.png',
+        width: 72,
+        height: 72,
+        fit: BoxFit.cover,
       ),
-      alignment: Alignment.center,
-      child: const Text('📝', style: TextStyle(fontSize: 36)),
     );
   }
 }

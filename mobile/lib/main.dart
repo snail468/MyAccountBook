@@ -84,6 +84,7 @@ class AppRoot extends StatelessWidget {
       },
       home: const RootSwitcher(),
       onGenerateRoute: appOnGenerateRoute,
+      navigatorObservers: [ClickFxRouteObserver()],
       ),
     );
   }
