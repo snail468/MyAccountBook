@@ -20,7 +20,11 @@ import 'work_expenses_page.dart';
 ///   · 月份列表（最近 12 个月或自最早记录月起）：每张卡显示 进项/出项/结余，
 ///     点击进入对应月份的 [WorkLedgerPage]。
 class WorkSummaryPage extends StatefulWidget {
-  const WorkSummaryPage({super.key});
+  /// 进入时传入的账本（own 或协同共享）。用于详情页标题显示 owner 前缀；
+  /// 为 null 时（旧调用）回退到中性标题「工作账本」。[#1 协同账本 owner 前缀]
+  final Ledger? ledger;
+
+  const WorkSummaryPage({super.key, this.ledger});
 
   @override
   State<WorkSummaryPage> createState() => _WorkSummaryPageState();
@@ -165,7 +169,7 @@ class _WorkSummaryPageState extends State<WorkSummaryPage> {
             children: [
               PageHeader(
                 icon: '💼',
-                title: '工作账本',
+                title: widget.ledger?.displayName ?? '工作账本',
                 subtitle: '按月记录进项与出项',
               ),
 

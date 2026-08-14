@@ -12,6 +12,7 @@ import 'theme/design_tokens.dart';
 import 'ui/login_page.dart';
 import 'ui/home_page.dart';
 import 'ui/app_routes.dart';
+import 'ui/widgets/click_fx.dart';
 import 'security/bio_gate.dart';
 
 void main() async {
@@ -62,11 +63,13 @@ class AppRoot extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final themeState = context.watch<ThemeState>();
-    return MaterialApp(
-      title: '心愿便利贴',
-      theme: AppTheme.light,
-      darkTheme: AppTheme.dark,
-      themeMode: themeState.themeMode.toThemeMode(),
+    // 全局点击光效/音效层：包在 MaterialApp 之外，按 ThemeState 开关决策 [#4]
+    return ClickFxLayer(
+      child: MaterialApp(
+        title: '心愿便利贴',
+        theme: AppTheme.light,
+        darkTheme: AppTheme.dark,
+        themeMode: themeState.themeMode.toThemeMode(),
       builder: (context, child) {
         return MediaQuery(
           data: MediaQuery.of(context)
@@ -81,6 +84,7 @@ class AppRoot extends StatelessWidget {
       },
       home: const RootSwitcher(),
       onGenerateRoute: appOnGenerateRoute,
+      ),
     );
   }
 }

@@ -28,6 +28,13 @@ class _BioGateState extends State<BioGate> with WidgetsBindingObserver {
   bool _busy = false;
   bool _supported = false;
   String? _error;
+  /// 应用是否曾真正退到后台（而非本机生物识别弹窗自身导致的生命周期抖动）。
+  /// 仅当 _backgrounded 为 true 且已解锁时，回到前台才重新上锁，避免验证通过
+  /// 后弹窗关闭触发 resumed 又立刻重新验证的死循环 [#2]。
+  bool _backgrounded = false;
+  /// 是否正处于本机生物识别弹窗中。弹窗期间出现的 paused/inactive 是弹窗自身的
+  /// 生命周期事件，不应记为「退到后台」，否则关掉弹窗的 resumed 会误触发重新上锁。
+  bool _inAuthDialog = false;
 
   @override
   void initState() {
@@ -46,9 +53,16 @@ class _BioGateState extends State<BioGate> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (widget.relockOnResume && state == AppLifecycleState.resumed) {
-      if (mounted) {
-        setState(() => _unlocked = false);
+    if (!widget.relockOnResume) return;
+    // 仅在确实退到后台（非本机生物识别弹窗）时标记 _backgrounded；
+    // 验证通过、用户主动回到前台时才重新上锁 [#2]。
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
+      if (!_inAuthDialog) _backgrounded = true;
+    } else if (state == AppLifecycleState.resumed) {
+      if (_backgrounded && _unlocked) {
+        _backgrounded = false;
+        if (mounted) setState(() => _unlocked = false);
         _checkAndAuth();
       }
     }
@@ -67,11 +81,17 @@ class _BioGateState extends State<BioGate> with WidgetsBindingObserver {
       }
       return;
     }
-    if (mounted) setState(() => _busy = true);
+    if (mounted) {
+      setState(() {
+        _busy = true;
+        _inAuthDialog = true;
+      });
+    }
     final ok = await BiometricService.authenticate(widget.reason);
     if (!mounted) return;
     setState(() {
       _busy = false;
+      _inAuthDialog = false;
       _unlocked = ok;
       if (!ok) _error = '验证失败，请重试';
     });

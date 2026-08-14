@@ -82,6 +82,15 @@ class _LoginPageState extends State<LoginPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            _BrandMark(),
+            const SizedBox(height: 16),
+            Text('心愿便利贴',
+                style: TextStyle(
+                    color: ink900, fontSize: 24, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 4),
+            Text('记账 · 协同 · 一目了然',
+                style: TextStyle(color: ink500, fontSize: 13)),
+            const SizedBox(height: 28),
             Text('登录',
                 style: TextStyle(
                     color: ink900, fontSize: 30, fontWeight: FontWeight.w600)),
@@ -165,6 +174,36 @@ class _LoginPageState extends State<LoginPage> {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// 应用品牌标识：圆角渐变卡片 + 便利贴 emoji，置于登录页顶部。
+class _BrandMark extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final pink = isDark ? AppColors.darkBrandPink : AppColors.lightBrandPink;
+    return Container(
+      width: 72,
+      height: 72,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [pink, pink.withOpacity(0.65)],
+        ),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: pink.withOpacity(0.35),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      alignment: Alignment.center,
+      child: const Text('📝', style: TextStyle(fontSize: 36)),
     );
   }
 }

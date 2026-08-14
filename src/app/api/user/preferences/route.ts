@@ -5,6 +5,16 @@ import { requireSessionUser } from '@/lib/ownership';
 import { badRequest } from '@/lib/apiError';
 import { mergePrefs, parsePrefs, stringifyPrefs } from '@/lib/userPrefs';
 
+export async function GET() {
+  const user = await requireSessionUser();
+  if (user instanceof Response) return user;
+  const row = await prisma.user.findUnique({
+    where: { id: user.id },
+    select: { preferences: true },
+  });
+  return NextResponse.json({ ok: true, preferences: parsePrefs(row?.preferences ?? null) });
+}
+
 // PATCH 语义：合并到现有 preferences，不是替换。
 // 客户端只需传自己关心的字段 —— 未传的其它偏好原样保留。
 //

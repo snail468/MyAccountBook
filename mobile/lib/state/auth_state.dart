@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../api/api_client.dart';
 import '../api/auth_api.dart';
+import '../state/income_prefs.dart';
 import '../sync/sync_service.dart';
 
 /// 登录态。Cookie 由 [ApiClient] 持久化，这里只维护内存态 + 启动探测。
@@ -90,6 +91,8 @@ class AuthState extends ChangeNotifier {
     if (_userSwitched) {
       await SyncService.instance.wipeLocalData();
     }
+    // 登录成功后拉取用户偏好（如总收入组成），新设备自动继承，无需重新设置 [#5]
+    await fetchIncomeOverridesFromServer();
     notifyListeners();
   }
 
@@ -145,6 +148,8 @@ class AuthState extends ChangeNotifier {
     final prev = prefs.getString(_kLastLocalUser);
     _userSwitched = (prev != null && prev != _username);
     await prefs.setString(_kLastLocalUser, _username!);
+    // 注册后同样拉取用户偏好，保证新设备继承配置 [#5]
+    await fetchIncomeOverridesFromServer();
     notifyListeners();
   }
 

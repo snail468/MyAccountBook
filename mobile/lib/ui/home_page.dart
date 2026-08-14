@@ -412,7 +412,7 @@ class _HomePageState extends State<HomePage> {
                   // 单月视图通过总览里的月份卡片进入；修复与“工作出项汇总”入口搞混 [#2]
                   onTap: () => Navigator.of(context).push(
                     MaterialPageRoute(
-                        builder: (_) => const WorkSummaryPage()),
+                        builder: (_) => WorkSummaryPage(ledger: _ownWork)),
                   ),
                 ));
               }

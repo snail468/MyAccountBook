@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import '../../theme/design_tokens.dart';
 import '../../state/theme_state.dart';
@@ -46,9 +47,16 @@ class _BankPageState extends State<BankPage> {
   String? _bioHint;
   Timer? _lockTimer;
 
+  /// 解锁时间戳（epoch ms）持久化键：解锁后 10 分钟内查看卡号无需再次验密，
+  /// 退出页面/杀进程后重进仍在窗口期内则自动保持明文态；超时自动上锁 [#3]。
+  static const String _kBankUnlockAt = 'bank_unlock_at';
+  static const int _kTtlMs = 10 * 60 * 1000;
+
   @override
   void initState() {
     super.initState();
+    // 先恢复「10 分钟内免验密」状态（持久化时间戳），再即时渲染本地缓存 [#3]
+    _restoreUnlock();
     // 进入即先从本地缓存即时渲染（即点即开），再从服务端后台同步，不阻塞首屏 [#3]
     _load();
     _refreshFromServer();
@@ -70,13 +78,66 @@ class _BankPageState extends State<BankPage> {
     super.dispose();
   }
 
-  /// 解锁成功：进入明文态并启动 10 分钟 TTL（对齐网页端 lockAtMs 自动上锁）。
+  /// 解锁成功：进入明文态、持久化解锁时间戳并启动 10 分钟 TTL（对齐网页端
+  /// lockAtMs 自动上锁）。重进页面时若仍在窗口期内则自动保持明文态 [#3]。
   void _reveal() {
     setState(() => _revealed = true);
+    _persistUnlock();
+    _startLockTimer(_kTtlMs);
+  }
+
+  /// 启动 TTL 定时器；[ttlMs] 为剩余毫秒，使重进页面时从「剩余时间」倒数而非整 10 分钟。
+  void _startLockTimer(int ttlMs) {
     _lockTimer?.cancel();
-    _lockTimer = Timer(const Duration(minutes: 10), () {
-      if (mounted) setState(() => _revealed = false);
+    _lockTimer = Timer(Duration(milliseconds: ttlMs), () {
+      if (mounted) _lockAfterTtl();
     });
+  }
+
+  /// 超时/手动上锁：退出明文态并清除持久化时间戳。
+  void _lockAfterTtl() {
+    if (!mounted) return;
+    setState(() => _revealed = false);
+    _clearUnlock();
+  }
+
+  /// 恢复「10 分钟内免验密」：读取持久化时间戳，未过期则自动进入明文态并从
+  /// 剩余时间启动 TTL；已过期则清除（避免脏时间戳拖累下次判断）[#3]。
+  Future<void> _restoreUnlock() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final at = prefs.getInt(_kBankUnlockAt);
+      if (at == null) return;
+      final elapsed = DateTime.now().millisecondsSinceEpoch - at;
+      if (elapsed < _kTtlMs) {
+        if (mounted) {
+          setState(() => _revealed = true);
+          _startLockTimer(_kTtlMs - elapsed);
+        }
+      } else {
+        await prefs.remove(_kBankUnlockAt);
+      }
+    } catch (_) {
+      // 读取失败：当作未解锁，正常走验密流程
+    }
+  }
+
+  Future<void> _persistUnlock() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(_kBankUnlockAt, DateTime.now().millisecondsSinceEpoch);
+    } catch (_) {
+      // 写入失败：不影响本次解锁，仅失去跨页面/重启免验密
+    }
+  }
+
+  Future<void> _clearUnlock() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_kBankUnlockAt);
+    } catch (_) {
+      // 忽略
+    }
   }
 
   /// 用登录密码走服务端解锁并写回完整卡号，成功后揭示卡片。
@@ -217,6 +278,7 @@ class _BankPageState extends State<BankPage> {
                             onTap: () {
                               _lockTimer?.cancel();
                               setState(() => _revealed = false);
+                              _clearUnlock();
                             },
                             child: Text('立即上锁',
                                 style: TextStyle(color: ink500, fontSize: 11)),

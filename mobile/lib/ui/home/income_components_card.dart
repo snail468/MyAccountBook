@@ -1,9 +1,9 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/reward_method.dart';
 import '../../state/theme_state.dart';
+import '../../state/income_prefs.dart';
 import '../../theme/design_tokens.dart';
 import '../widgets/app_card.dart';
 import '../widgets/money.dart';
@@ -56,39 +56,15 @@ class IncomeComponentsCard extends StatefulWidget {
 }
 
 class _IncomeComponentsCardState extends State<IncomeComponentsCard> {
-  static const String _kOverrides = 'incomeComponentOverrides';
   Map<String, bool> _overrides = {};
 
   @override
   void initState() {
     super.initState();
-    _loadOverrides();
-  }
-
-  Future<void> _loadOverrides() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString(_kOverrides);
-      if (raw != null && raw.isNotEmpty) {
-        final decoded = jsonDecode(raw) as Map<String, dynamic>;
-        final map = <String, bool>{};
-        for (final e in decoded.entries) {
-          map[e.key] = e.value is bool ? e.value as bool : e.value == true;
-        }
-        if (mounted) setState(() => _overrides = map);
-      }
-    } catch (_) {
-      // 忽略
-    }
-  }
-
-  Future<void> _saveOverrides(Map<String, bool> next) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_kOverrides, jsonEncode(next));
-    } catch (_) {
-      // 忽略
-    }
+    // 读取本地开关表（登录时已按需从服务端同步，保证新设备继承用户配置）[#5]
+    readIncomeOverrides().then((m) {
+      if (mounted) setState(() => _overrides = m);
+    });
   }
 
   bool _isEnabled(IncomeComponent c) => _overrides[c.key] ?? c.enabled;
@@ -299,7 +275,8 @@ class _IncomeComponentsCardState extends State<IncomeComponentsCard> {
         initial: local,
         onSave: (next) async {
           setState(() => _overrides = next);
-          await _saveOverrides(next);
+          // 本地落盘 + 回写服务端，使新设备登录自动继承 [#5]
+          await pushIncomeOverridesToServer(next);
         },
       ),
     );
@@ -330,9 +307,6 @@ class _SettingsSheetState extends State<_SettingsSheet> {
     super.initState();
     _local = Map<String, bool>.from(widget.initial);
   }
-
-  bool get _dirty =>
-      widget.components.any((c) => _local[c.key] != widget.initial[c.key]);
 
   @override
   Widget build(BuildContext context) {
@@ -439,7 +413,7 @@ class _SettingsSheetState extends State<_SettingsSheet> {
                       ),
                     ),
                     child: Text(
-                      _saving ? '保存中…' : (_dirty ? '保存' : '完成'),
+                      _saving ? '保存中…' : '保存',
                       style: TextStyle(
                         color: isDark
                             ? AppColors.darkPageBg
