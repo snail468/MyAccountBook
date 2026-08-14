@@ -60,16 +60,52 @@ Future<void> clickFxPreviewSound() async {
   }
 }
 
-class _ClickFxLayerState extends State<ClickFxLayer> with TickerProviderStateMixin {
-  final List<_Ripple> _ripples = [];
-  int _seq = 0;
+class _ClickFxLayerState extends State<ClickFxLayer> {
+  late final GlobalKey<_RippleOverlayState> _overlayKey;
 
   @override
   void initState() {
     super.initState();
+    _overlayKey = GlobalKey<_RippleOverlayState>();
   }
 
-  void _onPointerDown(PointerDownEvent e) {
+  @override
+  Widget build(BuildContext context) {
+    return Listener(
+      // translucent：既观察全局点击，又放行给子组件（按钮/滚动等照常工作）。
+      // 涟漪层作为兄弟节点叠在最上方、整体 IgnorePointer，绝不拦截手势。
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: (e) => _overlayKey.currentState?._onPointer(e),
+      child: Stack(
+        children: [
+          widget.child,
+          _RippleOverlay(key: _overlayKey),
+        ],
+      ),
+    );
+  }
+}
+
+/// 涟漪/音效渲染层：独立 [State]，其 [setState] 只重建本层、**绝不重建
+/// [MaterialApp]**。
+///
+/// 关键修复（v2.0.88）：原实现把涟漪状态放在根层 [_ClickFxLayerState]，每次点击
+/// 的 [setState] 会连带重建整个 App（含当前路由的 [MaterialApp]），在 pointer-down
+/// 派发瞬间打断进行中的手势（按钮 onTap 的 down/up 配对被取消）→ 表现为「点击任何
+/// 地方都无反应」。拆出独立层后，点击只重建涟漪层，手势不再受影响。
+class _RippleOverlay extends StatefulWidget {
+  const _RippleOverlay({super.key});
+
+  @override
+  State<_RippleOverlay> createState() => _RippleOverlayState();
+}
+
+class _RippleOverlayState extends State<_RippleOverlay>
+    with TickerProviderStateMixin {
+  final List<_Ripple> _ripples = [];
+  int _seq = 0;
+
+  void _onPointer(PointerDownEvent e) {
     final ts = context.read<ThemeState>();
     if (ts.effectOn) _spawnRipple(e.position);
     if (ts.soundOn) _playSound();
@@ -132,22 +168,13 @@ class _ClickFxLayerState extends State<ClickFxLayer> with TickerProviderStateMix
 
   @override
   Widget build(BuildContext context) {
-    return Listener(
-      // translucent：既观察全局点击，又放行给子组件（按钮/滚动等照常工作）
-      behavior: HitTestBehavior.translucent,
-      onPointerDown: _onPointerDown,
+    // 整层 IgnorePointer：涟漪只做视觉，绝不拦截手势；Clip.none 保证不被 0×0
+    // 尺寸裁掉（内部子项均为 Positioned，父 Stack 尺寸为 0×0，靠 Clip.none 透出）。
+    return IgnorePointer(
       child: Stack(
+        clipBehavior: Clip.none,
         children: [
-          widget.child,
-          // 全屏 overlay 渲染涟漪；Clip.none 保证不被 0×0 尺寸裁掉
-          Positioned.fill(
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                for (final r in _ripples) _RippleWidget(ripple: r),
-              ],
-            ),
-          ),
+          for (final r in _ripples) _RippleWidget(ripple: r),
         ],
       ),
     );
