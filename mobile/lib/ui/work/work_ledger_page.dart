@@ -286,19 +286,16 @@ class _EntryCard extends StatelessWidget {
     final warnFg =
         isDark ? AppColors.darkSemanticRed : AppColors.lightOverspendTitle;
 
-    // 进项没有"回款/未回款"概念，所有回款相关 UI 仅对出项生效。[#bug]
-    final isExpense = !income;
     final amountColor = income ? green : red;
     final dateStr = DateFormat('yyyy-MM-dd HH:mm')
         .format(DateTime.fromMillisecondsSinceEpoch(entry.occurredAt));
 
-    final refunded = isExpense && _refunded;
+    final refunded = _refunded;
     final occurred = DateTime.fromMillisecondsSinceEpoch(entry.occurredAt);
     final refundedAt = entry.refundedAt == null
         ? null
         : DateTime.fromMillisecondsSinceEpoch(entry.refundedAt!);
-    final overdue = isExpense &&
-        !refunded &&
+    final overdue = !refunded &&
         refundStatus(occurred, entry.yearMonth, refundedAt: refundedAt) ==
             RefundState.overdue;
     final overdueDays = overdue
@@ -312,10 +309,8 @@ class _EntryCard extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.all(14),
           child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
-                flex: 2,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -367,22 +362,14 @@ class _EntryCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              // 金额随可用宽度收缩；数字无空格不可换行，必须 ellipsis 以防 RenderFlex 溢出。
-              Flexible(
-                flex: 3,
-                fit: FlexFit.loose,
-                child: Money(
-                  cents: income ? entry.amountCents : -entry.amountCents,
-                  sign: true,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.end,
-                  style: TextStyle(
-                      color: refunded ? ink400 : amountColor,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      decoration: refunded ? TextDecoration.lineThrough : null),
-                ),
+              Money(
+                cents: income ? entry.amountCents : -entry.amountCents,
+                sign: true,
+                style: TextStyle(
+                    color: refunded ? ink400 : amountColor,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    decoration: refunded ? TextDecoration.lineThrough : null),
               ),
               // 回款按钮（仅出项）
               if (!income)
