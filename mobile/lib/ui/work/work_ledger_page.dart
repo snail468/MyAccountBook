@@ -11,6 +11,7 @@ import '../widgets/app_card.dart';
 import '../widgets/app_primary_button.dart';
 import '../widgets/money.dart';
 import '../widgets/page_header.dart';
+import '../collaborators/collaborators_page.dart';
 import '../widgets/section_label.dart';
 
 /// 工作账本·单月视图（对齐网页 /work/[month]：WorkMonthSection + NewEntryFlow + EntryRow + EditEntryModal）。
@@ -91,6 +92,17 @@ class _Body extends StatelessWidget {
                 icon: '💼',
                 title: ledger.displayName,
                 subtitle: '$yearLabel 年 $monthLabel 月',
+                actions: [
+                  IconButton(
+                    icon: const Icon(Icons.group_outlined),
+                    tooltip: '协作',
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => CollaboratorsPage(ledger: ledger),
+                      ),
+                    ),
+                  ),
+                ],
               ),
 
               // ---- 汇总卡（对齐网页 WorkMonthSection：仅进项/出项，中性色，无 +/-）----

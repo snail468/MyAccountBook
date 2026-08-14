@@ -20,6 +20,7 @@ import '../widgets/authenticated_image.dart';
 import '../widgets/image_picker_field.dart';
 import '../widgets/money.dart';
 import '../widgets/page_header.dart';
+import '../collaborators/collaborators_page.dart';
 import '../widgets/image_viewer.dart';
 
 // ───────────────────────── 常量（对齐网页端 types.ts / RewardMethod） ─────────────────────────
@@ -478,9 +479,18 @@ class _BodyState extends State<_Body> {
                 icon: '🌸',
                 title: store.ledger.displayName,
                 subtitle: '${store.ledger.displayName} · 发布 → 预测 → 公示 → 发钱',
-                actions: store.pending > 0
-                    ? [_PendingBadge(count: store.pending)]
-                    : null,
+                actions: <Widget>[
+                  if (store.pending > 0) _PendingBadge(count: store.pending),
+                  IconButton(
+                    icon: const Icon(Icons.group_outlined),
+                    tooltip: '协作',
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => CollaboratorsPage(ledger: store.ledger),
+                      ),
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 8),
               // 选择 / 计数

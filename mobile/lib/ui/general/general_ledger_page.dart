@@ -16,6 +16,7 @@ import '../widgets/app_text_field.dart';
 import '../widgets/image_picker_field.dart';
 import '../widgets/money.dart';
 import '../widgets/page_header.dart';
+import '../collaborators/collaborators_page.dart';
 
 /// 普通账本页（1:1 还原网页端 src/app/l/[id]/GeneralView）。
 ///
@@ -1670,18 +1671,9 @@ class _CategoryManagerSheetState extends State<_CategoryManagerSheet> {
 // ---------------------------------------------------------------------------
 
 Future<void> _openCollaborators(BuildContext context) async {
-  await showDialog<void>(
-    context: context,
-    builder: (ctx) => AlertDialog(
-      title: const Text('协作'),
-      content: const Text('协作功能即将上线（当前为本地优先版本）。'),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(ctx).pop(),
-          child: const Text('好的'),
-        ),
-      ],
-    ),
+  final ledger = context.read<GeneralState>().ledger;
+  await Navigator.of(context).push(
+    MaterialPageRoute(builder: (_) => CollaboratorsPage(ledger: ledger)),
   );
 }
 

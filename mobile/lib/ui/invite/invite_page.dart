@@ -5,6 +5,11 @@ import '../../theme/design_tokens.dart';
 import '../home_page.dart';
 import '../login_page.dart';
 import '../register_page.dart';
+import '../../api/api_client.dart';
+import '../../api/collaboration_api.dart';
+import '../../data/models/ledger_member.dart';
+import '../../state/ledger_list_state.dart';
+import '../routes.dart';
 
 /// 邀请接受落地页（1:1 对齐网页端 src/app/invite/[token]/page.tsx）。
 ///
@@ -21,11 +26,25 @@ class InvitePage extends StatefulWidget {
 
 class _InvitePageState extends State<InvitePage> {
   late final bool _authed;
+  String _roleText = '成员';
 
   @override
   void initState() {
     super.initState();
     _authed = context.read<AuthState>().authed;
+    if (_authed && !_invalid) _preview();
+  }
+
+  /// 接受前预览邀请角色（GET /api/invites/[token]），用于文案展示。
+  Future<void> _preview() async {
+    try {
+      final p = await CollaborationApi(ApiClient.instance)
+          .previewInvite(widget.token);
+      if (!mounted) return;
+      setState(() => _roleText = roleLabel(p.role));
+    } catch (_) {
+      // 忽略：保留默认文案
+    }
   }
 
   /// 对齐网页端 token 长度校验（20–200）。
@@ -155,7 +174,7 @@ class _InvitePageState extends State<InvitePage> {
             style: TextStyle(
                 color: ink900, fontSize: 24, fontWeight: FontWeight.w600)),
         const SizedBox(height: 8),
-        Text('你被邀请以 成员 身份加入这个账本',
+        Text('你被邀请以 $_roleText 身份加入这个账本',
             textAlign: TextAlign.center,
             style: TextStyle(color: ink500, fontSize: 14)),
         const SizedBox(height: 24),
@@ -194,13 +213,29 @@ class _InvitePageState extends State<InvitePage> {
             )),
       );
 
-  void _accept() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('已接受邀请（本地优先：请用账号登录后查看账本）'),
-      ),
-    );
-    _goHome();
+  /// 真实接受邀请：POST /api/invites/[token] → 同步账本列表 → 跳转进账本。
+  void _accept() async {
+    try {
+      final ledgerId = await CollaborationApi(ApiClient.instance)
+          .acceptInvite(widget.token);
+      await context.read<LedgerListState>().sync();
+      final all = context.read<LedgerListState>().all;
+      final l = all.firstWhere((x) => x.serverId == ledgerId,
+          orElse: () => all.first);
+      if (!mounted) return;
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => pageForLedger(l)),
+        (route) => false,
+      );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('接受失败：$e')));
+    }
   }
 
   void _goHome() => Navigator.of(context).pushAndRemoveUntil(

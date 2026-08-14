@@ -19,6 +19,7 @@ import '../widgets/app_card.dart';
 import '../widgets/app_primary_button.dart';
 import '../widgets/money.dart';
 import '../widgets/page_header.dart';
+import '../collaborators/collaborators_page.dart';
 import '../widgets/section_label.dart';
 
 /// 旅游账本页：严格 1:1 还原网页端 TravelView 及其配套弹窗
@@ -366,6 +367,15 @@ class _TravelBodyState extends State<_TravelBody> {
                     onPressed: _openMembers,
                     child: Text('同伴',
                         style: TextStyle(color: ink500, fontSize: 13)),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.group_outlined),
+                    tooltip: '协作',
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => CollaboratorsPage(ledger: state.ledger),
+                      ),
+                    ),
                   ),
                 ],
               ),
