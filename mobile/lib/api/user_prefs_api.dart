@@ -15,7 +15,10 @@ class UserPrefsApi {
     final data = await _client.get('/user/preferences');
     final map = <String, bool>{};
     if (data is Map) {
-      final ic = data['incomeComponents'];
+      // 服务端约定：{ ok:true, preferences: { incomeComponents: {...} } }
+      final prefs = data['preferences'];
+      final ic =
+          (prefs is Map ? prefs['incomeComponents'] : null) ?? data['incomeComponents'];
       if (ic is Map) {
         for (final e in ic.entries) {
           map[e.key.toString()] = e.value == true;

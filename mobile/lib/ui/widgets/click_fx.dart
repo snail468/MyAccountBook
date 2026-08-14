@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../state/theme_state.dart';
-import '../theme/design_tokens.dart';
+import 'package:provider/provider.dart';
+import '../../state/theme_state.dart';
+import '../../theme/design_tokens.dart';
 
 /// 全局「点击光效 / 音效」层（对齐网页端 previewFx + 点击声）。
 ///
