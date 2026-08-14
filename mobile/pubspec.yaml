@@ -27,6 +27,8 @@ dependencies:
   uuid: ^4.4.0
   # 本地图片选择（记账图片改成本地相册上传，取代填链接）[#8]
   image_picker: ">=1.1.2 <1.2.0"
+  # 指纹 / 面容识别（生物识别锁）[#4]
+  local_auth: ^2.2.0
 
 dev_dependencies:
   flutter_test:

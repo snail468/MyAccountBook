@@ -6,12 +6,14 @@ import 'package:uuid/uuid.dart';
 import '../../theme/design_tokens.dart';
 import '../../state/theme_state.dart';
 import '../../state/auth_state.dart';
+import '../../state/security_state.dart';
 import '../../api/card_api.dart';
 import '../../api/api_client.dart';
 import '../../core/exceptions.dart';
 import '../../data/local/bank_card_dao.dart';
 import '../../data/models/bank_card.dart';
 import '../../sync/sync_service.dart';
+import '../../security/biometric_service.dart';
 import '../widgets/app_card.dart';
 import '../widgets/app_primary_button.dart';
 import '../widgets/app_text_field.dart';
@@ -21,7 +23,12 @@ import '../widgets/page_header.dart';
 ///
 /// 本地优先：卡号仅存后四位，读写走 [BankCardDao]。进入前需"解锁"（对齐网页
 /// [CardsUnlockGate] 的 tap-to-reveal 验密门概念），解锁后可直接查看与编辑。
-/// 无新依赖。
+///
+/// 安全模型（[#3][#5]）：
+///  - 进入即先读本地缓存（即时渲染，即点即开），再从服务端后台同步，不阻塞首屏；
+///  - 未解锁（_revealed=false）时，卡片只显示尾号 `**** last4`，不渲染完整卡号、
+///    不提供复制卡号/复制完整信息/编辑，避免"未验密直接看到完整银行卡信息"；
+///  - 解锁（密码或指纹/面容）后 10 分钟 TTL 内可查看与编辑，超时自动上锁。
 class BankPage extends StatefulWidget {
   const BankPage({super.key});
 
@@ -32,19 +39,22 @@ class BankPage extends StatefulWidget {
 class _BankPageState extends State<BankPage> {
   final List<BankCard> _cards = [];
   bool _loading = true;
-  bool _unlocked = false;
+  bool _revealed = false;
   /// 最近一次银行卡同步的错误（null 表示成功）。用于 UI 提示，避免静默吞错 [#5]
   String? _cardError;
+  /// 生物识别解锁的提示（如未检测到登录密码需回退密码）。
+  String? _bioHint;
   Timer? _lockTimer;
 
   @override
   void initState() {
     super.initState();
-    // 进入即先从服务端拉取银行卡（解锁后含完整卡号），再读本地展示 [#5]
+    // 进入即先从本地缓存即时渲染（即点即开），再从服务端后台同步，不阻塞首屏 [#3]
+    _load();
     _refreshFromServer();
   }
 
-  /// 从服务端拉取银行卡后刷新本地展示：解锁后服务端返回完整卡号，
+  /// 从服务端拉取银行卡后刷新本地展示：解锁后含完整卡号，
   /// 故解锁或进入页面都应触发一次，解决卡号/卡信息不从服务端同步的问题 [#5]。
   /// 同时捕获同步错误用于 UI 提示（此前被静默吞掉）。
   Future<void> _refreshFromServer() async {
@@ -61,12 +71,70 @@ class _BankPageState extends State<BankPage> {
   }
 
   /// 解锁成功：进入明文态并启动 10 分钟 TTL（对齐网页端 lockAtMs 自动上锁）。
-  void _onUnlocked() {
-    setState(() => _unlocked = true);
+  void _reveal() {
+    setState(() => _revealed = true);
     _lockTimer?.cancel();
     _lockTimer = Timer(const Duration(minutes: 10), () {
-      if (mounted) setState(() => _unlocked = false);
+      if (mounted) setState(() => _revealed = false);
     });
+  }
+
+  /// 用登录密码走服务端解锁并写回完整卡号，成功后揭示卡片。
+  /// 返回 null 表示成功，否则返回展示给用户的错误信息 [#3][#5]。
+  Future<String?> _revealWithPassword(String pwd) async {
+    try {
+      await CardApi(ApiClient.instance).unlock(pwd);
+    } on ApiException catch (e) {
+      return e.message;
+    } catch (e) {
+      return '解锁失败：$e';
+    }
+    try {
+      final unlocked = await CardApi(ApiClient.instance).list();
+      final locals = await BankCardDao().listAll();
+      final byServer = <String, BankCard>{};
+      for (final c in locals) {
+        if (c.serverId != null) byServer[c.serverId!] = c;
+      }
+      // 解锁成功：GET /api/cards 返回服务端所有卡（含解密完整卡号）。
+      // 对每张服务端卡 upsert 到本地：已映射的复用 local.id/createdAt，
+      // 服务端新增但本地没有的卡也新建（此前若 local==null 会跳过 → 卡号不同步）。[#5]
+      for (final j in unlocked) {
+        final sid = j['id'] as String?;
+        if (sid == null) continue;
+        final local = byServer[sid];
+        final card = BankCard.fromApi(
+          j,
+          localId: local?.id ?? const Uuid().v4(),
+          createdAt: local?.createdAt,
+        ).copyWith(number: j['number'] as String?);
+        await BankCardDao().upsert(card);
+      }
+    } catch (e) {
+      // 卡号写回失败不阻塞解锁：用户至少能看到本地已存卡号，下次同步再补。[#5]
+      // ignore: avoid_print
+      print('银行卡解锁后写回失败：$e');
+    }
+    if (!mounted) return null;
+    _reveal();
+    await _load();
+    return null;
+  }
+
+  /// 生物识别解锁：验证通过后，用本地记住的登录密码走服务端解锁取回完整卡号 [#4]。
+  Future<void> _biometricUnlock() async {
+    final sec = context.read<SecurityState>();
+    if (!sec.enabled) return;
+    final ok = await BiometricService.authenticate('验证指纹/面容以查看银行卡');
+    if (!ok || !mounted) return;
+    final pwd = context.read<AuthState>().loginPassword;
+    if (pwd == null) {
+      if (mounted) setState(() => _bioHint = '未检测到登录密码，请使用密码解锁');
+      return;
+    }
+    final err = await _revealWithPassword(pwd);
+    if (!mounted) return;
+    if (err != null) setState(() => _bioHint = err);
   }
 
   Future<void> _load() async {
@@ -101,6 +169,7 @@ class _BankPageState extends State<BankPage> {
   @override
   Widget build(BuildContext context) {
     context.watch<ThemeState>();
+    final sec = context.watch<SecurityState>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
     final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
@@ -119,14 +188,17 @@ class _BankPageState extends State<BankPage> {
                 const PageHeader(
                   icon: '💳',
                   title: '银行卡',
-                  subtitle: '加密存储卡号 · 查看需验密码',
+                  subtitle: '加密存储卡号 · 查看需验密码或指纹',
                 ),
-                if (!_unlocked)
-                  _UnlockGate(onUnlock: () {
-                    _onUnlocked();
-                    _refreshFromServer();
-                  }),
-                if (_unlocked) ...<Widget>[
+                if (!_revealed) ...<Widget>[
+                  _UnlockGate(onRevealWithPassword: _revealWithPassword),
+                  if (sec.enabled)
+                    _BiometricButton(
+                      onTap: _biometricUnlock,
+                      hint: _bioHint,
+                    ),
+                ],
+                if (_revealed) ...<Widget>[
                   AppCard(
                     frosted: false,
                     child: Padding(
@@ -144,7 +216,7 @@ class _BankPageState extends State<BankPage> {
                           GestureDetector(
                             onTap: () {
                               _lockTimer?.cancel();
-                              setState(() => _unlocked = false);
+                              setState(() => _revealed = false);
                             },
                             child: Text('立即上锁',
                                 style: TextStyle(color: ink500, fontSize: 11)),
@@ -170,8 +242,8 @@ class _BankPageState extends State<BankPage> {
                   ),
                   const SizedBox(height: 8),
                 ],
-                // 锁态也展示已从服务端拉取的（打码）卡片：对齐网页端「进页面先看到尾号」，
-                // 不再把整列藏在解锁门后面。解锁后 _refreshFromServer 会补回完整卡号 [#5]
+                // 锁态也展示已从服务端/本地拉取的（打码）卡片：对齐网页端「进页面先看到尾号」，
+                // 不再把整列藏在解锁门后面；未解锁只显示尾号，不暴露完整卡号 [#3]
                 if (_loading)
                   _hint('加载中…', ink400)
                 else if (_cards.isEmpty)
@@ -185,6 +257,7 @@ class _BankPageState extends State<BankPage> {
                   ..._cards.map(
                     (c) => _BankCardTile(
                       card: c,
+                      revealed: _revealed,
                       onEdit: () => showModalBottomSheet(
                         context: context,
                         isScrollControlled: true,
@@ -205,7 +278,7 @@ class _BankPageState extends State<BankPage> {
             ),
           ),
         ),
-      );
+    );
   }
 }
 
@@ -213,6 +286,51 @@ Widget _hint(String text, Color color) => Padding(
       padding: const EdgeInsets.only(top: 8),
       child: Text(text, style: TextStyle(color: color, fontSize: 13)),
     );
+
+/// 生物识别解锁按钮（仅当安全设置启用时由调用方决定是否展示）。
+class _BiometricButton extends StatelessWidget {
+  final VoidCallback onTap;
+  final String? hint;
+
+  const _BiometricButton({required this.onTap, this.hint});
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
+    final red = isDark ? AppColors.darkSemanticRed : AppColors.lightSemanticRed;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SizedBox(height: 12),
+        SizedBox(
+          height: 48,
+          child: ElevatedButton(
+            onPressed: onTap,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: ink900,
+              foregroundColor:
+                  isDark ? AppColors.darkCtaText : AppColors.lightSurface,
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+            ),
+            child: const Text('使用指纹/面容解锁',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+          ),
+        ),
+        if (hint != null) ...[
+          const SizedBox(height: 8),
+          Text(hint!,
+              style: TextStyle(color: red, fontSize: 13),
+              textAlign: TextAlign.center),
+        ],
+      ],
+    );
+  }
+}
 
 /// 添加卡片按钮：border-dashed 描边（对齐网页端 `border-2 border-dashed`）。
 ///
@@ -247,9 +365,11 @@ class _AddCardButton extends StatelessWidget {
 }
 
 class _UnlockGate extends StatefulWidget {
-  final VoidCallback onUnlock;
+  /// 验证通过（密码已比对一致）后，由父级用该密码走服务端解锁并揭示卡片；
+  /// 返回 null 表示成功，非 null 为错误信息（用于本组件内展示）。
+  final Future<String?> Function(String) onRevealWithPassword;
 
-  const _UnlockGate({required this.onUnlock});
+  const _UnlockGate({required this.onRevealWithPassword});
 
   @override
   State<_UnlockGate> createState() => _UnlockGateState();
@@ -295,53 +415,17 @@ class _UnlockGateState extends State<_UnlockGate> {
       });
       return;
     }
-    // 本地密码匹配后，真正调服务端解锁（对齐网页端 CardsUnlockGate）。
-    // 解锁成功后 GET /api/cards 返回完整卡号，写回本地库，卡片才能显示完整卡号。[#5]
-    try {
-      await CardApi(ApiClient.instance).unlock(input);
-    } on ApiException catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _busy = false;
-        _error = e.message;
-      });
-      return;
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _busy = false;
-        _error = '解锁失败：$e';
-      });
-      return;
-    }
-    try {
-      final unlocked = await CardApi(ApiClient.instance).list();
-      final locals = await BankCardDao().listAll();
-      final byServer = <String, BankCard>{};
-      for (final c in locals) {
-        if (c.serverId != null) byServer[c.serverId!] = c;
-      }
-      // 解锁成功：GET /api/cards 返回服务端所有卡（含解密完整卡号）。
-      // 对每张服务端卡 upsert 到本地：已映射的复用 local.id/createdAt，
-      // 服务端新增但本地没有的卡也新建（此前若 local==null 会跳过 → 卡号不同步）。[#5]
-      for (final j in unlocked) {
-        final sid = j['id'] as String?;
-        if (sid == null) continue;
-        final local = byServer[sid];
-        final card = BankCard.fromApi(
-          j,
-          localId: local?.id ?? const Uuid().v4(),
-          createdAt: local?.createdAt,
-        ).copyWith(number: j['number'] as String?);
-        await BankCardDao().upsert(card);
-      }
-    } catch (e) {
-      // 卡号写回失败不阻塞解锁：用户至少能看到本地已存卡号，下次同步再补。[#5]
-      // ignore: avoid_print
-      print('银行卡解锁后写回失败：$e');
-    }
+    // 本地密码匹配后，交由父级走服务端解锁（取回完整卡号）并揭示。[#5]
+    final err = await widget.onRevealWithPassword(input);
     if (!mounted) return;
-    widget.onUnlock();
+    if (err != null) {
+      setState(() {
+        _busy = false;
+        _error = err;
+      });
+      return;
+    }
+    // 成功：父级已 _reveal() 并重建，本组件被移除，无需再 setState。
   }
 
   @override
@@ -426,11 +510,13 @@ class _UnlockGateState extends State<_UnlockGate> {
 
 class _BankCardTile extends StatefulWidget {
   final BankCard card;
+  final bool revealed;
   final VoidCallback onEdit;
   final Future<void> Function(BankCard) onRemove;
 
   const _BankCardTile({
     required this.card,
+    required this.revealed,
     required this.onEdit,
     required this.onRemove,
   });
@@ -456,12 +542,17 @@ class _BankCardTileState extends State<_BankCardTile> {
   @override
   Widget build(BuildContext context) {
     final card = widget.card;
+    final revealed = widget.revealed;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
     final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
     final ink400 = isDark ? AppColors.darkInk400 : AppColors.lightInk400;
     final blue = isDark ? AppColors.darkSemanticBlue : AppColors.lightSemanticBlue;
     final icon = card.type == '信用卡' ? '🏧' : '🏦';
+
+    // 未解锁时只显示尾号，不渲染完整卡号、不提供复制/编辑 [#3]
+    final showFull =
+        revealed && card.number != null && card.number!.isNotEmpty;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -491,7 +582,7 @@ class _BankCardTileState extends State<_BankCardTile> {
                       style: TextStyle(color: ink500, fontSize: 13),
                     ),
                     const SizedBox(height: 2),
-                    if (card.number != null && card.number!.isNotEmpty)
+                    if (showFull)
                       Text(BankCard.groupCardNumber(card.number!),
                           style: TextStyle(
                               color: ink900,
@@ -506,7 +597,7 @@ class _BankCardTileState extends State<_BankCardTile> {
                         child: Text('备注：${card.note!}',
                             style: TextStyle(color: ink500, fontSize: 13)),
                       ),
-                    if (card.number != null && card.number!.isNotEmpty) ...[
+                    if (showFull) ...[
                       const SizedBox(height: 8),
                       Wrap(
                         spacing: 16,
@@ -539,22 +630,23 @@ class _BankCardTileState extends State<_BankCardTile> {
                 ),
               ),
               const SizedBox(width: 12),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  GestureDetector(
-                    onTap: widget.onEdit,
-                    child: Text('编辑',
-                        style: TextStyle(color: ink500, fontSize: 13)),
-                  ),
-                  const SizedBox(height: 8),
-                  GestureDetector(
-                    onTap: () => widget.onRemove(card),
-                    child: Text('删除',
-                        style: TextStyle(color: ink500, fontSize: 13)),
-                  ),
-                ],
-              ),
+              if (revealed)
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    GestureDetector(
+                      onTap: widget.onEdit,
+                      child: Text('编辑',
+                          style: TextStyle(color: ink500, fontSize: 13)),
+                    ),
+                    const SizedBox(height: 8),
+                    GestureDetector(
+                      onTap: () => widget.onRemove(card),
+                      child: Text('删除',
+                          style: TextStyle(color: ink500, fontSize: 13)),
+                    ),
+                  ],
+                ),
             ],
           ),
         ),

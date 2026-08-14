@@ -6,11 +6,13 @@ import 'core/constants.dart';
 import 'state/auth_state.dart';
 import 'state/ledger_list_state.dart';
 import 'state/theme_state.dart';
+import 'state/security_state.dart';
 import 'theme/app_theme.dart';
 import 'theme/design_tokens.dart';
 import 'ui/login_page.dart';
 import 'ui/home_page.dart';
 import 'ui/app_routes.dart';
+import 'security/bio_gate.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -23,13 +25,21 @@ void main() async {
   final auth = AuthState();
   await auth.init();
 
-  runApp(MyApp(auth: auth, themeState: themeState));
+  final security = SecurityState();
+  await security.init();
+
+  runApp(MyApp(auth: auth, themeState: themeState, security: security));
 }
 
 class MyApp extends StatelessWidget {
   final AuthState auth;
   final ThemeState themeState;
-  const MyApp({super.key, required this.auth, required this.themeState});
+  final SecurityState security;
+  const MyApp(
+      {super.key,
+      required this.auth,
+      required this.themeState,
+      required this.security});
 
   @override
   Widget build(BuildContext context) {
@@ -37,6 +47,7 @@ class MyApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider.value(value: auth),
         ChangeNotifierProvider.value(value: themeState),
+        ChangeNotifierProvider.value(value: security),
         ChangeNotifierProvider(create: (_) => LedgerListState()),
       ],
       child: const AppRoot(),
@@ -156,12 +167,20 @@ class RootSwitcher extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthState>();
+    final sec = context.watch<SecurityState>();
     if (!auth.initialized) {
       return const Scaffold(
         body: Center(child: CircularProgressIndicator()),
       );
     }
-    if (auth.authed) return const HomePage();
-    return const LoginPage();
+    if (!auth.authed) return const LoginPage();
+    if (sec.mode == BioLockMode.global) {
+      return BioGate(
+        reason: '验证指纹/面容以解锁应用',
+        relockOnResume: true,
+        child: const HomePage(),
+      );
+    }
+    return const HomePage();
   }
 }

@@ -9,21 +9,17 @@ import '../theme/app_theme.dart';
 import '../theme/design_tokens.dart';
 import 'routes.dart';
 import 'work/work_summary_page.dart';
-import 'work/work_expenses_page.dart';
 import 'recurring/recurring_page.dart';
 import 'bank/bank_page.dart';
 import 'stats/stats_page.dart';
 import 'search/search_page.dart';
 import 'ledgers/manage_ledgers_page.dart';
-import 'trash/trash_page.dart';
-import 'users/users_page.dart';
 import 'widgets/ledger_feature_card.dart';
 import 'widgets/floating_toolbar.dart';
-import 'widgets/money.dart';
 import 'home/income_components_card.dart';
 import 'home/overspend_card.dart';
-import 'home/backup_sheets.dart';
 import 'home/onboarding_guide.dart';
+import 'settings_page.dart';
 import '../data/local/work_entry_dao.dart';
 import '../data/local/general_entry_dao.dart';
 import '../data/local/event_dao.dart';
@@ -63,7 +59,6 @@ class _HomePageState extends State<HomePage> {
   Map<String, List<String>> _textReward = const {};
   List<OverLedger> _overLedgers = const [];
   List<_HomeLedgerCard> _ledgerCards = const [];
-  int _workExpenseTotal = 0;
   int _pendingCount = 0;
   Ledger? _ownWork;
   Ledger? _ownTaoyuan;
@@ -225,12 +220,6 @@ class _HomePageState extends State<HomePage> {
           cents: spent,
           sign: -1,
         ));
-      }
-
-      // ---- 工作出项汇总（累计） ----
-      if (_ownWork != null) {
-        _workExpenseTotal =
-            (await WorkEntryDao().cumulativeTotals(_ownWork!.id)).expense;
       }
 
       // ---- 超支检测（分类预算 月+周） ----
@@ -427,27 +416,6 @@ class _HomePageState extends State<HomePage> {
                   ),
                 ));
               }
-              if (_ownWork != null) {
-                add(LedgerFeatureCard(
-                  icon: '',
-                  title: '工作出项汇总',
-                  subtitleWidget: Row(
-                    children: [
-                      Text('合计 ',
-                          style: TextStyle(color: ink500, fontSize: 12)),
-                      Money(
-                        cents: _workExpenseTotal,
-                        style: TextStyle(color: ink500, fontSize: 12),
-                      ),
-                    ],
-                  ),
-                  // “工作出项汇总”应对齐网页 /work/expenses，进应收/出项/批量回款页 [#2]
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(
-                        builder: (_) => const WorkExpensesPage()),
-                  ),
-                ));
-              }
               if (_ownTaoyuan != null) {
                 add(LedgerFeatureCard(
                   icon: '🌸',
@@ -525,50 +493,13 @@ class _HomePageState extends State<HomePage> {
                 ),
               ));
               add(LedgerFeatureCard(
-                icon: '🗑️',
-                title: '回收站',
-                subtitle: '删除的记录 · 60 天内可恢复',
+                icon: '🛠️',
+                title: '设置',
+                subtitle: '外观 · 账户 · 数据 · 安全',
                 onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const TrashPage()),
+                  MaterialPageRoute(builder: (_) => const SettingsPage()),
                 ),
               ));
-              add(LedgerFeatureCard(
-                icon: '',
-                title: '导出备份',
-                subtitle: '全部账本 · CSV 查看 / JSON 完整还原',
-                onTap: () => showExportSheet(context),
-              ));
-              add(LedgerFeatureCard(
-                icon: '',
-                title: '导入还原',
-                subtitle: '从完整备份 JSON 恢复数据',
-                onTap: () => showImportSheet(context, onImported: () async {
-                  await context.read<LedgerListState>().load();
-                  await _loadSummary();
-                }),
-              ));
-              add(LedgerFeatureCard(
-                icon: '',
-                title: '修改密码',
-                subtitle: '改完会让其它设备重新登录',
-                onTap: () => showChangePasswordSheet(context),
-              ));
-              add(LedgerFeatureCard(
-                icon: '',
-                title: '使用引导',
-                subtitle: '功能速览 · 新手第一步',
-                onTap: () => OnboardingGuide.show(context),
-              ));
-              if (auth.role == 'admin') {
-                add(LedgerFeatureCard(
-                  icon: '',
-                  title: '用户管理',
-                  subtitle: '管理员专属：新增/删除/重置用户',
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const UsersPage()),
-                  ),
-                ));
-              }
               return [const SizedBox(height: 32), Column(children: items)];
             }(),
           ],

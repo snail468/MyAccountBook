@@ -94,6 +94,19 @@ jobs:
           sed -i 's#</manifest>#<uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>\n<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>\n</manifest>#' \
             mobile/android/app/src/main/AndroidManifest.xml
 
+      - name: Patch MainActivity for local_auth (FlutterFragmentActivity)
+        # local_auth 的 BiometricPrompt 需要 FragmentActivity；flutter create 默认生成
+        # FlutterActivity，需改为 FlutterFragmentActivity（import 与类名一并替换）[#4]
+        run: |
+          find mobile/android -name MainActivity.kt -exec \
+            sed -i 's/FlutterActivity/FlutterFragmentActivity/g' {} +
+
+      - name: Ensure USE_BIOMETRIC permission
+        # 生物识别锁（指纹/面容）需要该权限 [#4]
+        run: |
+          sed -i 's#</manifest>#<uses-permission android:name="android.permission.USE_BIOMETRIC"/>\n</manifest>#' \
+            mobile/android/app/src/main/AndroidManifest.xml
+
       - name: Pub get
         working-directory: mobile
         run: flutter pub get
