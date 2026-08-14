@@ -24,7 +24,9 @@ class BiometricService {
       return await _auth.authenticate(
         localizedReason: reason,
         options: const AuthenticationOptions(
-          biometricOnly: false,
+          // 仅生物识别：不让系统弹出设备凭证（PIN/图案）数字键盘。
+          // 应用解锁本就基于「登录密码」，密码回退由 BioGate 内的「使用密码」提供。
+          biometricOnly: true,
           stickyAuth: true,
         ),
       );

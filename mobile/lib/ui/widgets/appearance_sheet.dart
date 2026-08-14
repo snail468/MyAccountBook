@@ -269,7 +269,7 @@ const Color _kPreviewRipple = Color(0xB38B6DD0);
 class _PreviewSparklePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
-    const paint = Paint()
+    final paint = Paint()
       ..color = const Color(0xE6FFFFFF)
       ..style = PaintingStyle.fill;
     final cx = size.width / 2;

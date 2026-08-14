@@ -236,7 +236,7 @@ class _RippleWidget extends StatelessWidget {
 class _SparklePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
-    const paint = Paint()
+    final paint = Paint()
       ..color = Color(0xE6FFFFFF) // rgba(255,255,255,0.9)
       ..style = PaintingStyle.fill;
     final cx = size.width / 2;
