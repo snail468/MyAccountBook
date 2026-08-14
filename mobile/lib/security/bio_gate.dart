@@ -101,11 +101,15 @@ class _BioGateState extends State<BioGate> with WidgetsBindingObserver {
     // 验证通过、用户主动回到前台时才重新上锁 [#2]。
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive) {
-      if (!_inAuthDialog) _backgrounded = true;
-    } else if (state == AppLifecycleState.resumed) {
-      if (_backgrounded && _unlocked) {
-        _backgrounded = false;
+      // 已解锁且确已退到后台（非生物识别弹窗自身）时立即上锁并重建，
+      // 让退到后台前最后渲染的帧就是锁屏，回到前台不会闪现解锁态 [#2]。
+      if (!_inAuthDialog && _unlocked) {
+        _backgrounded = true;
         if (mounted) setState(() => _unlocked = false);
+      }
+    } else if (state == AppLifecycleState.resumed) {
+      if (_backgrounded) {
+        _backgrounded = false;
         // 若用户已切到「使用密码」回退，不自动弹生物识别，保留密码输入态。
         if (!_usePassword) _checkAndAuth();
       }

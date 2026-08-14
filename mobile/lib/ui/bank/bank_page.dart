@@ -193,9 +193,18 @@ class _BankPageState extends State<BankPage> {
       if (mounted) setState(() => _bioHint = '未检测到登录密码，请使用密码解锁');
       return;
     }
+    // 指纹通过立即揭示：本地缓存已含卡号尾号，卡片即时可见，无需等服务端往返 [#1]
+    _reveal();
+    // 后台走服务端解锁取回完整卡号；若服务端解锁失败则回退上锁并提示
     final err = await _revealWithPassword(pwd);
     if (!mounted) return;
-    if (err != null) setState(() => _bioHint = err);
+    if (err != null) {
+      setState(() {
+        _revealed = false;
+        _bioHint = err;
+      });
+      _clearUnlock();
+    }
   }
 
   Future<void> _load() async {

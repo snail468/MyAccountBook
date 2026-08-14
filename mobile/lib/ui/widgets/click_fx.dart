@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -13,8 +14,9 @@ import '../../state/theme_state.dart';
 ///  - 音效开启：用 [AudioPlayer] 播放真实 mp3——首页路由用 home.mp3，其它页用 global.mp3
 ///    （对齐网页端两段音效；移动端点击即播，无需 Web Audio 的解锁手势）。
 ///
-/// 涟漪用 [IgnorePointer] 包住，只渲染不拦截手势；坐标用全局逻辑像素，
-/// 与根 [Stack] 左上角对齐，点击处即涟漪处。
+/// 涟漪层用 [Positioned.fill] + [Clip.none] 的全屏 overlay 渲染（必须 Clip.none，
+/// 否则内部只有 Positioned 子项的 Stack 尺寸为 0×0 会把涟漪裁掉，导致点击无光效）。
+/// [Listener] 用 [HitTestBehavior.translucent]：既接收全局点击、又不拦截子组件手势。
 class ClickFxLayer extends StatefulWidget {
   final Widget child;
   const ClickFxLayer({super.key, required this.child});
@@ -60,29 +62,11 @@ Future<void> clickFxPreviewSound() async {
 
 class _ClickFxLayerState extends State<ClickFxLayer> with TickerProviderStateMixin {
   final List<_Ripple> _ripples = [];
-
-  // 两段音效播放器：lowLatency 模式支持快速重复播放，对齐网页端
-  // 「每次点击 new 一个 source、不被上次播放头顶回后半段」。
-  final AudioPlayer _homePlayer = AudioPlayer();
-  final AudioPlayer _globalPlayer = AudioPlayer();
-  bool _audioReady = false;
+  int _seq = 0;
 
   @override
   void initState() {
     super.initState();
-    _homePlayer.setPlayerMode(PlayerMode.lowLatency);
-    _globalPlayer.setPlayerMode(PlayerMode.lowLatency);
-    _preloadAudio();
-  }
-
-  Future<void> _preloadAudio() async {
-    try {
-      await _homePlayer.setSource(AssetSource('audio/home.mp3'));
-      await _globalPlayer.setSource(AssetSource('audio/global.mp3'));
-      _audioReady = true;
-    } catch (_) {
-      // 资源缺失/解码失败：静默降级为无音效
-    }
   }
 
   void _onPointerDown(PointerDownEvent e) {
@@ -96,7 +80,7 @@ class _ClickFxLayerState extends State<ClickFxLayer> with TickerProviderStateMix
       vsync: this,
       duration: const Duration(milliseconds: 700),
     );
-    final r = _Ripple(position: pos, controller: c);
+    final r = _Ripple(id: _seq++, position: pos, controller: c);
     setState(() => _ripples.add(r));
     c.forward().whenComplete(() {
       if (!mounted) {
@@ -109,49 +93,73 @@ class _ClickFxLayerState extends State<ClickFxLayer> with TickerProviderStateMix
   }
 
   void _playSound() {
-    if (!_audioReady) {
-      // 还没预加载好：触发加载，本次不发声（对齐网页端 loadBuffer 后再播）
-      _preloadAudio();
-      return;
-    }
     final isHome = clickFxRouteName.value == '/';
-    final player = isHome ? _homePlayer : _globalPlayer;
-    try {
-      // lowLatency 下 play 自动从头重播（对齐网页端 start(0, offset)）
-      player.play(AssetSource(isHome ? 'audio/home.mp3' : 'audio/global.mp3'));
-    } catch (_) {
-      // 忽略播放异常
+    _playOneShot(isHome ? 'audio/home.mp3' : 'audio/global.mp3');
+  }
+
+  /// 每次点击新建一个 [AudioPlayer] 播放并自动释放：避免复用同一播放器时
+  /// 「已播放中无法从头重播」导致点击音效偶现/丢失的问题（对齐网页端每次点击
+  /// 重新触发音频）；lowLatency 模式降低触发延迟 [#3]。
+  void _playOneShot(String asset) {
+    final player = AudioPlayer();
+    var done = false;
+    void release() {
+      if (done) return;
+      done = true;
+      try {
+        player.dispose();
+      } catch (_) {
+        // 忽略重复释放
+      }
     }
+
+    try {
+      player.setPlayerMode(PlayerMode.lowLatency);
+      player.onPlayerComplete.listen((_) => release());
+      player.play(AssetSource(asset)).catchError((_) => release());
+    } catch (_) {
+      release();
+    }
+    // 安全兜底：3 秒后无论如何释放，避免异常时泄漏
+    Timer(const Duration(seconds: 3), release);
   }
 
   @override
   void dispose() {
     for (final r in _ripples) r.controller.dispose();
-    _homePlayer.dispose();
-    _globalPlayer.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Listener(
-      // behavior 默认 deferToChild：只观察、不拦截手势
+      // translucent：既观察全局点击，又放行给子组件（按钮/滚动等照常工作）
+      behavior: HitTestBehavior.translucent,
       onPointerDown: _onPointerDown,
       child: Stack(
         children: [
           widget.child,
-          for (final r in _ripples) _RippleWidget(ripple: r),
+          // 全屏 overlay 渲染涟漪；Clip.none 保证不被 0×0 尺寸裁掉
+          Positioned.fill(
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                for (final r in _ripples) _RippleWidget(ripple: r),
+              ],
+            ),
+          ),
         ],
       ),
     );
   }
 }
 
-/// 单次涟漪：坐标 + 动画控制器。
+/// 单次涟漪：唯一 id + 坐标 + 动画控制器。
 class _Ripple {
+  final int id;
   final Offset position;
   final AnimationController controller;
-  _Ripple({required this.position, required this.controller});
+  _Ripple({required this.id, required this.position, required this.controller});
 }
 
 /// 缓动曲线，对齐网页端 cubic-bezier(0.16, 1, 0.3, 1)。
@@ -172,6 +180,7 @@ class _RippleWidget extends StatelessWidget {
     final pos = ripple.position;
     return IgnorePointer(
       child: Stack(
+        clipBehavior: Clip.none,
         children: [
           // 紫色径向涟漪：基准 20px → scale 6（=120px），opacity 1→0
           AnimatedBuilder(
