@@ -13,14 +13,32 @@ class Money extends StatelessWidget {
   final bool sign;
   final String fallback;
   final TextStyle? style;
+  final TextOverflow? overflow;
+  final int? maxLines;
+  final TextAlign? textAlign;
 
-  const Money({ super.key, required this.cents, this.sign = false, this.fallback = '·····', this.style });
+  const Money({
+    super.key,
+    required this.cents,
+    this.sign = false,
+    this.fallback = '·····',
+    this.style,
+    this.overflow,
+    this.maxLines,
+    this.textAlign,
+  });
 
   @override
   Widget build(BuildContext context) {
     final visible = context.select<ThemeState, bool>((s) => s.amountsVisible);
     final text = visible ? MoneyX.formatWithSign(cents, sign: sign) : fallback;
-    return Text(text, style: style);
+    return Text(
+      text,
+      style: style,
+      overflow: overflow,
+      maxLines: maxLines,
+      textAlign: textAlign,
+    );
   }
 }
 

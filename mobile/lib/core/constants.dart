@@ -7,11 +7,13 @@ import 'package:flutter/foundation.dart';
 /// 不影响 App 本地使用。
 class AppConfig {
   /// 调试模式下连接的服务端地址（仅 debug 构建生效）。
-  /// 默认指向 Android 模拟器的宿主机回环（10.0.2.2 即运行模拟器的那台电脑）。
-  /// 按你的调试方式只改这一处：
+  /// 默认值指向 Android 模拟器的宿主机回环（10.0.2.2 = 运行模拟器的那台电脑）。
+  /// 真机调试时用 `--dart-define=API_BASE_URL=...` 覆盖，无需改代码、提交也安全：
+  ///   - 真机同 WiFi 连本地服务：'http://<电脑局域网 IP>:3000'（如 192.168.1.10:3000）
+  ///   - 真机快速联调线上：'https://jz.686295.xyz'
   ///   - iOS 模拟器：'http://localhost:3000'
-  ///   - 真机同 WiFi：'http://<电脑局域网 IP>:3000'（例如 192.168.1.10:3000）
-  static const String _debugApiBaseUrl = 'http://10.0.2.2:3000';
+  static const String _debugApiBaseUrl =
+      String.fromEnvironment('API_BASE_URL', defaultValue: 'http://10.0.2.2:3000');
 
   /// 生产环境服务端地址（release / profile 构建生效）。
   static const String _releaseApiBaseUrl = 'https://jz.686295.xyz';
