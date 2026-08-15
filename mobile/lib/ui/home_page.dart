@@ -5,6 +5,7 @@ import '../core/general_categories.dart';
 import '../core/money.dart' as money;
 import '../state/auth_state.dart';
 import '../state/ledger_list_state.dart';
+import '../state/security_state.dart';
 import '../theme/app_theme.dart';
 import '../theme/design_tokens.dart';
 import 'routes.dart';
@@ -359,7 +360,14 @@ class _HomePageState extends State<HomePage> {
                       GestureDetector(
                         onTap: () async {
                           context.read<LedgerListState>().resetSync();
-                          await context.read<AuthState>().logout();
+                          // 指纹/面容登录模式下保留密码，便于下次生物识别登录 [#2]。
+                          final keepPassword = context
+                                  .read<SecurityState>()
+                                  .mode ==
+                              BioLockMode.login;
+                          await context
+                              .read<AuthState>()
+                              .logout(keepPassword: keepPassword);
                         },
                         child: Text('退出',
                             style: TextStyle(color: ink900, fontSize: 14)),

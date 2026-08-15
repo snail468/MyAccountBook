@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../state/auth_state.dart';
 import '../state/ledger_list_state.dart';
+import '../state/security_state.dart';
+import '../security/biometric_service.dart';
 import '../sync/sync_service.dart';
 import '../theme/app_theme.dart';
 import '../theme/design_tokens.dart';
@@ -26,6 +28,7 @@ class _LoginPageState extends State<LoginPage> {
   final _pass = TextEditingController();
   String? _error;
   bool _busy = false;
+  bool _bioAvailable = false;
 
   @override
   void initState() {
@@ -33,6 +36,9 @@ class _LoginPageState extends State<LoginPage> {
     // 预填记住的用户名（仅用户名，不自动登录；与网页端无此 UI 但不冲突）。
     final remUser = context.read<AuthState>().rememberedUsername;
     if (remUser != null && remUser.isNotEmpty) _user.text = remUser;
+    BiometricService.canAuthenticate().then((v) {
+      if (mounted) setState(() => _bioAvailable = v);
+    });
   }
 
   Future<void> _submit() async {
@@ -58,6 +64,39 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
+  /// 指纹/面容登录：生物识别验证通过后，用已记住的凭据直接登录（替代输密码）[#2]。
+  Future<void> _biometricLogin() async {
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    final ok = await BiometricService.authenticate('使用指纹/面容登录');
+    if (!mounted) return;
+    if (!ok) {
+      setState(() => _busy = false);
+      return;
+    }
+    try {
+      final auth = context.read<AuthState>();
+      final loggedIn = await auth.biometricLogin();
+      if (!loggedIn) {
+        if (mounted) {
+          setState(() => _error = '未找到已保存的登录凭据，请先用密码登录一次');
+        }
+        return;
+      }
+      if (auth.consumeUserSwitch()) {
+        await SyncService.instance.wipeLocalData();
+        if (mounted) context.read<LedgerListState>().resetCache();
+      }
+      // 登录成功后由 RootSwitcher 据 authed 切到首页。
+    } catch (_) {
+      if (mounted) setState(() => _error = '登录失败，请用密码登录');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   @override
   void dispose() {
     _user.dispose();
@@ -74,6 +113,11 @@ class _LoginPageState extends State<LoginPage> {
     // 中性主按钮：浅色=ink-900 深底；深色=ink-100 浅底，文字反之。
     final btnBg = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
     final btnText = isDark ? AppColors.lightInk900 : Colors.white;
+
+    // 指纹/面容登录：仅在开启该模式、设备支持生物识别、且有已存凭据时展示 [#2]。
+    final showBio = context.watch<SecurityState>().mode == BioLockMode.login &&
+        _bioAvailable &&
+        context.watch<AuthState>().hasSavedPassword;
 
     return Scaffold(
       backgroundColor: AppTheme.scaffoldBackground(context),
@@ -151,6 +195,29 @@ class _LoginPageState extends State<LoginPage> {
               ),
             ),
             ),
+            if (showBio) ...[
+              const SizedBox(height: 12),
+              SizedBox(
+                height: 52,
+                child: OutlinedButton.icon(
+                  onPressed: _busy ? null : _biometricLogin,
+                  icon: const Icon(Icons.fingerprint, size: 20),
+                  label: const Text('指纹/面容登录',
+                      style: TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.w500)),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: ink900,
+                    side: BorderSide(
+                        color: isDark
+                            ? AppColors.darkBorder
+                            : AppColors.lightBorder),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                ),
+              ),
+            ],
             const SizedBox(height: 24),
             Center(
               child: Row(

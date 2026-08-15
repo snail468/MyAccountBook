@@ -27,6 +27,13 @@ class AuthApi {
     return {'username': username};
   }
 
+  /// 注册是否开放：服务端已有用户时返回 false（对齐网页端 bootstrap 判断）。
+  Future<bool> registerOpen() async {
+    final data = await _client.get('/auth/register-status');
+    if (data is Map) return data['open'] == true;
+    return true; // 探测失败时默认开放，由服务端 register 兜底拒绝
+  }
+
   Future<void> logout() async {
     try {
       await _client.post('/auth/logout', null);

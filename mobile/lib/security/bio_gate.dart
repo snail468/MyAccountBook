@@ -8,17 +8,21 @@ import '../theme/design_tokens.dart';
 
 /// 生物识别锁屏：未通过验证前显示锁定页，验证成功后展示 [child]。
 ///
-/// [relockOnResume] 为 true 时（全局锁），应用从后台切回前台会重新要求验证 [#4]。
+/// [relockOnResume] 为 true 时，应用从后台切回前台会重新要求验证。
+/// [startUnlocked] 为 true 时，首帧即解锁（不立即验证）——用于「指纹/面容登录」
+/// 已登录成功、仅需在后续切前台时重新上锁的场景 [#4]。
 class BioGate extends StatefulWidget {
   final Widget child;
   final String reason;
   final bool relockOnResume;
+  final bool startUnlocked;
 
   const BioGate({
     super.key,
     required this.child,
     required this.reason,
     this.relockOnResume = false,
+    this.startUnlocked = false,
   });
 
   @override
@@ -49,7 +53,13 @@ class _BioGateState extends State<BioGate> with WidgetsBindingObserver {
     if (widget.relockOnResume) {
       WidgetsBinding.instance.addObserver(this);
     }
-    _checkAndAuth();
+    if (widget.startUnlocked) {
+      // 已登录（指纹/面容登录成功），首帧直接解锁，不立即再验证；
+      // 之后的「切前台」由 didChangeAppLifecycleState 重新上锁 [#4]。
+      _unlocked = true;
+    } else {
+      _checkAndAuth();
+    }
   }
 
   @override

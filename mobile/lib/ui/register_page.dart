@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../state/auth_state.dart';
+import '../api/api_client.dart';
+import '../api/auth_api.dart';
 import '../theme/app_theme.dart';
 import '../theme/design_tokens.dart';
 import 'widgets/app_text_field.dart';
@@ -23,6 +25,19 @@ class _RegisterPageState extends State<RegisterPage> {
   final _pass = TextEditingController();
   String? _error;
   bool _busy = false;
+  /// 注册是否开放：null=探测中；false=服务端已有用户（关闭注册）。
+  bool? _open;
+
+  @override
+  void initState() {
+    super.initState();
+    // 服务端已有用户时关闭注册（对齐网页端 bootstrap：userCount===0 才开放）[#1]。
+    AuthApi(ApiClient.instance).registerOpen().then((v) {
+      if (mounted) setState(() => _open = v);
+    }).catchError((_) {
+      if (mounted) setState(() => _open = true); // 探测失败默认开放，由服务端兜底拒绝
+    });
+  }
 
   Future<void> _submit() async {
     setState(() {
@@ -72,6 +87,50 @@ class _RegisterPageState extends State<RegisterPage> {
     final btnBg = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
     final btnText = isDark ? AppColors.lightInk900 : Colors.white;
 
+    // 服务端已有用户 → 关闭注册（对齐网页端「注册已关闭」bootstrap 分支）[#1]。
+    if (_open == false) {
+      return Scaffold(
+        backgroundColor: AppTheme.scaffoldBackground(context),
+        body: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(24, 64, 24, 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('注册已关闭',
+                  style: TextStyle(
+                      color: ink900, fontSize: 30, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 8),
+              Text('自助注册已关闭。如需新账号，请联系管理员开号后到登录页登录。',
+                  style: TextStyle(color: ink500, fontSize: 14)),
+              const SizedBox(height: 32),
+              SizedBox(
+                height: 52,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: btnBg,
+                    foregroundColor: btnText,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                  child: const Text('去登录',
+                      style: TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.w500)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    if (_open == null) {
+      return Scaffold(
+        backgroundColor: AppTheme.scaffoldBackground(context),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
     return Scaffold(
       backgroundColor: AppTheme.scaffoldBackground(context),
       body: SingleChildScrollView(

@@ -14,7 +14,6 @@ import '../../core/exceptions.dart';
 import '../../data/local/bank_card_dao.dart';
 import '../../data/models/bank_card.dart';
 import '../../sync/sync_service.dart';
-import '../../security/biometric_service.dart';
 import '../widgets/app_card.dart';
 import '../widgets/app_primary_button.dart';
 import '../widgets/app_text_field.dart';
@@ -207,32 +206,6 @@ class _BankPageState extends State<BankPage> {
     return null;
   }
 
-  /// 生物识别解锁：验证通过后，用本地记住的登录密码走服务端解锁取回完整卡号 [#4]。
-  /// **仅在「仅银行卡」模式下提供**（全局锁下整个 App 已被 [BioGate] 验证，避免重复指纹）[#2]。
-  Future<void> _biometricUnlock() async {
-    final sec = context.read<SecurityState>();
-    if (sec.mode != BioLockMode.bank) return;
-    final ok = await BiometricService.authenticate('验证指纹/面容以查看银行卡');
-    if (!ok || !mounted) return;
-    final pwd = context.read<AuthState>().loginPassword;
-    if (pwd == null) {
-      if (mounted) setState(() => _bioHint = '未检测到登录密码，请使用密码解锁');
-      return;
-    }
-    // 指纹通过立即揭示：本地缓存已含卡号尾号，卡片即时可见，无需等服务端往返 [#1]
-    _reveal();
-    // 后台走服务端解锁取回完整卡号；若服务端解锁失败则回退上锁并提示
-    final err = await _revealWithPassword(pwd);
-    if (!mounted) return;
-    if (err != null) {
-      setState(() {
-        _revealed = false;
-        _bioHint = err;
-      });
-      _clearUnlock();
-    }
-  }
-
   Future<void> _load() async {
     final list = await BankCardDao().listAll();
     if (!mounted) return;
@@ -265,7 +238,6 @@ class _BankPageState extends State<BankPage> {
   @override
   Widget build(BuildContext context) {
     context.watch<ThemeState>();
-    final sec = context.watch<SecurityState>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
     final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
@@ -284,17 +256,10 @@ class _BankPageState extends State<BankPage> {
                 const PageHeader(
                   icon: '💳',
                   title: '银行卡',
-                  subtitle: '加密存储卡号 · 查看需验密码或指纹',
+                  subtitle: '加密存储卡号 · 查看需验密码',
                 ),
                 if (!_revealed) ...<Widget>[
                   _UnlockGate(onRevealWithPassword: _revealWithPassword),
-                  // 仅在「仅银行卡」模式下显示生物识别按钮：全局锁下整个 App
-                  // 已被 BioGate 验证，进银行卡页不应再弹一次指纹 [#2]。
-                  if (sec.mode == BioLockMode.bank)
-                    _BiometricButton(
-                      onTap: _biometricUnlock,
-                      hint: _bioHint,
-                    ),
                 ],
                 if (_revealed) ...<Widget>[
                   AppCard(
@@ -385,51 +350,6 @@ Widget _hint(String text, Color color) => Padding(
       padding: const EdgeInsets.only(top: 8),
       child: Text(text, style: TextStyle(color: color, fontSize: 13)),
     );
-
-/// 生物识别解锁按钮（仅当安全设置启用时由调用方决定是否展示）。
-class _BiometricButton extends StatelessWidget {
-  final VoidCallback onTap;
-  final String? hint;
-
-  const _BiometricButton({required this.onTap, this.hint});
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
-    final red = isDark ? AppColors.darkSemanticRed : AppColors.lightSemanticRed;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const SizedBox(height: 12),
-        SizedBox(
-          height: 48,
-          child: ElevatedButton(
-            onPressed: onTap,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: ink900,
-              foregroundColor:
-                  isDark ? AppColors.darkCtaText : AppColors.lightSurface,
-              elevation: 0,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-            ),
-            child: const Text('使用指纹/面容解锁',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-          ),
-        ),
-        if (hint != null) ...[
-          const SizedBox(height: 8),
-          Text(hint!,
-              style: TextStyle(color: red, fontSize: 13),
-              textAlign: TextAlign.center),
-        ],
-      ],
-    );
-  }
-}
 
 /// 添加卡片按钮：border-dashed 描边（对齐网页端 `border-2 border-dashed`）。
 ///

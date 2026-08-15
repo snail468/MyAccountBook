@@ -155,14 +155,14 @@ class _SettingsPageState extends State<SettingsPage> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text('指纹 / 面容锁',
+                                Text('指纹 / 面容登录',
                                     style: TextStyle(
                                         color: ink900,
                                         fontSize: 15,
                                         fontWeight: FontWeight.w600)),
                                 const SizedBox(height: 2),
                                 Text(
-                                    '用设备生物识别保护应用或银行卡；关闭则仅用登录密码',
+                                    '用指纹/面容替代密码登录 app；登录后切前台会重新上锁',
                                     style: TextStyle(color: ink500, fontSize: 13)),
                               ],
                             ),
@@ -198,7 +198,7 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 }
 
-/// 生物识别锁作用范围的四选一分段控件（2×2 网格）。
+/// 生物识别作用范围的二选一分段控件。
 class _BioLockSelector extends StatelessWidget {
   final BioLockMode mode;
   final bool available;
@@ -243,21 +243,11 @@ class _BioLockSelector extends StatelessWidget {
       );
     }
 
-    return Column(
-      children: [
-        Row(children: [
-          chip('关闭', BioLockMode.off),
-          const SizedBox(width: 8),
-          chip('全局', BioLockMode.global),
-        ]),
-        const SizedBox(height: 8),
-        Row(children: [
-          chip('仅银行卡', BioLockMode.bank),
-          const SizedBox(width: 8),
-          chip('指纹/面容登录', BioLockMode.login),
-        ]),
-      ],
-    );
+    return Row(children: [
+      chip('关闭', BioLockMode.off),
+      const SizedBox(width: 8),
+      chip('指纹/面容登录', BioLockMode.login),
+    ]);
   }
 }
 

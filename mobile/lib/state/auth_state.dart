@@ -49,6 +49,11 @@ class AuthState extends ChangeNotifier {
   /// 记住的用户名（非空才可用于预填登录页）。
   String? get rememberedUsername => _rememberedUsername;
 
+  /// 是否有已记住的登录凭据（用户名+密码），供「指纹/面容登录」直接登录 [#2]。
+  bool get hasSavedPassword =>
+      (_rememberedUsername?.isNotEmpty ?? false) &&
+      (_loginPassword?.isNotEmpty ?? false);
+
   static const String _kRememberUser = 'remember_username';
   static const String _kRememberPass = 'remember_password';
   static const String _kRememberRole = 'remember_role';
@@ -153,18 +158,37 @@ class AuthState extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> logout() async {
+  /// 指纹/面容登录：用已记住的用户名+密码走服务端登录（替代输密码）[#2]。
+  /// 返回 true 表示登录成功；无已存凭据时返回 false（由登录页回退到密码输入）。
+  Future<bool> biometricLogin() async {
+    final prefs = await SharedPreferences.getInstance();
+    final user = prefs.getString(_kRememberUser);
+    final pass = prefs.getString(_kRememberPass);
+    if (user == null || user.isEmpty || pass == null || pass.isEmpty) {
+      return false;
+    }
+    await login(user, pass);
+    return true;
+  }
+
+  Future<void> logout({bool keepPassword = false}) async {
     // **乐观退出** [#3]：同步状态下磁盘/会话清理的 await 链会拖住 UI（RootSwitcher
     // 切不回登录页）。改为先改内存态 + notifyListeners 让 UI **立即**切登录页，磁盘
     // 与服务端清理全部 fire-and-forget（失败不影响本地退出）。
     _authed = false;
     _username = null;
-    _loginPassword = null;
+    if (!keepPassword) {
+      // 保留密码（指纹/面容登录）时内存态也保留，hasSavedPassword 才能为真 [#2]。
+      _loginPassword = null;
+    }
     _role = null;
     notifyListeners();
     // 后台清理（不再 await）
-    // ignore: discarded_futures
-    clearRememberPassword().catchError((_) {});
+    if (!keepPassword) {
+      // 指纹/面容登录模式下保留密码，便于下次直接生物识别登录 [#2]。
+      // ignore: discarded_futures
+      clearRememberPassword().catchError((_) {});
+    }
     // ignore: discarded_futures
     SharedPreferences.getInstance()
         .then((prefs) => prefs.remove(_kRememberRole).catchError((_) {}))
