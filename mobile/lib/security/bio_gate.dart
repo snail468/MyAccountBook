@@ -8,9 +8,9 @@ import '../theme/design_tokens.dart';
 
 /// 生物识别锁屏：未通过验证前显示锁定页，验证成功后展示 [child]。
 ///
-/// [relockOnResume] 为 true 时，应用从后台切回前台会重新要求验证。
+/// [relockOnResume] 为 true 时，应用从后台切回前台、且切后台超过 5 分钟才会重新要求验证 [#1]。
 /// [startUnlocked] 为 true 时，首帧即解锁（不立即验证）——用于「指纹/面容登录」
-/// 已登录成功、仅需在后续切前台时重新上锁的场景 [#4]。
+/// 已登录成功、仅需在后续切前台（超 5 分钟）时重新上锁的场景 [#4]。
 class BioGate extends StatefulWidget {
   final Widget child;
   final String reason;
@@ -30,6 +30,9 @@ class BioGate extends StatefulWidget {
 }
 
 class _BioGateState extends State<BioGate> with WidgetsBindingObserver {
+  /// 切后台超过该时长才重新上锁（需求：≤5 分钟回前台保持解锁）[#1]。
+  static const Duration _relockAfter = Duration(minutes: 5);
+
   bool _unlocked = false;
   bool _busy = false;
   bool _supported = false;
@@ -38,6 +41,8 @@ class _BioGateState extends State<BioGate> with WidgetsBindingObserver {
   /// 仅当 _backgrounded 为 true 且已解锁时，回到前台才重新上锁，避免验证通过
   /// 后弹窗关闭触发 resumed 又立刻重新验证的死循环 [#2]。
   bool _backgrounded = false;
+  /// 退到后台的时刻，用于计算「切后台是否超过 5 分钟」以决定是否重新上锁 [#1]。
+  DateTime? _backgroundedAt;
   /// 是否正处于本机生物识别弹窗中。弹窗期间出现的 paused/inactive 是弹窗自身的
   /// 生命周期事件，不应记为「退到后台」，否则关掉弹窗的 resumed 会误触发重新上锁。
   bool _inAuthDialog = false;
@@ -107,21 +112,29 @@ class _BioGateState extends State<BioGate> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (!widget.relockOnResume) return;
-    // 仅在确实退到后台（非本机生物识别弹窗）时标记 _backgrounded；
-    // 验证通过、用户主动回到前台时才重新上锁 [#2]。
+    // 仅在确实退到后台（非本机生物识别弹窗）时标记 _backgrounded 并记录时刻；
+    // 回到前台时仅当「退后台超过 5 分钟」才重新上锁，否则保持解锁态 [#1]。
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive) {
-      // 已解锁且确已退到后台（非生物识别弹窗自身）时立即上锁并重建，
-      // 让退到后台前最后渲染的帧就是锁屏，回到前台不会闪现解锁态 [#2]。
-      if (!_inAuthDialog && _unlocked) {
+      // 记录首次退到后台的时刻（非生物识别弹窗自身、且尚未在后台）。
+      // 不再立即上锁 —— 需求要求切后台 ≤5 分钟回前台保持解锁 [#1]。
+      if (!_inAuthDialog && _unlocked && !_backgrounded) {
         _backgrounded = true;
-        if (mounted) setState(() => _unlocked = false);
+        _backgroundedAt = DateTime.now();
       }
     } else if (state == AppLifecycleState.resumed) {
       if (_backgrounded) {
         _backgrounded = false;
-        // 若用户已切到「使用密码」回退，不自动弹生物识别，保留密码输入态。
-        if (!_usePassword) _checkAndAuth();
+        final elapsed = _backgroundedAt == null
+            ? Duration.zero
+            : DateTime.now().difference(_backgroundedAt!);
+        _backgroundedAt = null;
+        // 仅当退后台超过 5 分钟才重新上锁；否则保持解锁态 [#1]。
+        if (elapsed >= _relockAfter) {
+          if (mounted) setState(() => _unlocked = false);
+          // 若用户已切到「使用密码」回退，不自动弹生物识别，保留密码输入态。
+          if (!_usePassword) _checkAndAuth();
+        }
       }
     }
   }

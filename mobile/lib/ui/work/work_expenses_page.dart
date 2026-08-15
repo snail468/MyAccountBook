@@ -40,12 +40,16 @@ class _CategoryStat {
   final int count;
   final int refundedCents;
   final int pendingCents;
+  final int refundedCount;
+  final int pendingCount;
   const _CategoryStat({
     required this.category,
     required this.totalCents,
     required this.count,
     required this.refundedCents,
     required this.pendingCents,
+    required this.refundedCount,
+    required this.pendingCount,
   });
 }
 
@@ -140,13 +144,17 @@ class _WorkExpensesPageState extends State<WorkExpensesPage> {
                 totalCents: 0,
                 count: 0,
                 refundedCents: 0,
-                pendingCents: 0);
+                pendingCents: 0,
+                refundedCount: 0,
+                pendingCount: 0);
         catMap[e.category] = _CategoryStat(
           category: e.category,
           totalCents: c.totalCents + e.amountCents,
           count: c.count + 1,
           refundedCents: c.refundedCents + (isRefunded ? e.amountCents : 0),
           pendingCents: c.pendingCents + (isRefunded ? 0 : e.amountCents),
+          refundedCount: c.refundedCount + (isRefunded ? 1 : 0),
+          pendingCount: c.pendingCount + (isRefunded ? 0 : 1),
         );
 
         (byMonth[e.yearMonth] ??= []).add(e);
@@ -582,15 +590,15 @@ class _WorkExpensesPageState extends State<WorkExpensesPage> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Money(
-                          cents: c.refundedCents,
+                        Text(
+                          '已回款 ${money.Money.formatPlain(c.refundedCents)} · ${c.refundedCount} 笔',
                           style: TextStyle(color: green, fontSize: 11),
                         ),
                         cleared
                             ? Text('已结清 ✓',
                                 style: TextStyle(color: green, fontSize: 11))
-                            : Money(
-                                cents: c.pendingCents,
+                            : Text(
+                                '未回款 ${money.Money.formatPlain(c.pendingCents)} · ${c.pendingCount} 笔',
                                 style: TextStyle(color: red, fontSize: 11),
                               ),
                       ],
@@ -607,35 +615,37 @@ class _WorkExpensesPageState extends State<WorkExpensesPage> {
     // ---- 明细 + 批量回款 ----
     children.add(const SectionLabel('明细'));
     if (_anyPending)
-      Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: _selecting
-            ? Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text('已选 ${_selectedIds.length} 笔',
-                      style: TextStyle(color: ink500, fontSize: 12)),
-                  TextButton(
-                    onPressed: () => setState(() {
-                      _selecting = false;
-                      _selectedIds.clear();
-                    }),
-                    child: Text('取消',
+      children.add(
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: _selecting
+              ? Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('已选 ${_selectedIds.length} 笔',
                         style: TextStyle(color: ink500, fontSize: 12)),
+                    TextButton(
+                      onPressed: () => setState(() {
+                        _selecting = false;
+                        _selectedIds.clear();
+                      }),
+                      child: Text('取消',
+                          style: TextStyle(color: ink500, fontSize: 12)),
+                    ),
+                  ],
+                )
+              : Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton(
+                    onPressed: () => setState(() => _selecting = true),
+                    child: Text('批量回款',
+                        style: TextStyle(
+                            color: ink500,
+                            fontSize: 12,
+                            decoration: TextDecoration.underline)),
                   ),
-                ],
-              )
-            : Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton(
-                  onPressed: () => setState(() => _selecting = true),
-                  child: Text('批量回款',
-                      style: TextStyle(
-                          color: ink500,
-                          fontSize: 12,
-                          decoration: TextDecoration.underline)),
                 ),
-              ),
+        ),
       );
 
     final months = _byMonth.keys.toList()..sort((a, b) => b.compareTo(a));

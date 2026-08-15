@@ -237,6 +237,7 @@ export default async function LedgerPage({ params }: { params: Promise<{ id: str
         ledgerName={`💼 ${displayName}`}
         backHref="/"
         monthHrefPrefix={`/l/${ledger.id}/month`}
+        expensesHref={`/l/${ledger.id}/expenses`}
       />
     );
   }

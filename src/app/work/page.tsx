@@ -24,6 +24,7 @@ export default async function WorkPage() {
         ledgerName="工作账本"
         backHref="/"
         monthHrefPrefix="/work"
+        expensesHref="/work/expenses"
       />
     </>
   );

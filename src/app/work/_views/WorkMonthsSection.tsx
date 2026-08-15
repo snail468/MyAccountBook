@@ -52,11 +52,13 @@ export default async function WorkMonthsSection({
   ledgerName,
   backHref,
   monthHrefPrefix,
+  expensesHref,
 }: {
   ledgerId: string;
   ledgerName: string;
   backHref: string;
   monthHrefPrefix: string;
+  expensesHref: string;
 }) {
   const entries = await prisma.entry.findMany({
     where: { ledgerId, ...NOT_DELETED },
@@ -92,6 +94,17 @@ export default async function WorkMonthsSection({
           👥
         </Link>
       </div>
+
+      <Link
+        href={expensesHref}
+        className="flex items-center justify-between p-5 rounded-3xl bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 active:scale-[0.98] transition mb-3"
+      >
+        <div>
+          <div className="text-base font-medium">出项汇总</div>
+          <div className="text-xs text-ink-500 mt-0.5">应收出项 · 回款进度 · 批量回款</div>
+        </div>
+        <span className="text-ink-400">›</span>
+      </Link>
 
       <div className="space-y-3">
         {months.map((m) => {

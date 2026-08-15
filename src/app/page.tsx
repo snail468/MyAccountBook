@@ -19,7 +19,6 @@ import LogoutButton from '@/components/LogoutButton';
 import ExportButton from '@/components/ExportButton';
 import ImportButton from '@/components/ImportButton';
 import ChangePasswordButton from '@/components/ChangePasswordButton';
-import Money from '@/components/ui/Money';
 import Prefetcher from '@/components/ui/Prefetcher';
 import OfflineWarmer, { type WarmableLedger } from '@/components/ui/OfflineWarmer';
 import OnboardingGuide from '@/components/OnboardingGuide';
@@ -540,18 +539,6 @@ export default async function HomePage() {
                 <div className="min-w-0">
                   <div className="text-lg font-medium">工作账本</div>
                   <div className="text-xs text-ink-500 mt-0.5">按月记录进项与出项</div>
-                </div>
-              </div>
-              <span className="text-ink-400">›</span>
-            </Link>
-            <Link
-              href="/work/expenses"
-              className="flex items-center justify-between p-5 rounded-2xl bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 active:scale-[0.98] transition"
-            >
-              <div>
-                <div className="text-lg font-medium">工作出项汇总</div>
-                <div className="text-xs text-ink-500 mt-1 num">
-                  合计 <Money cents={s.expenseTotal} />
                 </div>
               </div>
               <span className="text-ink-400">›</span>
