@@ -143,22 +143,6 @@ class LedgerDao {
     }
   }
 
-  /// 删除某 kind 的本地幽灵账本（server_id 为 null，从未成功推送）。
-  ///
-  /// 用于内置账本（work/taoyuan）：服务端已返回该 kind 的正式账本时，本地
-  /// 幽灵（历史遗留、创建后从未推送成功）无法再推送（内置账本 one-per-owner），
-  /// 只会让首页重复显示两张同类型卡片。级联删除其子数据。[#重复同步]
-  Future<void> deleteLocalGhostsOfKind(String kind) async {
-    final db = await _db.database;
-    final rows = await db.query('ledgers',
-        columns: ['id'],
-        where: 'kind = ? AND server_id IS NULL',
-        whereArgs: [kind]);
-    for (final r in rows) {
-      await _cascadeDeleteLedger(db, r['id'] as String);
-    }
-  }
-
   /// 级联删除某账本及其全部子数据（金额/分摊/条目等，先子后父）。
   Future<void> _cascadeDeleteLedger(Database db, String lid) async {
     await db.delete('event_amounts',

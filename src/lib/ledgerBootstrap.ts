@@ -18,11 +18,31 @@ export async function ensureLedgersForUser(userId: string): Promise<void> {
   });
   const skipDefault = parsePrefs(userRow?.preferences ?? null).skipDefaultLedgers === true;
 
+  // 用户作为 owner（老数据 userId 字段）或 member（B7 协作，任何角色）参与的
+  // work/taoyuan 账本。协同 member 也必须计入 —— 否则「在协同账本记了 Entry 但
+  // 自己没建 work 账本」的用户会被误判为「用过 work」，凭空补建一本 own work，
+  // 导致客户端出现两份。[#重复]
   const existing = await prisma.ledger.findMany({
-    where: { userId, kind: { in: ['work', 'taoyuan'] } },
-    select: { kind: true },
+    where: {
+      kind: { in: ['work', 'taoyuan'] },
+      OR: [{ userId }, { members: { some: { userId } } }],
+    },
+    select: { kind: true, id: true, userId: true },
   });
   const has = new Set(existing.map((l) => l.kind));
+
+  // 清理历史 bug 产物：用户是协同 work/taoyuan 的 member、却残留一本「自动创建的
+  // 空 own work/taoyuan」。硬删空的 own 账本，让客户端只看到协同那一本。[#重复]
+  await purgeEmptyOwnLedger(
+    existing.filter((l) => l.kind === 'work' && l.userId === userId),
+    existing.filter((l) => l.kind === 'work' && l.userId !== userId),
+    'work',
+  );
+  await purgeEmptyOwnLedger(
+    existing.filter((l) => l.kind === 'taoyuan' && l.userId === userId),
+    existing.filter((l) => l.kind === 'taoyuan' && l.userId !== userId),
+    'taoyuan',
+  );
 
   const toCreate: { kind: string; name: string; icon: string; order: number }[] = [];
 
@@ -67,4 +87,29 @@ export async function ensureLedgersForUser(userId: string): Promise<void> {
   }
 
   doneUsers.add(userId);
+}
+
+type LedgerRow = { kind: string; id: string; userId: string };
+
+/**
+ * 清理历史 bug 产物：用户既是协同 work/taoyuan 的 member、又残留一本「自动创建
+ * 的空 own work/taoyuan」。只硬删**空**的 own 账本（有 Entry/Event 的保留，
+ * 可能是用户自己记过账的），让客户端只看到协同那一本。[#重复]
+ */
+async function purgeEmptyOwnLedger(
+  own: LedgerRow[],
+  shared: LedgerRow[],
+  kind: 'work' | 'taoyuan',
+): Promise<void> {
+  if (shared.length === 0 || own.length === 0) return;
+  for (const l of own) {
+    const n =
+      kind === 'work'
+        ? await prisma.entry.count({ where: { ledgerId: l.id } })
+        : await prisma.event.count({ where: { ledgerId: l.id } });
+    if (n === 0) {
+      await prisma.ledgerMember.deleteMany({ where: { ledgerId: l.id } });
+      await prisma.ledger.delete({ where: { id: l.id } });
+    }
+  }
 }
