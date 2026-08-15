@@ -186,6 +186,14 @@ class RootSwitcher extends StatelessWidget {
         child: const HomePage(),
       );
     }
+    if (sec.mode == BioLockMode.login) {
+      // 指纹/面容登录 app：进入时验证一次，登录后不再重复验证（不随前台切换重新上锁）[#3]。
+      return BioGate(
+        reason: '验证指纹/面容以登录应用',
+        relockOnResume: false,
+        child: const HomePage(),
+      );
+    }
     return const HomePage();
   }
 }

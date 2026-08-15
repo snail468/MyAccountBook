@@ -60,6 +60,31 @@ class _BankPageState extends State<BankPage> {
     // 进入即先从本地缓存即时渲染（即点即开），再从服务端后台同步，不阻塞首屏 [#3]
     _load();
     _refreshFromServer();
+    // 全局锁 / 指纹登录下：进入 App 已验生物识别，银行卡备份无需再单独验密码 [#2][#3]。
+    _autoUnlockIfBioLogin();
+  }
+
+  /// 全局锁 / 指纹登录模式下自动解锁：直接进明文态（避免解锁门闪现），并用记住的
+  /// 登录密码后台走服务端取回完整卡号；失败则回退上锁并提示 [#2][#3]。
+  void _autoUnlockIfBioLogin() {
+    final sec = context.read<SecurityState>();
+    if (!sec.bankSkipAuth) return;
+    final pwd = context.read<AuthState>().loginPassword;
+    if (pwd == null) return; // 无记住密码：退回手动验密门
+    // 直接设字段（首帧即明文，避免解锁门闪现）；持久化 + TTL 与 _reveal 语义一致。
+    _revealed = true;
+    _persistUnlock();
+    _startLockTimer(_kTtlMs);
+    _revealWithPassword(pwd).then((err) {
+      if (!mounted) return;
+      if (err != null) {
+        setState(() {
+          _revealed = false;
+          _bioHint = err;
+        });
+        _clearUnlock();
+      }
+    });
   }
 
   /// 从服务端拉取银行卡后刷新本地展示：解锁后含完整卡号，

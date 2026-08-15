@@ -198,7 +198,7 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 }
 
-/// 生物识别锁作用范围的三选一分段控件。
+/// 生物识别锁作用范围的四选一分段控件（2×2 网格）。
 class _BioLockSelector extends StatelessWidget {
   final BioLockMode mode;
   final bool available;
@@ -218,42 +218,45 @@ class _BioLockSelector extends StatelessWidget {
     final textOn = isDark ? AppColors.darkCtaText : AppColors.lightSurface;
     final border = isDark ? AppColors.darkBorder : AppColors.lightBorder;
 
-    final options = const [
-      ('关闭', BioLockMode.off),
-      ('全局', BioLockMode.global),
-      ('仅银行卡', BioLockMode.bank),
-    ];
-
-    return Row(
-      children: options.asMap().entries.map((e) {
-        final i = e.key;
-        final (label, value) = e.value;
-        final selected = mode == value;
-        return Expanded(
-          child: Padding(
-            padding: EdgeInsets.only(right: i < options.length - 1 ? 8 : 0),
-            child: InkWell(
-              onTap: available || value == BioLockMode.off
-                  ? () => onChanged(value)
-                  : null,
+    Widget chip(String label, BioLockMode value) {
+      final selected = mode == value;
+      return Expanded(
+        child: InkWell(
+          onTap: available || value == BioLockMode.off
+              ? () => onChanged(value)
+              : null,
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 6),
+            decoration: BoxDecoration(
+              color: selected ? fill : Colors.transparent,
+              border: Border.all(color: selected ? fill : border),
               borderRadius: BorderRadius.circular(12),
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                decoration: BoxDecoration(
-                  color: selected ? fill : Colors.transparent,
-                  border: Border.all(color: selected ? fill : border),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Center(
-                  child: Text(label,
-                      style: TextStyle(
-                          color: selected ? textOn : ink900, fontSize: 14)),
-                ),
-              ),
+            ),
+            child: Center(
+              child: Text(label,
+                  style: TextStyle(
+                      color: selected ? textOn : ink900, fontSize: 14)),
             ),
           ),
-        );
-      }).toList(),
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        Row(children: [
+          chip('关闭', BioLockMode.off),
+          const SizedBox(width: 8),
+          chip('全局', BioLockMode.global),
+        ]),
+        const SizedBox(height: 8),
+        Row(children: [
+          chip('仅银行卡', BioLockMode.bank),
+          const SizedBox(width: 8),
+          chip('指纹/面容登录', BioLockMode.login),
+        ]),
+      ],
     );
   }
 }

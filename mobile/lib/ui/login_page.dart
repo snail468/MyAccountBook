@@ -83,6 +83,13 @@ class _LoginPageState extends State<LoginPage> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             const _BrandMark(),
+            const SizedBox(height: 16),
+            Text('心愿便利贴',
+                style: TextStyle(
+                    color: ink900, fontSize: 24, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 4),
+            Text('记账 · 协同 · 一目了然',
+                style: TextStyle(color: ink500, fontSize: 13)),
             const SizedBox(height: 28),
             Text('登录',
                 style: TextStyle(

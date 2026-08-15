@@ -9,6 +9,8 @@ enum BioLockMode {
   global,
   /// 仅银行卡备份：进入银行卡页前需验证。
   bank,
+  /// 指纹/面容登录 app：进入应用时用生物识别登录；登录后不再重复验证（银行卡页亦免）。
+  login,
 }
 
 /// 安全设置（持久化到 shared_preferences）。
@@ -28,6 +30,11 @@ class SecurityState extends ChangeNotifier {
   /// **仅在 [BioLockMode.bank] 时**：全局锁（global）下，整个 App 已被 [BioGate] 守卫，
   /// 银行卡页不应再弹一次指纹，否则会「双重指纹验证」[#2]。off 模式则完全不验。
   bool get requiredForBank => _mode == BioLockMode.bank;
+
+  /// 银行卡页是否应跳过验密（无需单独验密码）：
+  /// 全局锁 / 指纹登录下，进入 App 时已完成生物识别，银行卡备份无需再单独验密码 [#2][#3]。
+  bool get bankSkipAuth =>
+      _mode == BioLockMode.global || _mode == BioLockMode.login;
 
   Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
