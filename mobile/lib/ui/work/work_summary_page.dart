@@ -12,6 +12,7 @@ import '../widgets/page_header.dart';
 import '../widgets/section_label.dart';
 import 'work_ledger_page.dart';
 import 'work_expenses_page.dart';
+import '../collaborators/collaborators_page.dart';
 
 /// 工作账本·多月总览（对齐网页 /work：work/page.tsx + WorkMonthsSection）。
 ///
@@ -171,6 +172,19 @@ class _WorkSummaryPageState extends State<WorkSummaryPage> {
                 icon: '💼',
                 title: widget.ledger?.displayName ?? '工作账本',
                 subtitle: '按月记录进项与出项',
+                actions: [
+                  if (widget.ledger != null)
+                    IconButton(
+                      icon: const Icon(Icons.group_outlined),
+                      tooltip: '协作',
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              CollaboratorsPage(ledger: widget.ledger!),
+                        ),
+                      ),
+                    ),
+                ],
               ),
 
               // ---- 出项汇总（回款管理，对齐网页 /work/expenses）----

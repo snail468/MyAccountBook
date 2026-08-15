@@ -6,6 +6,7 @@ import '../../theme/design_tokens.dart';
 import '../../state/theme_state.dart';
 import '../../data/local/ledger_dao.dart';
 import '../../data/models/ledger.dart';
+import '../../sync/sync_service.dart';
 import '../widgets/app_card.dart';
 import '../widgets/app_primary_button.dart';
 import '../widgets/app_text_field.dart';
@@ -578,6 +579,30 @@ class _AddLedgerSheetState extends State<_AddLedgerSheet> {
         endDate: p.kind == 'travel' ? _endAt?.millisecondsSinceEpoch : null,
       );
       await LedgerDao().upsert(ledger);
+      // 入队推送：否则新建账本永远 server_id=null、无法同步到服务端，
+      // 后续同步会与从服务端拉回的正式账本并排成两张卡片（重复）[#重复同步]。
+      await SyncService.instance.enqueue(
+        method: 'POST',
+        path: '/ledgers',
+        body: {
+          'kind': ledger.kind,
+          'name': ledger.name,
+          if (ledger.icon != null) 'icon': ledger.icon,
+          if (ledger.color != null) 'color': ledger.color,
+          if (ledger.budgetCents != null) 'budgetCents': ledger.budgetCents,
+          if (ledger.baseCurrency != null) 'baseCurrency': ledger.baseCurrency,
+          if (ledger.startDate != null)
+            'startDate': DateTime.fromMillisecondsSinceEpoch(ledger.startDate!)
+                .toUtc()
+                .toIso8601String(),
+          if (ledger.endDate != null)
+            'endDate': DateTime.fromMillisecondsSinceEpoch(ledger.endDate!)
+                .toUtc()
+                .toIso8601String(),
+        },
+        entity: 'ledger',
+        entityLocalId: ledger.id,
+      );
       if (mounted) Navigator.pop(context);
     } catch (err) {
       if (mounted) {

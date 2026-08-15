@@ -302,6 +302,16 @@ class SyncService {
     final ledgerServerIds = <String>{for (final j in deduped) j['id'] as String};
     await _ledgerDao.deleteSyncedNotIn(ledgerServerIds);
 
+    // 清理内置账本（work/taoyuan）的本地幽灵：服务端已返回该 kind 的正式账本，
+    // 本地却还留着 server_id=null 的同 kind 账本（历史遗留、创建后从未推送成功），
+    // 会与正式账本并排显示成两张卡片。[#重复同步]
+    final serverKinds = <String>{for (final j in deduped) j['kind'] as String};
+    for (final kind in serverKinds) {
+      if (kind == AppConfig.kindWork || kind == AppConfig.kindTaoyuan) {
+        await _ledgerDao.deleteLocalGhostsOfKind(kind);
+      }
+    }
+
     if (deduped.isNotEmpty && ok == 0) {
       final msg = errors.isNotEmpty ? errors.join('; ') : '未知同步错误';
       throw ApiException('同步失败（全部账本拉取出错）：$msg');

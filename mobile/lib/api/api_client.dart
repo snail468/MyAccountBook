@@ -114,6 +114,30 @@ class ApiClient {
   Future<dynamic> delete(String path, {Map<String, dynamic>? query}) =>
       request('DELETE', path, query: query);
 
+  /// 拉取原始文本响应（用于导出 CSV 等非 JSON 端点，如 GET /api/export）。
+  Future<String> getText(String path) async {
+    try {
+      final resp = await dio.get<String>(
+        path,
+        options: Options(responseType: ResponseType.plain),
+      );
+      return resp.data ?? '';
+    } on DioException catch (e) {
+      final inner = e.error;
+      if (inner is NetworkException) throw inner;
+      final status = e.response?.statusCode;
+      String msg = '请求失败';
+      String? code;
+      if (status == 401) {
+        msg = '登录已失效，请重新登录';
+        code = 'unauthorized';
+      } else if (status != null) {
+        msg = '请求失败（$status）: GET $path';
+      }
+      throw ApiException(msg, code: code, statusCode: status);
+    }
+  }
+
   /// 退出登录：清掉内存/磁盘里的会话 Cookie。
   Future<void> clearSession() async {
     await cookieJar.deleteAll();

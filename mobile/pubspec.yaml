@@ -31,6 +31,8 @@ dependencies:
   local_auth: ^2.2.0
   # 点击音效：首页/其它页两段 mp3（对齐网页端 home.mp3 / global.mp3）[#2]
   audioplayers: ^6.1.0
+  # 文件保存/选择（导出备份自定义路径 + 导入还原选 json 文件）[#导出导入]
+  file_picker: ^8.0.0
 
 dev_dependencies:
   flutter_test:
