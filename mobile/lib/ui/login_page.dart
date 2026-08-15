@@ -82,14 +82,7 @@ class _LoginPageState extends State<LoginPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _BrandMark(),
-            const SizedBox(height: 16),
-            Text('心愿便利贴',
-                style: TextStyle(
-                    color: ink900, fontSize: 24, fontWeight: FontWeight.w700)),
-            const SizedBox(height: 4),
-            Text('记账 · 协同 · 一目了然',
-                style: TextStyle(color: ink500, fontSize: 13)),
+            const _BrandMark(),
             const SizedBox(height: 28),
             Text('登录',
                 style: TextStyle(
@@ -178,16 +171,18 @@ class _LoginPageState extends State<LoginPage> {
   }
 }
 
-/// 应用品牌标识：使用 app 的 logo 图标（assets/logo.png，即 app 图标本体）。
+/// 应用品牌标识：app 图标同源 `logo.png`（512×512，与 launcher icon `icon-192`
+/// 同图）。登录页只用图标，舍弃下方「心愿便利贴+tagline」文字长条 [#4]。
 class _BrandMark extends StatelessWidget {
+  const _BrandMark();
   @override
   Widget build(BuildContext context) {
     return ClipRRect(
-      borderRadius: BorderRadius.circular(20),
+      borderRadius: BorderRadius.circular(24),
       child: Image.asset(
         'assets/logo.png',
-        width: 72,
-        height: 72,
+        width: 120,
+        height: 120,
         fit: BoxFit.cover,
       ),
     );

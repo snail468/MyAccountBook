@@ -32,9 +32,11 @@ final ValueNotifier<String?> clickFxRouteName = ValueNotifier<String?>(null);
 class ClickFxRouteObserver extends NavigatorObserver {
   void _update(Route<dynamic>? route) {
     if (route == null) return;
-    final name = route.settings.name;
-    // MaterialApp.home 的 route name 为 null，等价首页 '/'
-    clickFxRouteName.value = (name == null || name == '/') ? '/' : name;
+    // 用 route.isFirst 判「当前是否在根路由（首页）」：根路由 = 首页音效，
+    // 其它路由（账本详情/银行卡/设置等）= global 音效。
+    // 之前依赖 route.settings.name，但多数页是无名 MaterialPageRoute（name=null→'/'），
+    // 导致全部路由映射成首页音效，全 app 都播同一段。isFirst 是 Route 原生属性，根路由唯一。
+    clickFxRouteName.value = route.isFirst ? '/' : 'global';
   }
 
   @override
@@ -79,7 +81,10 @@ class _ClickFxLayerState extends State<ClickFxLayer> {
       child: Stack(
         children: [
           widget.child,
-          _RippleOverlay(key: _overlayKey),
+          // Positioned.fill 让涟漪层铺满全屏（v2.0.85 验证过的渲染结构）：
+          // v2.0.88 把涟漪层改成裸的非定位兄弟节点后变 0×0，光效看不见。
+          // 恢复全屏 overlay，靠内部 Clip.none + Positioned 全局坐标渲染。
+          Positioned.fill(child: _RippleOverlay(key: _overlayKey)),
         ],
       ),
     );

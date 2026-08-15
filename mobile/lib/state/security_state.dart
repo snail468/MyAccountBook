@@ -25,8 +25,9 @@ class SecurityState extends ChangeNotifier {
   bool get enabled => _mode != BioLockMode.off;
 
   /// 是否需要在进入银行卡页时验证。
-  bool get requiredForBank =>
-      _mode == BioLockMode.bank || _mode == BioLockMode.global;
+  /// **仅在 [BioLockMode.bank] 时**：全局锁（global）下，整个 App 已被 [BioGate] 守卫，
+  /// 银行卡页不应再弹一次指纹，否则会「双重指纹验证」[#2]。off 模式则完全不验。
+  bool get requiredForBank => _mode == BioLockMode.bank;
 
   Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();

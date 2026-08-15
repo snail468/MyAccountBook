@@ -183,9 +183,10 @@ class _BankPageState extends State<BankPage> {
   }
 
   /// 生物识别解锁：验证通过后，用本地记住的登录密码走服务端解锁取回完整卡号 [#4]。
+  /// **仅在「仅银行卡」模式下提供**（全局锁下整个 App 已被 [BioGate] 验证，避免重复指纹）[#2]。
   Future<void> _biometricUnlock() async {
     final sec = context.read<SecurityState>();
-    if (!sec.enabled) return;
+    if (sec.mode != BioLockMode.bank) return;
     final ok = await BiometricService.authenticate('验证指纹/面容以查看银行卡');
     if (!ok || !mounted) return;
     final pwd = context.read<AuthState>().loginPassword;
@@ -262,7 +263,9 @@ class _BankPageState extends State<BankPage> {
                 ),
                 if (!_revealed) ...<Widget>[
                   _UnlockGate(onRevealWithPassword: _revealWithPassword),
-                  if (sec.enabled)
+                  // 仅在「仅银行卡」模式下显示生物识别按钮：全局锁下整个 App
+                  // 已被 BioGate 验证，进银行卡页不应再弹一次指纹 [#2]。
+                  if (sec.mode == BioLockMode.bank)
                     _BiometricButton(
                       onTap: _biometricUnlock,
                       hint: _bioHint,

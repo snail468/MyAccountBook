@@ -154,19 +154,24 @@ class AuthState extends ChangeNotifier {
   }
 
   Future<void> logout() async {
-    // 立即本地退出：清状态 + 清会话 Cookie + 通知，UI 立刻切到登录页，
-    // 不等服务端响应（服务端可能在弱网/不可达时拖慢退出）[#1]。
+    // **乐观退出** [#3]：同步状态下磁盘/会话清理的 await 链会拖住 UI（RootSwitcher
+    // 切不回登录页）。改为先改内存态 + notifyListeners 让 UI **立即**切登录页，磁盘
+    // 与服务端清理全部 fire-and-forget（失败不影响本地退出）。
     _authed = false;
     _username = null;
     _loginPassword = null;
     _role = null;
-    // 退出登录时清除记住的密码（保留用户名，便于下次预填）。
-    await clearRememberPassword();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_kRememberRole);
-    await _api.clearSession();
     notifyListeners();
-    // 后台通知服务端销毁会话（失败不影响本地退出）。
+    // 后台清理（不再 await）
+    // ignore: discarded_futures
+    clearRememberPassword().catchError((_) {});
+    // ignore: discarded_futures
+    SharedPreferences.getInstance()
+        .then((prefs) => prefs.remove(_kRememberRole).catchError((_) {}))
+        .catchError((_) {});
+    // ignore: discarded_futures
+    _api.clearSession().catchError((_) {});
+    // ignore: discarded_futures
     _auth.logoutServer().catchError((_) {});
   }
 }
