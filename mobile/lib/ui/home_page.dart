@@ -525,10 +525,21 @@ class _HomePageState extends State<HomePage> {
                 ),
               ));
               add(_AddLedgerCard(
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                      builder: (_) => const ManageLedgersPage()),
-                ),
+                onTap: () async {
+                  // 提前持有 state 引用，避免 await 后跨 async gap 再用 context。
+                  final listState = context.read<LedgerListState>();
+                  await Navigator.of(context).push(
+                    MaterialPageRoute(
+                        builder: (_) => const ManageLedgersPage()),
+                  );
+                  // 账本管理页直接改本地库（新建/软删/恢复/彻删），不经 LedgerListState，
+                  // 返回首页后必须重载本地列表并重算卡片，否则刚删的账本仍留在首页、
+                  // 新建的账本不出现（本地优先，无需等网络同步）。
+                  if (!mounted) return;
+                  await listState.load();
+                  if (!mounted) return;
+                  await _loadSummary();
+                },
               ));
               add(LedgerFeatureCard(
                 icon: '🛠️',

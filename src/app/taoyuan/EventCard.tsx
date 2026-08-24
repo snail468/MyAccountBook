@@ -38,11 +38,14 @@ export default function EventCard({
   selecting,
   selected,
   onToggle,
+  canEdit = true,
 }: {
   event: ClientEvent;
   selecting: boolean;
   selected: boolean;
   onToggle: () => void;
+  /** 只读协作者(viewer)传 false：隐藏编辑/删除/摘出/金额增删改。默认可写。 */
+  canEdit?: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -190,7 +193,8 @@ export default function EventCard({
             </button>
           )}
         </div>
-        {!selecting && (
+        {/* 编辑/删除（只读协作者 viewer 隐藏） */}
+        {!selecting && canEdit && (
           <div className="shrink-0 flex items-center gap-2">
             <button
               onClick={() => setEditing(true)}
@@ -268,6 +272,7 @@ export default function EventCard({
             <ChildRow
               key={c.id}
               child={c}
+              canEdit={canEdit}
               onChange={() => startTransition(() => router.refresh())}
             />
           ))}
@@ -278,6 +283,7 @@ export default function EventCard({
         <StageDetail
           event={event}
           stage={openStage}
+          canEdit={canEdit}
           onClose={() => setOpenStage(null)}
           onChanged={() => startTransition(() => router.refresh())}
         />
@@ -347,7 +353,15 @@ function StageButton({
   );
 }
 
-function ChildRow({ child, onChange }: { child: ClientEvent; onChange: () => void }) {
+function ChildRow({
+  child,
+  onChange,
+  canEdit = true,
+}: {
+  child: ClientEvent;
+  onChange: () => void;
+  canEdit?: boolean;
+}) {
   const [busy, setBusy] = useState(false);
   const confirm = useConfirm();
   const pSum = aggregateSum(child, 'predicted');
@@ -371,13 +385,16 @@ function ChildRow({ child, onChange }: { child: ClientEvent; onChange: () => voi
           {paidSum > 0 && <>到 <Money cents={paidSum} /></>}
         </div>
       </div>
-      <button
-        onClick={detach}
-        disabled={busy}
-        className="text-[10px] text-ink-500 underline disabled:opacity-30"
-      >
-        摘出
-      </button>
+      {/* 摘出（拆分合并活动，写操作）：只读协作者 viewer 隐藏。 */}
+      {canEdit && (
+        <button
+          onClick={detach}
+          disabled={busy}
+          className="text-[10px] text-ink-500 underline disabled:opacity-30"
+        >
+          摘出
+        </button>
+      )}
     </div>
   );
 }

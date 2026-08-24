@@ -175,6 +175,8 @@ class _Body extends StatelessWidget {
                       ink900: ink900,
                       ink500: ink500,
                       state: state,
+                      // 只读协作账本(viewer)隐藏回款/编辑/删除等写入按钮。
+                      canWrite: state.ledger.canRecord,
                       onEdit: () => _openForm(context, state, month, e),
                       onDelete: () => _confirmDelete(context, state, e),
                     )),
@@ -235,6 +237,8 @@ class _EntryCard extends StatelessWidget {
   final Color ink900;
   final Color ink500;
   final WorkState state;
+  /// 只读协作账本(viewer)为 false：隐藏回款/编辑/删除等写入按钮。
+  final bool canWrite;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
 
@@ -246,6 +250,7 @@ class _EntryCard extends StatelessWidget {
     required this.ink900,
     required this.ink500,
     required this.state,
+    required this.canWrite,
     required this.onEdit,
     required this.onDelete,
   });
@@ -382,8 +387,8 @@ class _EntryCard extends StatelessWidget {
                     fontWeight: FontWeight.w600,
                     decoration: refunded ? TextDecoration.lineThrough : null),
               ),
-              // 回款按钮（仅出项）
-              if (!income)
+              // 回款按钮（仅出项；只读协作账本隐藏）
+              if (!income && canWrite)
                 Padding(
                   padding: const EdgeInsets.only(left: 6),
                   child: InkWell(
@@ -406,20 +411,23 @@ class _EntryCard extends StatelessWidget {
                     ),
                   ),
                 ),
-              IconButton(
-                onPressed: onEdit,
-                icon: Icon(Icons.edit_outlined, size: 18, color: ink500),
-                constraints: const BoxConstraints(),
-                padding: const EdgeInsets.symmetric(horizontal: 6),
-                tooltip: '编辑',
-              ),
-              IconButton(
-                onPressed: onDelete,
-                icon: Icon(Icons.close, size: 18, color: red),
-                constraints: const BoxConstraints(),
-                padding: const EdgeInsets.symmetric(horizontal: 2),
-                tooltip: '删除',
-              ),
+              // 编辑/删除（只读协作账本 viewer 隐藏）
+              if (canWrite) ...[
+                IconButton(
+                  onPressed: onEdit,
+                  icon: Icon(Icons.edit_outlined, size: 18, color: ink500),
+                  constraints: const BoxConstraints(),
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  tooltip: '编辑',
+                ),
+                IconButton(
+                  onPressed: onDelete,
+                  icon: Icon(Icons.close, size: 18, color: red),
+                  constraints: const BoxConstraints(),
+                  padding: const EdgeInsets.symmetric(horizontal: 2),
+                  tooltip: '删除',
+                ),
+              ],
             ],
           ),
         ),

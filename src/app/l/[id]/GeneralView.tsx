@@ -209,13 +209,16 @@ export default function GeneralView({
         >
           👥
         </Link>
-        <button
-          onClick={() => setShowSettings(true)}
-          className="text-ink-400 text-sm"
-          aria-label="设置"
-        >
-          ⚙
-        </button>
+        {/* 账本设置（改名/预算/类别，写操作）：只读协作者 viewer 隐藏。 */}
+        {canEdit && (
+          <button
+            onClick={() => setShowSettings(true)}
+            className="text-ink-400 text-sm"
+            aria-label="设置"
+          >
+            ⚙
+          </button>
+        )}
       </div>
 
       {pendingForThisLedger.length > 0 && (
@@ -449,6 +452,7 @@ export default function GeneralView({
                     onEdit={() => setEditing(e)}
                     onDelete={() => del(e)}
                     onZoomImage={(urls, index) => setZoomImg({ urls, index })}
+                    canEdit={canEdit}
                   />
                 ))}
               </div>

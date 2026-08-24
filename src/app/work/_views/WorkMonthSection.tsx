@@ -77,6 +77,7 @@ export default async function WorkMonthSection({
             note={e.note}
             occurredAt={e.occurredAt.toISOString()}
             refundedAt={e.refundedAt ? e.refundedAt.toISOString() : null}
+            canEdit={canEdit}
           />
         ))}
       </div>

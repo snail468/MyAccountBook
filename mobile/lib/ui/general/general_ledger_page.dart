@@ -69,10 +69,12 @@ class _GeneralLedgerScaffold extends StatelessWidget {
                     icon: Icons.group_outlined,
                     onTap: () => _openCollaborators(context),
                   ),
-                  _HeaderAction(
-                    icon: Icons.settings_outlined,
-                    onTap: () => _openSettings(context),
-                  ),
+                  // 账本设置（写操作）：只读协作账本 viewer 隐藏。
+                  if (state.ledger.canRecord)
+                    _HeaderAction(
+                      icon: Icons.settings_outlined,
+                      onTap: () => _openSettings(context),
+                    ),
                 ],
               ),
               if (state.loading)
@@ -623,7 +625,8 @@ class _EntryList extends StatelessWidget {
       }
       children.add(_DayHeader(date: g.date, income: inc, expense: exp));
       for (final e in g.entries) {
-        children.add(_EntryRowTile(entry: e));
+        // 只读协作账本(viewer)：条目不可点开编辑，隐藏编辑/删除按钮。
+        children.add(_EntryRowTile(entry: e, canWrite: state.ledger.canRecord));
         children.add(const SizedBox(height: 8));
       }
     }
@@ -689,7 +692,9 @@ class _DayHeader extends StatelessWidget {
 
 class _EntryRowTile extends StatelessWidget {
   final GeneralEntry entry;
-  const _EntryRowTile({required this.entry});
+  /// 只读协作账本(viewer)为 false：条目不可点开编辑，隐藏编辑/删除按钮。
+  final bool canWrite;
+  const _EntryRowTile({required this.entry, this.canWrite = true});
 
   @override
   Widget build(BuildContext context) {
@@ -714,7 +719,7 @@ class _EntryRowTile extends StatelessWidget {
     return AppCard(
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
-        onTap: () => _openEntryForm(context, entry: entry),
+        onTap: canWrite ? () => _openEntryForm(context, entry: entry) : null,
         child: Padding(
           padding: const EdgeInsets.all(12),
           child: Row(
@@ -795,28 +800,31 @@ class _EntryRowTile extends StatelessWidget {
                         fontSize: 15,
                         fontWeight: FontWeight.w600),
                   ),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      InkWell(
-                        borderRadius: BorderRadius.circular(8),
-                        onTap: () => _openEntryForm(context, entry: entry),
-                        child: Padding(
-                          padding: const EdgeInsets.all(4),
-                          child: Icon(Icons.edit_outlined,
-                              color: ink400, size: 18),
+                  // 编辑/删除（只读协作账本 viewer 隐藏）
+                  if (canWrite) ...[
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        InkWell(
+                          borderRadius: BorderRadius.circular(8),
+                          onTap: () => _openEntryForm(context, entry: entry),
+                          child: Padding(
+                            padding: const EdgeInsets.all(4),
+                            child: Icon(Icons.edit_outlined,
+                                color: ink400, size: 18),
+                          ),
                         ),
-                      ),
-                      InkWell(
-                        borderRadius: BorderRadius.circular(8),
-                        onTap: () => _confirmDelete(context, entry),
-                        child: Padding(
-                          padding: const EdgeInsets.all(4),
-                          child: Icon(Icons.close, color: ink400, size: 18),
+                        InkWell(
+                          borderRadius: BorderRadius.circular(8),
+                          onTap: () => _confirmDelete(context, entry),
+                          child: Padding(
+                            padding: const EdgeInsets.all(4),
+                            child: Icon(Icons.close, color: ink400, size: 18),
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
+                      ],
+                    ),
+                  ],
                 ],
               ),
             ],

@@ -131,6 +131,7 @@ export default function TaoyuanClient({
                       selecting={selecting}
                       selected={selectedIds.has(ev.id)}
                       onToggle={() => toggle(ev.id)}
+                      canEdit={canEdit}
                     />
                   ))}
                 </div>

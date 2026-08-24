@@ -42,11 +42,14 @@ export default function StageDetail({
   stage,
   onClose,
   onChanged,
+  canEdit = true,
 }: {
   event: ClientEvent;
   stage: Stage;
   onClose: () => void;
   onChanged: () => void;
+  /** 只读协作者(viewer)传 false：只读展示金额，隐藏改/删/添加。默认可写。 */
+  canEdit?: boolean;
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
@@ -63,9 +66,9 @@ export default function StageDetail({
     own.filter((e) => e.kind === 'money').reduce((a, e) => a + e.cents, 0) +
     fromChildren.filter((e) => e.kind === 'money').reduce((a, e) => a + e.cents, 0);
 
-  // 自动初始化：如果本 stage 没有任何条目 → 直接进入新增
+  // 自动初始化：如果本 stage 没有任何条目 → 直接进入新增（只读协作者不自动进入）
   useEffect(() => {
-    if (own.length === 0 && fromChildren.length === 0 && !adding && !editingId) {
+    if (canEdit && own.length === 0 && fromChildren.length === 0 && !adding && !editingId) {
       setAdding(true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -121,6 +124,7 @@ export default function StageDetail({
                   key={a.id}
                   eventId={event.id}
                   amount={a}
+                  canEdit={canEdit}
                   onEdit={() => setEditingId(a.id)}
                   onDeleted={onChanged}
                 />
@@ -143,12 +147,15 @@ export default function StageDetail({
               ))}
             </div>
 
-            <button
-              onClick={() => setAdding(true)}
-              className="mt-4 w-full py-3 rounded-2xl bg-ink-900 dark:bg-ink-100 text-white dark:text-ink-900 font-semibold"
-            >
-              + 添加一条
-            </button>
+            {/* 添加金额（写操作）：只读协作者 viewer 隐藏。 */}
+            {canEdit && (
+              <button
+                onClick={() => setAdding(true)}
+                className="mt-4 w-full py-3 rounded-2xl bg-ink-900 dark:bg-ink-100 text-white dark:text-ink-900 font-semibold"
+              >
+                + 添加一条
+              </button>
+            )}
             <button
               onClick={onClose}
               className="mt-2 w-full py-3 rounded-2xl text-ink-500"
@@ -168,11 +175,13 @@ function AmountRow({
   amount,
   onEdit,
   onDeleted,
+  canEdit = true,
 }: {
   eventId: string;
   amount: AmountEntry;
   onEdit: () => void;
   onDeleted: () => void;
+  canEdit?: boolean;
 }) {
   const [busy, setBusy] = useState(false);
   const confirm = useConfirm();
@@ -206,7 +215,8 @@ function AmountRow({
     <div className="p-3 rounded-xl bg-ink-50 dark:bg-ink-800">
       <div className="flex items-baseline justify-between">
         <AmountValue a={amount} className="num text-base font-medium" />
-        {!isLegacy && (
+        {/* 改/删（只读协作者 viewer 隐藏） */}
+        {!isLegacy && canEdit && (
           <div className="flex gap-3 text-xs">
             <button onClick={onEdit} className="text-ink-500 underline">
               改

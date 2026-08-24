@@ -504,7 +504,8 @@ class _BodyState extends State<_Body> {
                     style: TextStyle(color: ink500, fontSize: 12),
                   ),
                   const Spacer(),
-                  if (store.events.isNotEmpty)
+                  // 「选择」用于合并活动（写操作），只读协作账本 viewer 隐藏。
+                  if (store.events.isNotEmpty && store.ledger.canRecord)
                     TextButton(
                       onPressed: () => setState(() => _selecting = !_selecting),
                       child: Text(_selecting ? '完成' : '选择'),
@@ -817,7 +818,8 @@ class _EventCardState extends State<_EventCard> {
                       ],
                     ),
                   ),
-                  if (!widget.selecting)
+                  // 编辑/删除（只读协作账本 viewer 隐藏）
+                  if (!widget.selecting && widget.store.ledger.canRecord)
                     Row(
                       children: [
                         _IconBtn(icon: Icons.edit, color: ink400, onTap: widget.onEdit),
@@ -1445,15 +1447,17 @@ class _ChildRow extends StatelessWidget {
               ],
             ),
           ),
-          GestureDetector(
-            onTap: onExtract,
-            child: Text('摘出',
-                style: TextStyle(
-                  color: ink500,
-                  fontSize: 10,
-                  decoration: TextDecoration.underline,
-                )),
-          ),
+          // 摘出（拆分合并活动，写操作）：只读协作账本 viewer 隐藏。
+          if (store.ledger.canRecord)
+            GestureDetector(
+              onTap: onExtract,
+              child: Text('摘出',
+                  style: TextStyle(
+                    color: ink500,
+                    fontSize: 10,
+                    decoration: TextDecoration.underline,
+                  )),
+            ),
         ],
       ),
     );
@@ -2213,6 +2217,8 @@ class __StageDetailSheetState extends State<_StageDetailSheet> {
     final moneySum = _amts
         .where((a) => rewardValueKind(a.rewardMethod) == 'money')
         .fold(0, (int s, EventAmount a) => s + a.cents);
+    // 只读协作账本(viewer)：隐藏金额的 改/删 与「添加一条」。
+    final canWrite = widget.store.ledger.canRecord;
 
     return Container(
       decoration: BoxDecoration(
@@ -2273,18 +2279,19 @@ class __StageDetailSheetState extends State<_StageDetailSheet> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Expanded(child: _AmountValue(a, ink900)),
-                        Row(
-                          children: [
-                            TextButton(
-                              onPressed: () => _openAmount(a),
-                              child: const Text('改'),
-                            ),
-                            TextButton(
-                              onPressed: () => _confirmDelete(a),
-                              child: const Text('删', style: TextStyle(color: AppColors.lightSemanticRed)),
-                            ),
-                          ],
-                        ),
+                        if (canWrite)
+                          Row(
+                            children: [
+                              TextButton(
+                                onPressed: () => _openAmount(a),
+                                child: const Text('改'),
+                              ),
+                              TextButton(
+                                onPressed: () => _confirmDelete(a),
+                                child: const Text('删', style: TextStyle(color: AppColors.lightSemanticRed)),
+                              ),
+                            ],
+                          ),
                       ],
                     ),
                     Text(
@@ -2301,21 +2308,23 @@ class __StageDetailSheetState extends State<_StageDetailSheet> {
                 ),
               ),
             ),
-            const SizedBox(height: 8),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () => _openAmount(),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: fill,
-                  foregroundColor: text,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+            if (canWrite) ...[
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => _openAmount(),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: fill,
+                    foregroundColor: text,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
+                  child: const Text('+ 添加一条'),
                 ),
-                child: const Text('+ 添加一条'),
               ),
-            ),
+            ],
             const SizedBox(height: 16),
           ],
         ),

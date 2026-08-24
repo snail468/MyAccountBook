@@ -16,9 +16,12 @@ type Props = {
   note: string | null;
   occurredAt: string;
   refundedAt: string | null;
+  /** 只读协作者(viewer)传 false：隐藏回款/编辑/删除按钮。默认可写。 */
+  canEdit?: boolean;
 };
 
 export default function EntryRow(props: Props) {
+  const canEdit = props.canEdit ?? true;
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   // 乐观 UI：本地状态先动，服务端确认后 router.refresh() 同步
@@ -135,7 +138,8 @@ export default function EntryRow(props: Props) {
         <Money cents={props.amountCents} />
       </div>
 
-      {props.direction === 'expense' && (
+      {/* 回款/编辑/删除（只读协作者 viewer 隐藏） */}
+      {canEdit && props.direction === 'expense' && (
         <button
           onClick={() => (refunded ? unrefund() : setShowRefundDialog(true))}
           title={refunded ? '撤销回款' : '确认已回款'}
@@ -150,21 +154,25 @@ export default function EntryRow(props: Props) {
         </button>
       )}
 
-      <button
-        onClick={() => setEditing(true)}
-        className="shrink-0 text-ink-400 hover:text-ink-700 dark:hover:text-ink-100 text-xs px-1"
-        aria-label="编辑"
-        title="编辑"
-      >
-        ✎
-      </button>
-      <button
-        onClick={del}
-        className="shrink-0 text-ink-300 hover:text-red-500 text-xs px-1"
-        aria-label="删除"
-      >
-        ✕
-      </button>
+      {canEdit && (
+        <>
+          <button
+            onClick={() => setEditing(true)}
+            className="shrink-0 text-ink-400 hover:text-ink-700 dark:hover:text-ink-100 text-xs px-1"
+            aria-label="编辑"
+            title="编辑"
+          >
+            ✎
+          </button>
+          <button
+            onClick={del}
+            className="shrink-0 text-ink-300 hover:text-red-500 text-xs px-1"
+            aria-label="删除"
+          >
+            ✕
+          </button>
+        </>
+      )}
 
       {showRefundDialog && (
         <div

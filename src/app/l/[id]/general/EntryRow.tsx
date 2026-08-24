@@ -11,12 +11,15 @@ export default function EntryRow({
   onEdit,
   onDelete,
   onZoomImage,
+  canEdit = true,
 }: {
   entry: Entry;
   customCategoriesJson: string | null;
   onEdit: () => void;
   onDelete: () => void;
   onZoomImage: (urls: string[], index: number) => void;
+  /** 只读协作者(viewer)传 false：隐藏编辑/删除按钮。默认可写。 */
+  canEdit?: boolean;
 }) {
   const isIncome = entry.direction === 'income';
   return (
@@ -53,21 +56,26 @@ export default function EntryRow({
         {isIncome ? '+' : '-'}
         <Money cents={entry.amountCents} />
       </div>
-      <button
-        onClick={onEdit}
-        className="text-ink-400 hover:text-ink-700 dark:hover:text-ink-100 text-xs px-1"
-        aria-label="编辑"
-        title="编辑"
-      >
-        ✎
-      </button>
-      <button
-        onClick={onDelete}
-        className="text-ink-300 hover:text-red-500 text-xs px-1"
-        aria-label="删除"
-      >
-        ✕
-      </button>
+      {/* 编辑/删除（只读协作者 viewer 隐藏） */}
+      {canEdit && (
+        <>
+          <button
+            onClick={onEdit}
+            className="text-ink-400 hover:text-ink-700 dark:hover:text-ink-100 text-xs px-1"
+            aria-label="编辑"
+            title="编辑"
+          >
+            ✎
+          </button>
+          <button
+            onClick={onDelete}
+            className="text-ink-300 hover:text-red-500 text-xs px-1"
+            aria-label="删除"
+          >
+            ✕
+          </button>
+        </>
+      )}
     </div>
   );
 }

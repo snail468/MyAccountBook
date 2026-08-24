@@ -349,20 +349,25 @@ export default function TravelView({
             >
               👥
             </Link>
-            <button
-              onClick={() => setShowSettings(true)}
-              className="text-ink-400 text-sm"
-              aria-label="设置"
-              title="设置"
-            >
-              ⚙
-            </button>
-            <button
-              onClick={() => setShowMembers(true)}
-              className="text-ink-500 text-sm underline"
-            >
-              同伴
-            </button>
+            {/* 设置/同伴管理（写操作）：只读协作者 viewer 隐藏。 */}
+            {canEdit && (
+              <>
+                <button
+                  onClick={() => setShowSettings(true)}
+                  className="text-ink-400 text-sm"
+                  aria-label="设置"
+                  title="设置"
+                >
+                  ⚙
+                </button>
+                <button
+                  onClick={() => setShowMembers(true)}
+                  className="text-ink-500 text-sm underline"
+                >
+                  同伴
+                </button>
+              </>
+            )}
           </>
         )}
       </div>
@@ -562,7 +567,8 @@ export default function TravelView({
             expense={e}
             baseCurrency={ledger.baseCurrency}
             members={members}
-            readOnly={!!readOnly}
+            // 只读分享页或只读协作者(viewer)：隐藏行内编辑/删除。
+            readOnly={!!readOnly || !canEdit}
             onEdit={() => setEditing(e)}
             onDelete={() => del(e)}
             onZoomImage={(urls, index) => setZoomImg({ urls, index })}
@@ -627,7 +633,7 @@ export default function TravelView({
                   >
                     {label} <Money cents={Math.abs(b.netCents)} /> {ledger.baseCurrency}
                   </span>
-                  {!readOnly && (
+                  {!readOnly && canEdit && (
                     <button
                       onClick={() => m && toggleSettled(m.id, !settled)}
                       className={`text-[11px] px-2 py-1 rounded-lg whitespace-nowrap shrink-0 ${

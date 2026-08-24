@@ -356,11 +356,13 @@ class _TravelBodyState extends State<_TravelBody> {
                 subtitle: '',
                 actions: [
                   if (state.pending > 0) _PendingBadge(count: state.pending),
-                  IconButton(
-                    icon: const Text('⚙', style: TextStyle(fontSize: 20)),
-                    tooltip: '设置',
-                    onPressed: _openSettings,
-                  ),
+                  // 账本设置（写操作）：只读协作账本 viewer 隐藏。
+                  if (state.ledger.canRecord)
+                    IconButton(
+                      icon: const Text('⚙', style: TextStyle(fontSize: 20)),
+                      tooltip: '设置',
+                      onPressed: _openSettings,
+                    ),
                   TextButton(
                     onPressed: _openMembers,
                     child: Text('同伴',
@@ -587,6 +589,7 @@ class _TravelBodyState extends State<_TravelBody> {
                         baseCurrency: base,
                         members: state.members,
                         splits: state.splitsByExpense[e.id] ?? const [],
+                        canWrite: state.ledger.canRecord,
                         onEdit: () => _openExpense(e),
                         onDelete: () => _deleteExpense(e),
                       ),
@@ -1150,6 +1153,7 @@ class _ExpenseTile extends StatelessWidget {
     required this.splits,
     required this.onEdit,
     required this.onDelete,
+    this.canWrite = true,
   });
 
   final TripExpense expense;
@@ -1158,6 +1162,8 @@ class _ExpenseTile extends StatelessWidget {
   final List<TripSplit> splits;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
+  /// 只读协作账本(viewer)为 false：隐藏编辑/删除按钮。
+  final bool canWrite;
 
   @override
   Widget build(BuildContext context) {
@@ -1267,25 +1273,28 @@ class _ExpenseTile extends StatelessWidget {
                   ),
               ],
             ),
-            const SizedBox(width: 4),
-            Column(
-              children: [
-                IconButton(
-                  icon: const Text('✎', style: TextStyle(fontSize: 14)),
-                  tooltip: '编辑',
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                  onPressed: onEdit,
-                ),
-                IconButton(
-                  icon: const Text('✕', style: TextStyle(fontSize: 14)),
-                  tooltip: '删除',
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                  onPressed: onDelete,
-                ),
-              ],
-            ),
+            // 编辑/删除（只读协作账本 viewer 隐藏）
+            if (canWrite) ...[
+              const SizedBox(width: 4),
+              Column(
+                children: [
+                  IconButton(
+                    icon: const Text('✎', style: TextStyle(fontSize: 14)),
+                    tooltip: '编辑',
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    onPressed: onEdit,
+                  ),
+                  IconButton(
+                    icon: const Text('✕', style: TextStyle(fontSize: 14)),
+                    tooltip: '删除',
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    onPressed: onDelete,
+                  ),
+                ],
+              ),
+            ],
           ],
         ),
       ),
@@ -2017,6 +2026,8 @@ class _MembersSheetState extends State<_MembersSheet> {
     final border = isDark ? AppColors.darkBorder : AppColors.lightBorder;
     final green =
         isDark ? AppColors.darkSemanticGreen : AppColors.lightSemanticGreen;
+    // 只读协作账本(viewer)：只读展示成员，隐藏添加/删除/标记结清。
+    final canWrite = state.ledger.canRecord;
 
     return Container(
       decoration: BoxDecoration(
@@ -2038,76 +2049,79 @@ class _MembersSheetState extends State<_MembersSheet> {
                 style: TextStyle(
                     color: ink900, fontSize: 18, fontWeight: FontWeight.w600)),
             const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: _SegBtn(
-                    label: '添名字',
-                    selected: !_modeUser,
-                    onTap: () => setState(() => _modeUser = false),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _SegBtn(
-                    label: '邀请注册用户',
-                    selected: _modeUser,
-                    onTap: () => setState(() => _modeUser = true),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _value,
-                    maxLength: 32,
-                    decoration: InputDecoration(
-                      hintText: _modeUser ? '用户名' : '朋友的名字',
-                      hintStyle: TextStyle(color: ink400),
-                      filled: true,
-                      fillColor: surface,
-                      counterText: '',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(16),
-                        borderSide: BorderSide(color: border, width: 1),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(16),
-                        borderSide: BorderSide(color: border, width: 1),
-                      ),
+            if (canWrite) ...[
+              Row(
+                children: [
+                  Expanded(
+                    child: _SegBtn(
+                      label: '添名字',
+                      selected: !_modeUser,
+                      onTap: () => setState(() => _modeUser = false),
                     ),
-                    onSubmitted: (_) => _add(),
                   ),
-                ),
-                const SizedBox(width: 8),
-                SizedBox(
-                  height: 52,
-                  child: ElevatedButton(
-                    onPressed: _busy || _value.text.trim().isEmpty ? null : _add,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: ink900,
-                      foregroundColor:
-                          isDark ? AppColors.darkInk100 : Colors.white,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _SegBtn(
+                      label: '邀请注册用户',
+                      selected: _modeUser,
+                      onTap: () => setState(() => _modeUser = true),
                     ),
-                    child: const Text('加'),
                   ),
-                ),
-              ],
-            ),
-            if (_error.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Text(_error,
-                    style: const TextStyle(
-                        color: AppColors.lightSemanticRed, fontSize: 12)),
+                ],
               ),
-            const SizedBox(height: 16),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _value,
+                      maxLength: 32,
+                      decoration: InputDecoration(
+                        hintText: _modeUser ? '用户名' : '朋友的名字',
+                        hintStyle: TextStyle(color: ink400),
+                        filled: true,
+                        fillColor: surface,
+                        counterText: '',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide(color: border, width: 1),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide(color: border, width: 1),
+                        ),
+                      ),
+                      onSubmitted: (_) => _add(),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  SizedBox(
+                    height: 52,
+                    child: ElevatedButton(
+                      onPressed:
+                          _busy || _value.text.trim().isEmpty ? null : _add,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: ink900,
+                        foregroundColor:
+                            isDark ? AppColors.darkInk100 : Colors.white,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16)),
+                      ),
+                      child: const Text('加'),
+                    ),
+                  ),
+                ],
+              ),
+              if (_error.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(_error,
+                      style: const TextStyle(
+                          color: AppColors.lightSemanticRed, fontSize: 12)),
+                ),
+              const SizedBox(height: 16),
+            ],
             if (state.members.isEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 16),
@@ -2167,40 +2181,54 @@ class _MembersSheetState extends State<_MembersSheet> {
                             ],
                           ),
                         ),
-                        InkWell(
-                          onTap: () => _toggle(m),
-                          borderRadius: BorderRadius.circular(10),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: m.settled
-                                  ? green
-                                  : (isDark
-                                      ? AppColors.darkBorder
-                                      : const Color(0xFFE2E8F0)),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Text(
-                              m.settled ? '✓ 已结清' : '标记结清',
-                              style: TextStyle(
+                        if (canWrite) ...[
+                          InkWell(
+                            onTap: () => _toggle(m),
+                            borderRadius: BorderRadius.circular(10),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
                                 color: m.settled
-                                    ? Colors.white
+                                    ? green
                                     : (isDark
-                                        ? AppColors.darkInk100
-                                        : AppColors.lightInk900),
-                                fontSize: 11,
+                                        ? AppColors.darkBorder
+                                        : const Color(0xFFE2E8F0)),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Text(
+                                m.settled ? '✓ 已结清' : '标记结清',
+                                style: TextStyle(
+                                  color: m.settled
+                                      ? Colors.white
+                                      : (isDark
+                                          ? AppColors.darkInk100
+                                          : AppColors.lightInk900),
+                                  fontSize: 11,
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                        const SizedBox(width: 8),
-                        IconButton(
-                          icon: const Text('✕',
-                              style: TextStyle(color: AppColors.lightSemanticRed)),
-                          tooltip: '删除',
-                          onPressed: () => _del(m),
-                        ),
+                          const SizedBox(width: 8),
+                          IconButton(
+                            icon: const Text('✕',
+                                style: TextStyle(
+                                    color: AppColors.lightSemanticRed)),
+                            tooltip: '删除',
+                            onPressed: () => _del(m),
+                          ),
+                        ] else if (m.settled)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: green,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Text('✓ 已结清',
+                                style: TextStyle(
+                                    color: Colors.white, fontSize: 11)),
+                          ),
                       ],
                     ),
                   ),
