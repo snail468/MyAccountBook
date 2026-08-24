@@ -47,6 +47,28 @@ class PendingOpDao {
     );
   }
 
+  /// 同步失败（业务错误标记为 failed）的操作条数。供 UI 提示「有 N 笔未能同步」。
+  Future<int> failedCount() async {
+    final db = await _db.database;
+    final rows = await db.rawQuery(
+      'SELECT COUNT(*) AS c FROM pending_ops WHERE status = ?',
+      ['failed'],
+    );
+    return (rows.first['c'] as int?) ?? 0;
+  }
+
+  /// 把全部 failed 操作重置回 pending，供用户手动「重试未同步」。
+  /// 返回被重置的条数。attempts 计数保留（便于观察反复失败）。
+  Future<int> resetFailedToPending() async {
+    final db = await _db.database;
+    return db.update(
+      'pending_ops',
+      {'status': 'pending'},
+      where: 'status = ?',
+      whereArgs: ['failed'],
+    );
+  }
+
   Future<void> clearAll() async {
     final db = await _db.database;
     await db.delete('pending_ops');

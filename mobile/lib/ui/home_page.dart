@@ -380,6 +380,27 @@ class _HomePageState extends State<HomePage> {
               ],
             ),
 
+            // ---- 未能同步提示条（有 failed 离线操作时显示，可一键重试） ----
+            if (listState.failedCount > 0) ...[
+              const SizedBox(height: 12),
+              _FailedSyncBanner(
+                count: listState.failedCount,
+                busy: syncing,
+                onRetry: () async {
+                  final messenger = ScaffoldMessenger.of(context);
+                  try {
+                    await context.read<LedgerListState>().retryFailed();
+                    if (!mounted) return;
+                    await _loadSummary();
+                  } catch (_) {
+                    messenger.showSnackBar(
+                      const SnackBar(content: Text('重试仍未成功，请检查网络或登录状态')),
+                    );
+                  }
+                },
+              ),
+            ],
+
             // ---- 超支卡（仅超支时显示，对齐网页端守卫） ----
             if (_overLedgers.isNotEmpty) ...[
               const SizedBox(height: 12),
@@ -575,6 +596,63 @@ class _AddLedgerCard extends StatelessWidget {
             Text('›', style: TextStyle(color: ink400, fontSize: 20)),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// 首页「有离线操作未能同步」提示条：红边卡片 + 一键重试。
+///
+/// 对齐离线优先语义：业务错误（4xx 校验）会把待同步操作标记为 failed 且不再自动重试，
+/// 此前完全不可见——用户以为记账成功、实则服务端从未收到。这里显式暴露并给重试入口。
+class _FailedSyncBanner extends StatelessWidget {
+  final int count;
+  final bool busy;
+  final Future<void> Function() onRetry;
+  const _FailedSyncBanner({
+    required this.count,
+    required this.busy,
+    required this.onRetry,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final red = isDark ? AppColors.darkSemanticRed : AppColors.lightSemanticRed;
+    final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
+    final fill = isDark ? AppColors.darkSurface : AppColors.lightSurfaceSubtle;
+    return Container(
+      decoration: BoxDecoration(
+        color: fill,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: red.withOpacity(0.6), width: 1),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(
+        children: [
+          Text('⚠️', style: TextStyle(fontSize: 18, color: red)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text('有 $count 笔记录未能同步到服务端',
+                style: TextStyle(color: ink900, fontSize: 13)),
+          ),
+          const SizedBox(width: 8),
+          TextButton(
+            onPressed: busy ? null : onRetry,
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.white,
+              backgroundColor: red,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              minimumSize: const Size(0, 0),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: Text(busy ? '重试中…' : '重试',
+                style: const TextStyle(fontSize: 13)),
+          ),
+        ],
       ),
     );
   }

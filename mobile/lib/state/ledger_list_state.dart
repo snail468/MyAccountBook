@@ -13,18 +13,42 @@ class LedgerListState extends ChangeNotifier {
   List<Ledger> _allIncludingDeleted = [];
   bool _syncing = false;
   String? _error;
+  int _failedCount = 0;
 
   List<Ledger> get all => _all;
   List<Ledger> get allIncludingDeleted => _allIncludingDeleted;
   bool get syncing => _syncing;
   String? get error => _error;
 
+  /// 同步失败（业务错误被标记 failed）的离线操作条数。>0 时首页提示「N 笔未能同步」。
+  int get failedCount => _failedCount;
+
   List<Ledger> byKind(String kind) => _all.where((l) => l.kind == kind).toList();
 
   Future<void> load() async {
     _all = await _dao.listAll();
     _allIncludingDeleted = await _dao.listAllIncludingDeleted();
+    _failedCount = await _sync.failedCount();
     notifyListeners();
+  }
+
+  /// 重试全部失败的离线操作（先重置 failed→pending 再全量同步），完成后重载列表。
+  Future<bool> retryFailed() async {
+    _syncing = true;
+    _error = null;
+    notifyListeners();
+    try {
+      final ok = await _sync.retryFailed();
+      await load();
+      _syncing = false;
+      notifyListeners();
+      return ok;
+    } catch (e) {
+      _syncing = false;
+      _error = e is ApiException ? '重试失败：${e.message}' : '重试异常：$e';
+      notifyListeners();
+      rethrow;
+    }
   }
 
   /// 软删除：标记 deletedAt，写回本地并重新加载。

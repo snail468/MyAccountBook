@@ -12,6 +12,7 @@ import 'ui/home_page.dart';
 import 'ui/app_routes.dart';
 import 'ui/widgets/click_fx.dart';
 import 'security/bio_gate.dart';
+import 'sync/auto_sync.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -80,7 +81,7 @@ class AppRoot extends StatelessWidget {
           ),
         );
       },
-      home: const RootSwitcher(),
+      home: const AutoSync(child: RootSwitcher()),
       onGenerateRoute: appOnGenerateRoute,
       navigatorObservers: [ClickFxRouteObserver()],
       ),

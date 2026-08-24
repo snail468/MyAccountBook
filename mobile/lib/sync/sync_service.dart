@@ -29,7 +29,6 @@ import '../data/local/recurring_rule_dao.dart';
 import '../data/local/pending_op_dao.dart';
 import '../data/models/pending_op.dart';
 import '../data/db/database.dart';
-import 'connectivity.dart';
 
 /// 离线优先的同步引擎。
 ///
@@ -44,7 +43,6 @@ class SyncService {
 
   final _uuid = const Uuid();
   final ApiClient _api = ApiClient.instance;
-  final Connectivity _conn = Connectivity.instance;
 
   final LedgerApi _ledgers = LedgerApi(ApiClient.instance);
   final GeneralEntryApi _general = GeneralEntryApi(ApiClient.instance);
@@ -136,6 +134,16 @@ class SyncService {
   }
 
   Future<int> pendingCount() => _opDao.pendingCount();
+
+  /// 同步失败（业务错误）的操作条数。供 UI 提示未能同步的记录数。
+  Future<int> failedCount() => _opDao.failedCount();
+
+  /// 重试全部失败操作：先把 failed 重置回 pending，再走一次「先推后拉」全量同步。
+  /// 返回是否成功；无失败项时也会执行同步（无副作用）。
+  Future<bool> retryFailed() async {
+    await _opDao.resetFailedToPending();
+    return syncAll();
+  }
 
   // ---------------- 同步主流程 ----------------
 
@@ -531,9 +539,19 @@ class SyncService {
       final sid = j['id'] as String;
       final localId = map[sid] ?? _uuid.v4();
       await _eventDao.insertEvent(TaoyuanEvent.fromApi(j, ledgerId, localId: localId));
+      // 金额明细 + 活动图片：优先用列表行内联字段，避免逐活动 getById 的 N+1 请求。
+      // 仅当列表未内联 amounts 时，才回退详情接口（旧服务端列表不返回明细）。[perf]
+      List amounts;
+      String? imgs;
+      if (j['amounts'] is List) {
+        amounts = j['amounts'] as List;
+        imgs = j['contentImages'] as String?;
+      } else {
+        final detail = await _events.getById(sid);
+        amounts = (detail['amounts'] as List? ?? []);
+        imgs = detail['contentImages'] as String?;
+      }
       // 金额明细：清旧重建
-      final detail = await _events.getById(sid);
-      final amounts = (detail['amounts'] as List? ?? []);
       await _eventDao.deleteAmountsByEvent(localId);
       for (final a in amounts) {
         await _eventDao.insertAmount(
@@ -541,8 +559,7 @@ class SyncService {
         );
       }
       // 活动图片：列表接口未必返回 contentImages，详情接口一定包含；
-      // 用详情补全，确保桃源活动图片能同步到本地。[#7]
-      final imgs = detail['contentImages'] as String?;
+      // 用详情/内联补全，确保桃源活动图片能同步到本地。[#7]
       if (imgs != null && imgs.isNotEmpty) {
         final cur = await _eventDao.getById(localId);
         if (cur != null &&

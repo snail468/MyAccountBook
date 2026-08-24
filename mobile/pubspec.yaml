@@ -35,7 +35,9 @@ dependencies:
   audioplayers: ^6.1.0
   # 文件保存/选择（导出备份自定义路径 + 导入还原选 json 文件）[#导出导入]
   file_picker: ^8.0.0
-  connectivity_plus: ^7.3.1
+  # 网络状态响应式监听：重连后自动补推离线队列（配合 AutoSync）。
+  # 固定 5.0.2：6.x 需要更高 compileSdk/AGP，与当前 android 配置(AGP 8.1)不兼容。
+  connectivity_plus: 5.0.2
 
 dev_dependencies:
   flutter_test:
