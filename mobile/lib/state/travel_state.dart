@@ -333,17 +333,6 @@ class TravelState extends ChangeNotifier {
     return {for (final id in ids) id: (paid[id] ?? 0) - (owed[id] ?? 0)};
   }
 
-  static List<int> _equalSplits(int total, int n) {
-    if (n <= 0) return const [];
-    final base = total ~/ n;
-    var rem = total - base * n;
-    return List.generate(n, (i) {
-      final extra = rem > 0 ? 1 : 0;
-      if (rem > 0) rem--;
-      return base + extra;
-    });
-  }
-
   /// 按权重分摊 [total] 分，保证 sum(shares) == total（最大余数法）。
   static Map<String, int> allocate(
       int total, List<String> ids, List<int> weights) {
@@ -351,7 +340,9 @@ class TravelState extends ChangeNotifier {
     if (n == 0) return const {};
     if (total == 0) return {for (final id in ids) id: 0};
     var totalW = 0;
-    for (final w in weights) totalW += w;
+    for (final w in weights) {
+      totalW += w;
+    }
     // 权重全为 0 时退化为等额
     final eff = totalW == 0 ? [for (final _ in ids) 1] : weights;
     if (totalW == 0) totalW = n;
@@ -363,11 +354,15 @@ class TravelState extends ChangeNotifier {
       floor.add(r.floor());
     }
     var rem = total;
-    for (final f in floor) rem -= f;
+    for (final f in floor) {
+      rem -= f;
+    }
     final order = [for (var i = 0; i < n; i++) i]
       ..sort((a, b) => (raw[b] - floor[b]).compareTo(raw[a] - floor[a]));
     final result = <String, int>{};
-    for (var i = 0; i < n; i++) result[ids[i]] = floor[i];
+    for (var i = 0; i < n; i++) {
+      result[ids[i]] = floor[i];
+    }
     for (var k = 0; k < rem && k < order.length; k++) {
       result[ids[order[k]]] = result[ids[order[k]]]! + 1;
     }

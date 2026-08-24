@@ -191,8 +191,8 @@ class AuthState extends ChangeNotifier {
     }
     // ignore: discarded_futures
     SharedPreferences.getInstance()
-        .then((prefs) => prefs.remove(_kRememberRole).catchError((_) {}))
-        .catchError((_) {});
+        .then((prefs) => prefs.remove(_kRememberRole).catchError((_) => false))
+        .catchError((_) => false);
     // ignore: discarded_futures
     _api.clearSession().catchError((_) {});
     // ignore: discarded_futures

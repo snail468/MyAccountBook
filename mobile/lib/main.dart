@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'dart:ui';
 import 'api/api_client.dart';
-import 'core/constants.dart';
 import 'state/auth_state.dart';
 import 'state/ledger_list_state.dart';
 import 'state/theme_state.dart';
@@ -182,11 +180,11 @@ class RootSwitcher extends StatelessWidget {
     if (sec.mode == BioLockMode.login) {
       // 指纹/面容登录：登录页已用生物识别登录（不重复验证），
       // 之后切前台重新上锁再验证 [#4]。
-      return BioGate(
+      return const BioGate(
         reason: '验证指纹/面容以解锁应用',
         relockOnResume: true,
         startUnlocked: true,
-        child: const HomePage(),
+        child: HomePage(),
       );
     }
     return const HomePage();

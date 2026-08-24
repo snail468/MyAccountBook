@@ -48,17 +48,21 @@ class _RegisterPageState extends State<RegisterPage> {
     final pass = _pass.text;
     // 对齐网页端 input 约束：用户名 2-32，密码至少 6 位（原生 minLength/maxLength）。
     if (user.length < 2 || user.length > 32) {
-      if (mounted) setState(() {
+      if (mounted) {
+        setState(() {
         _busy = false;
         _error = '用户名需 2-32 个字符';
       });
+      }
       return;
     }
     if (pass.length < 6) {
-      if (mounted) setState(() {
+      if (mounted) {
+        setState(() {
         _busy = false;
         _error = '密码至少 6 位';
       });
+      }
       return;
     }
     try {

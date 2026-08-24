@@ -142,7 +142,6 @@ class _WorkSummaryPageState extends State<WorkSummaryPage> {
     final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
     final ink400 = isDark ? AppColors.darkInk400 : AppColors.lightInk400;
     final surface = isDark ? AppColors.darkSurface : AppColors.lightSurface;
-    final border = isDark ? AppColors.darkBorder : AppColors.lightBorder;
     final pageBg = isDark ? AppColors.darkPageBg : AppColors.lightPageBg;
     final red = isDark ? AppColors.darkSemanticRed : AppColors.lightSemanticRed;
     final green = isDark ? AppColors.darkSemanticGreen : AppColors.lightSemanticGreen;
@@ -279,7 +278,7 @@ class _WorkSummaryPageState extends State<WorkSummaryPage> {
 
               const SizedBox(height: 16),
 
-              SectionLabel('按月查看'),
+              const SectionLabel('按月查看'),
 
               if (_loading)
                 Padding(
@@ -298,7 +297,6 @@ class _WorkSummaryPageState extends State<WorkSummaryPage> {
                   final totals = _byMonth[ym] ?? (income: 0, expense: 0);
                   final mIncome = totals.income;
                   final mExpense = totals.expense;
-                  final mBalance = mIncome - mExpense;
                   final hasData = mIncome + mExpense > 0;
                   final parts = ym.split('-');
                   final y = parts[0];
@@ -329,7 +327,7 @@ class _WorkSummaryPageState extends State<WorkSummaryPage> {
                           : () => Navigator.of(context).push(
                                 MaterialPageRoute(
                                   builder: (_) => WorkLedgerPage(
-                                    ledger: ledgerForMonth!,
+                                    ledger: ledgerForMonth,
                                     month: ym,
                                   ),
                                 ),

@@ -267,8 +267,6 @@ class _TravelBodyState extends State<_TravelBody> {
     final surface = isDark ? AppColors.darkSurface : AppColors.lightSurface;
     final border = isDark ? AppColors.darkBorder : AppColors.lightBorder;
     final pageBg = isDark ? AppColors.darkPageBg : AppColors.lightPageBg;
-    final red = isDark ? AppColors.darkSemanticRed : AppColors.lightSemanticRed;
-    final green = isDark ? AppColors.darkSemanticGreen : AppColors.lightSemanticGreen;
 
     final base = (state.ledger.baseCurrency?.isEmpty ?? true)
         ? 'CNY'
@@ -745,7 +743,6 @@ class _PhaseButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
     final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
     final fill = selected
         ? (isDark ? AppColors.darkInk100 : AppColors.lightInk900)
@@ -1566,6 +1563,12 @@ class _SettlementSheetModalState extends State<_SettlementSheetModal> {
 
   Future<void> _saveImage() async {
     setState(() => _busy = true);
+    // 在任何 await 前读取账本名，避免跨异步间隙使用 BuildContext。
+    final ledgerName = context
+        .read<TravelState>()
+        .ledger
+        .name
+        .replaceAll(RegExp(r'[^\w一-龥]+'), '_');
     try {
       final boundary = _repaintKey.currentContext?.findRenderObject()
           as RenderRepaintBoundary?;
@@ -1575,11 +1578,6 @@ class _SettlementSheetModalState extends State<_SettlementSheetModal> {
       if (byteData == null) throw Exception('图片数据生成失败');
       final bytes = byteData.buffer.asUint8List();
       final dir = await getApplicationDocumentsDirectory();
-      final ledgerName = context
-          .read<TravelState>()
-          .ledger
-          .name
-          .replaceAll(RegExp(r'[^\w一-龥]+'), '_');
       final file = File('${dir.path}/${ledgerName}_结算单.png');
       await file.writeAsBytes(bytes);
       if (mounted) {
@@ -1778,7 +1776,7 @@ class _SettlementSheetContent extends StatelessWidget {
             Text(range.isNotEmpty ? '旅游 AA 结算单 · $range' : '旅游 AA 结算单',
                 style: const TextStyle(color: ink500, fontSize: 13)),
             const SizedBox(height: 12),
-            Divider(color: border, height: 1, thickness: 1),
+            const Divider(color: border, height: 1, thickness: 1),
             const SizedBox(height: 12),
             Text('账目明细（${expenses.length} 笔）',
                 style: const TextStyle(
@@ -1822,10 +1820,10 @@ class _SettlementSheetContent extends StatelessWidget {
                 ],
               ],
             const SizedBox(height: 12),
-            Divider(color: border, height: 1, thickness: 1),
+            const Divider(color: border, height: 1, thickness: 1),
             const SizedBox(height: 12),
-            Text('总账单',
-                style: const TextStyle(
+            const Text('总账单',
+                style: TextStyle(
                     color: accent, fontSize: 15, fontWeight: FontWeight.w600)),
             const SizedBox(height: 8),
             Row(
@@ -1860,8 +1858,8 @@ class _SettlementSheetContent extends StatelessWidget {
                     ),
                   )),
             const SizedBox(height: 12),
-            Text('成员净额',
-                style: const TextStyle(
+            const Text('成员净额',
+                style: TextStyle(
                     color: accent, fontSize: 14, fontWeight: FontWeight.w600)),
             const SizedBox(height: 6),
             for (final entry in balances.entries) ...[
@@ -1899,10 +1897,10 @@ class _SettlementSheetContent extends StatelessWidget {
               ),
             ],
             const SizedBox(height: 12),
-            Divider(color: border, height: 1, thickness: 1),
+            const Divider(color: border, height: 1, thickness: 1),
             const SizedBox(height: 12),
-            Text('最优结算',
-                style: const TextStyle(
+            const Text('最优结算',
+                style: TextStyle(
                     color: accent, fontSize: 14, fontWeight: FontWeight.w600)),
             const SizedBox(height: 6),
             if (error != null)
@@ -1936,7 +1934,7 @@ class _SettlementSheetContent extends StatelessWidget {
                   ),
                 ),
             const SizedBox(height: 12),
-            Divider(color: border, height: 1, thickness: 1),
+            const Divider(color: border, height: 1, thickness: 1),
             const SizedBox(height: 12),
             Text(footer, style: const TextStyle(color: ink500, fontSize: 12)),
           ],
@@ -2231,7 +2229,6 @@ class _SegBtn extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
     final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
     final fill = selected
         ? (isDark ? AppColors.darkInk100 : AppColors.lightInk900)
@@ -2302,7 +2299,9 @@ class _ExpenseSheetState extends State<_ExpenseSheet> {
     _occurredAt = e?.occurredAt ?? DateTime.now().millisecondsSinceEpoch;
     _payerId = e?.payerId ?? members.firstOrNull?.id ?? '';
     _splitMode = e != null ? 'ratio' : 'even';
-    for (final m in members) _ratios[m.id] = 1;
+    for (final m in members) {
+      _ratios[m.id] = 1;
+    }
     if (e != null) {
       for (final s in context.read<TravelState>().splitsByExpense[e.id] ?? const []) {
         _ratios[s.memberId] = (s.shareCents / 100).round();
@@ -2312,7 +2311,9 @@ class _ExpenseSheetState extends State<_ExpenseSheet> {
         if (!_selected.contains(m.id)) _ratios[m.id] = 0;
       }
     } else {
-      for (final m in members) _selected.add(m.id);
+      for (final m in members) {
+        _selected.add(m.id);
+      }
     }
   }
 
@@ -2441,7 +2442,7 @@ class _ExpenseSheetState extends State<_ExpenseSheet> {
             amountBase, ids, ids.map((id) => _weights[id] ?? 0).toList())
         : <String, int>{};
 
-    final showForeign = _currency?.toUpperCase() != base.toUpperCase();
+    final showForeign = _currency.toUpperCase() != base.toUpperCase();
 
     return Container(
       decoration: BoxDecoration(
@@ -3001,7 +3002,9 @@ class _SettingsSheetState extends State<_SettingsSheet> {
     _name.dispose();
     _icon.dispose();
     _totalBase.dispose();
-    for (final c in _perCurCtl.values) c.dispose();
+    for (final c in _perCurCtl.values) {
+      c.dispose();
+    }
     super.dispose();
   }
 
@@ -3436,7 +3439,6 @@ class _FunReportSheet extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
     final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
-    final ink400 = isDark ? AppColors.darkInk400 : AppColors.lightInk500;
     final surface = isDark ? AppColors.darkSurface : AppColors.lightSurface;
     final border = isDark ? AppColors.darkBorder : AppColors.lightBorder;
     final green =
@@ -3449,7 +3451,9 @@ class _FunReportSheet extends StatelessWidget {
     final total = expenses.fold(0, (s, e) => s + e.amountBaseCents);
 
     final paid = <String, int>{};
-    for (final m in state.members) paid[m.id] = 0;
+    for (final m in state.members) {
+      paid[m.id] = 0;
+    }
     for (final e in expenses) {
       for (final s in state.splitsByExpense[e.id] ?? const <TripSplit>[]) {
         paid[s.memberId] = (paid[s.memberId] ?? 0) + s.shareCents;

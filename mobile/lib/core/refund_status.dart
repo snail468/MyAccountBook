@@ -7,6 +7,7 @@
 /// occurredAt 是补录那天，按它算根本不到阈值，于是顶部不计、列表不标红，
 /// 但明细里按 yearMonth 分组又能看到它 —— 用 min(occurredAt, 月末) 修正，
 /// 式子单调（只会把基准日往前挪），不存在"修 A 漏 B"的反向风险。
+library;
 
 /// 未回款超期阈值（天），对齐网页 REFUND_OVERDUE_DAYS。
 const int refundOverdueDays = 30;

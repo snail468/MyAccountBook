@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/reward_method.dart';
@@ -72,7 +71,7 @@ class _IncomeComponentsCardState extends State<IncomeComponentsCard> {
   List<IncomeComponent> get _enabled =>
       widget.components.where(_isEnabled).toList();
 
-  int get _A => _enabled.fold(0, (sum, c) => sum + c.cents * c.sign);
+  int get _totalA => _enabled.fold(0, (sum, c) => sum + c.cents * c.sign);
 
   String get _formula {
     final enabled = _enabled;
@@ -131,16 +130,16 @@ class _IncomeComponentsCardState extends State<IncomeComponentsCard> {
             const SizedBox(height: 8),
             // A 数字：品牌粉（负→红），受隐藏金额开关影响。
             Money(
-              cents: _A,
+              cents: _totalA,
               style: TextStyle(
-                color: _A < 0 ? semanticRed : brandPink,
+                color: _totalA < 0 ? semanticRed : brandPink,
                 fontSize: 48,
                 fontWeight: FontWeight.w700,
               ),
             ),
             if (enabled.isNotEmpty) ...[
               const SizedBox(height: 16),
-              ...enabled.map((c) => _ComponentRow(
+              ...enabled.map((c) => _componentRow(
                     c: c,
                     ink500: ink500,
                     ink900: ink900,
@@ -223,7 +222,7 @@ class _IncomeComponentsCardState extends State<IncomeComponentsCard> {
     );
   }
 
-  Widget _ComponentRow({
+  Widget _componentRow({
     required IncomeComponent c,
     required Color ink500,
     required Color ink900,
@@ -401,9 +400,10 @@ class _SettingsSheetState extends State<_SettingsSheet> {
                     onPressed: _saving
                         ? null
                         : () async {
+                            final nav = Navigator.of(context);
                             setState(() => _saving = true);
                             await widget.onSave(_local);
-                            if (mounted) Navigator.of(context).pop();
+                            if (mounted) nav.pop();
                           },
                     style: TextButton.styleFrom(
                       backgroundColor: ink900,

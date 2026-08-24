@@ -178,7 +178,6 @@ void _previewClickFx(BuildContext context, ThemeState ts) {
     return;
   }
   final overlay = Overlay.of(context, rootOverlay: true);
-  if (overlay == null) return;
   final entry = OverlayEntry(builder: (_) => const Center(child: _ClickRipple()));
   overlay.insert(entry);
   Future.delayed(const Duration(milliseconds: 760), () {
@@ -222,7 +221,10 @@ class _ClickRippleState extends State<_ClickRipple>
   }
 
   @override
-  void dispose() => _c.dispose();
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -297,37 +299,29 @@ class _PreviewSparklePainter extends CustomPainter {
 class _StyleChip extends StatelessWidget {
   final String label;
   final bool selected;
-  final bool disabled;
-  final String? badge;
   final VoidCallback? onTap;
 
   const _StyleChip({
     required this.label,
     this.selected = false,
-    this.disabled = false,
-    this.badge,
     this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final fg = disabled
-        ? (isDark ? AppColors.darkInk500 : AppColors.lightInk400)
-        : (selected
-            ? (isDark ? AppColors.darkCtaText : Colors.white)
-            : (isDark ? AppColors.darkInk100 : AppColors.lightInk900));
-    final bg = selected && !disabled
+    final fg = selected
+        ? (isDark ? AppColors.darkCtaText : Colors.white)
+        : (isDark ? AppColors.darkInk100 : AppColors.lightInk900);
+    final bg = selected
         ? (isDark ? AppColors.darkCtaFill : AppColors.lightInk900)
         : Colors.transparent;
-    final borderColor = disabled
-        ? (isDark ? AppColors.darkBorder : AppColors.lightBorderDashed)
-        : (selected
-            ? Colors.transparent
-            : (isDark ? AppColors.darkBorder : AppColors.lightBorder));
+    final borderColor = selected
+        ? Colors.transparent
+        : (isDark ? AppColors.darkBorder : AppColors.lightBorder);
     return Expanded(
       child: GestureDetector(
-        onTap: disabled ? null : onTap,
+        onTap: onTap,
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 10),
           decoration: BoxDecoration(
@@ -337,7 +331,7 @@ class _StyleChip extends StatelessWidget {
           ),
           child: Center(
             child: Text(
-              badge != null ? '$label · $badge' : label,
+              label,
               style: TextStyle(
                 color: fg,
                 fontWeight: FontWeight.w600,

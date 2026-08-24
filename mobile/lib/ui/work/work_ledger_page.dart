@@ -55,9 +55,6 @@ class _Body extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
     final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
-    final ink400 = isDark ? AppColors.darkInk400 : AppColors.lightInk400;
-    final surface = isDark ? AppColors.darkSurface : AppColors.lightSurface;
-    final border = isDark ? AppColors.darkBorder : AppColors.lightBorder;
     final pageBg = isDark ? AppColors.darkPageBg : AppColors.lightPageBg;
     final red = isDark ? AppColors.darkSemanticRed : AppColors.lightSemanticRed;
     final green = isDark ? AppColors.darkSemanticGreen : AppColors.lightSemanticGreen;
@@ -159,7 +156,7 @@ class _Body extends StatelessWidget {
               ),
               const SizedBox(height: 8),
 
-              SectionLabel('本月记录'),
+              const SectionLabel('本月记录'),
 
               if (entries.isEmpty)
                 Padding(
@@ -440,7 +437,7 @@ class _RefundDialog extends StatefulWidget {
 
 class _RefundDialogState extends State<_RefundDialog> {
   late DateTime _when;
-  String _error = '';
+  final String _error = '';
 
   @override
   void initState() {
@@ -456,6 +453,7 @@ class _RefundDialogState extends State<_RefundDialog> {
       lastDate: DateTime(2100),
     );
     if (d == null) return;
+    if (!mounted) return;
     final t = await showTimePicker(
       context: context,
       initialTime: TimeOfDay.fromDateTime(_when),

@@ -314,7 +314,6 @@ class _CollaboratorsPageState extends State<CollaboratorsPage> {
   Widget _invitePanel() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
-    final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
     final fill = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
     final textOn = isDark ? AppColors.lightInk900 : Colors.white;
 

@@ -40,8 +40,6 @@ class _Body extends StatelessWidget {
     final ink400 = isDark ? AppColors.darkInk400 : AppColors.lightInk400;
     final noteBg = isDark ? AppColors.darkSurface : AppColors.lightSurfaceSubtle;
     final noteBorder = isDark ? AppColors.darkBorder : AppColors.lightBorder;
-    final green = isDark ? AppColors.darkSemanticGreen : AppColors.lightSemanticGreen;
-    final red = isDark ? AppColors.darkSemanticRed : AppColors.lightSemanticRed;
 
     return SafeArea(
       top: false,

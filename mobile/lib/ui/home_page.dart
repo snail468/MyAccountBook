@@ -89,6 +89,7 @@ class _HomePageState extends State<HomePage> {
     // 后台同步：先推本地改动，再从服务端拉取（目前仍为全量，但不再阻塞 UI）。
     _syncInBackground(s);
     // 首次启动自动弹出「使用引导」（对齐网页端 ?welcome=1 的落地页引导）。
+    if (!mounted) return;
     await OnboardingGuide.maybeShowOnFirstLaunch(context);
   }
 

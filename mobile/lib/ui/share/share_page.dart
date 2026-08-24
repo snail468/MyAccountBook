@@ -217,12 +217,12 @@ class _ShareReadOnly extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 16),
-          _InfoRow('基础币种', currency, ink500, ink900),
+          _infoRow('基础币种', currency, ink500, ink900),
           if (budget != null && budget.isNotEmpty)
-            _InfoRow('行程预算', budget, ink500, ink900),
-          _InfoRow('支出笔数', '$expenseCount 笔', ink500, ink900),
-          _InfoRow('合计花费', totalText, ink500, ink900),
-          _InfoRow('成员', '$memberCount 人', ink500, ink900),
+            _infoRow('行程预算', budget, ink500, ink900),
+          _infoRow('支出笔数', '$expenseCount 笔', ink500, ink900),
+          _infoRow('合计花费', totalText, ink500, ink900),
+          _infoRow('成员', '$memberCount 人', ink500, ink900),
           const SizedBox(height: 12),
           Text('数据仅供查看，无法修改或新增条目。',
               style: TextStyle(color: ink400, fontSize: 12)),
@@ -231,7 +231,7 @@ class _ShareReadOnly extends StatelessWidget {
     );
   }
 
-  Widget _InfoRow(String k, String v, Color kc, Color vc) => Padding(
+  Widget _infoRow(String k, String v, Color kc, Color vc) => Padding(
         padding: const EdgeInsets.only(bottom: 8),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,

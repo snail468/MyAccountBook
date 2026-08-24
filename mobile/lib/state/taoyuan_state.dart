@@ -1,7 +1,5 @@
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
-import '../api/api_client.dart';
-import '../api/event_api.dart';
 import '../data/local/event_dao.dart';
 import '../data/models/taoyuan_event.dart';
 import '../data/models/ledger.dart';
@@ -12,7 +10,6 @@ const String _kEntity = 'event';
 /// 桃源账本：活动列表 + 发布 + 阶段金额。先落本地，再入队。
 class TaoyuanState extends ChangeNotifier {
   final EventDao _dao = EventDao();
-  final EventApi _api = EventApi(ApiClient.instance);
   final SyncService _sync = SyncService.instance;
   final Ledger ledger;
   TaoyuanState(this.ledger);

@@ -219,8 +219,11 @@ class _InvitePageState extends State<InvitePage> {
     try {
       final ledgerId = await CollaborationApi(ApiClient.instance)
           .acceptInvite(widget.token);
-      await context.read<LedgerListState>().sync();
-      final all = context.read<LedgerListState>().all;
+      if (!mounted) return;
+      final ledgerState = context.read<LedgerListState>();
+      await ledgerState.sync();
+      if (!mounted) return;
+      final all = ledgerState.all;
       final l = all.firstWhere((x) => x.serverId == ledgerId,
           orElse: () => all.first);
       if (!mounted) return;

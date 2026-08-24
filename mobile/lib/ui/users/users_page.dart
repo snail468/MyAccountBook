@@ -239,10 +239,11 @@ class _UsersPageState extends State<UsersPage> {
                     onPressed: () => showModalBottomSheet(
                       context: context,
                       isScrollControlled: true,
-                      builder: (_) => _AddUserSheet(
+                      builder: (sheetCtx) => _AddUserSheet(
                         onSave: (name, role, password) async {
+                          final nav = Navigator.of(sheetCtx);
                           await _add(name, role, password);
-                          if (mounted) Navigator.of(context).pop();
+                          if (mounted) nav.pop();
                         },
                       ),
                     ).then((_) {

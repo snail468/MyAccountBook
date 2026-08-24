@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../state/security_state.dart';
 import '../state/auth_state.dart';
 import '../ui/widgets/app_text_field.dart';
 import 'biometric_service.dart';

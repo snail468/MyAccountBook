@@ -614,7 +614,7 @@ class _WorkExpensesPageState extends State<WorkExpensesPage> {
 
     // ---- 明细 + 批量回款 ----
     children.add(const SectionLabel('明细'));
-    if (_anyPending)
+    if (_anyPending) {
       children.add(
         Padding(
           padding: const EdgeInsets.only(bottom: 8),
@@ -647,6 +647,7 @@ class _WorkExpensesPageState extends State<WorkExpensesPage> {
                 ),
         ),
       );
+    }
 
     final months = _byMonth.keys.toList()..sort((a, b) => b.compareTo(a));
     for (final m in months) {

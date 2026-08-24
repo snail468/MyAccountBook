@@ -7,7 +7,6 @@ import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/money.dart' as money;
-import '../../core/constants.dart';
 import '../../core/reward_method.dart';
 import '../../data/local/event_dao.dart';
 import '../../data/models/ledger.dart';
@@ -391,7 +390,7 @@ class _BodyState extends State<_Body> {
       backgroundColor: Colors.transparent,
       builder: (_) => ChangeNotifierProvider.value(
         value: store,
-        child: EditEventSheet(store: store, event: event),
+        child: _EditEventSheet(store: store, event: event),
       ),
     );
   }
@@ -459,7 +458,9 @@ class _BodyState extends State<_Body> {
     final ink400 = isDark ? AppColors.darkInk400 : AppColors.lightInk400;
 
     final groups = <String, List<TaoyuanEvent>>{};
-    for (final s in _kStatusOrder) groups[s] = [];
+    for (final s in _kStatusOrder) {
+      groups[s] = [];
+    }
     for (final e in store.topLevelEvents) {
       (groups[e.status] ??= []).add(e);
     }
@@ -966,7 +967,7 @@ class _EventCardState extends State<_EventCard> {
       backgroundColor: Colors.transparent,
       builder: (_) => ChangeNotifierProvider.value(
         value: store,
-        child: StageDetailSheet(store: store, event: event, stage: stage),
+        child: _StageDetailSheet(store: store, event: event, stage: stage),
       ),
     );
   }
@@ -1465,7 +1466,6 @@ class _MergeConfirmSheet extends StatefulWidget {
   final VoidCallback onCancel;
   final void Function(String parentId, String title) onConfirm;
   const _MergeConfirmSheet({
-    super.key,
     required this.events,
     required this.onCancel,
     required this.onConfirm,
@@ -1601,16 +1601,16 @@ class _MergeConfirmSheetState extends State<_MergeConfirmSheet> {
 
 // ───────────────────────── 编辑/新建活动弹层 ─────────────────────────
 
-class EditEventSheet extends StatefulWidget {
+class _EditEventSheet extends StatefulWidget {
   final _TaoyuanStore store;
   final TaoyuanEvent? event;
-  const EditEventSheet({super.key, required this.store, this.event});
+  const _EditEventSheet({required this.store, this.event});
 
   @override
-  State<EditEventSheet> createState() => _EditEventSheetState();
+  State<_EditEventSheet> createState() => __EditEventSheetState();
 }
 
-class _EditEventSheetState extends State<EditEventSheet> {
+class __EditEventSheetState extends State<_EditEventSheet> {
   late final TextEditingController _title;
   late final TextEditingController _content;
   late final TextEditingController _reward;
@@ -2138,22 +2138,21 @@ class _SegmentedStage extends StatelessWidget {
 
 // ───────────────────────── 阶段明细弹层（金额列表 + 增删改） ─────────────────────────
 
-class StageDetailSheet extends StatefulWidget {
+class _StageDetailSheet extends StatefulWidget {
   final _TaoyuanStore store;
   final TaoyuanEvent event;
   final String stage;
-  const StageDetailSheet({
-    super.key,
+  const _StageDetailSheet({
     required this.store,
     required this.event,
     required this.stage,
   });
 
   @override
-  State<StageDetailSheet> createState() => _StageDetailSheetState();
+  State<_StageDetailSheet> createState() => __StageDetailSheetState();
 }
 
-class _StageDetailSheetState extends State<StageDetailSheet> {
+class __StageDetailSheetState extends State<_StageDetailSheet> {
   List<EventAmount> get _amts => widget.store
       .amountsByEvent[widget.event.id]
       ?.where((a) => a.stage == widget.stage)
@@ -2188,7 +2187,7 @@ class _StageDetailSheetState extends State<StageDetailSheet> {
       backgroundColor: Colors.transparent,
       builder: (_) => ChangeNotifierProvider.value(
         value: widget.store,
-        child: AmountSheet(
+        child: _AmountSheet(
           store: widget.store,
           event: widget.event,
           stage: widget.stage,
@@ -2360,13 +2359,12 @@ class _AmountValue extends StatelessWidget {
 
 // ───────────────────────── 单条金额编辑弹层 ─────────────────────────
 
-class AmountSheet extends StatefulWidget {
+class _AmountSheet extends StatefulWidget {
   final _TaoyuanStore store;
   final TaoyuanEvent event;
   final String stage;
   final EventAmount? amount;
-  const AmountSheet({
-    super.key,
+  const _AmountSheet({
     required this.store,
     required this.event,
     required this.stage,
@@ -2374,10 +2372,10 @@ class AmountSheet extends StatefulWidget {
   });
 
   @override
-  State<AmountSheet> createState() => _AmountSheetState();
+  State<_AmountSheet> createState() => __AmountSheetState();
 }
 
-class _AmountSheetState extends State<AmountSheet> {
+class __AmountSheetState extends State<_AmountSheet> {
   late List<String> _methods;
   late String _method;
   late final TextEditingController _amount;
@@ -2514,7 +2512,6 @@ class _AmountSheetState extends State<AmountSheet> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
     final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
-    final text = isDark ? AppColors.darkPageBg : AppColors.lightSurface;
     final surface = isDark ? AppColors.darkSurface : AppColors.lightSurface;
 
     return Container(

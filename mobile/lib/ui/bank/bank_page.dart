@@ -42,8 +42,6 @@ class _BankPageState extends State<BankPage> {
   bool _revealed = false;
   /// 最近一次银行卡同步的错误（null 表示成功）。用于 UI 提示，避免静默吞错 [#5]
   String? _cardError;
-  /// 生物识别解锁的提示（如未检测到登录密码需回退密码）。
-  String? _bioHint;
   Timer? _lockTimer;
 
   /// 解锁时间戳（epoch ms）持久化键：解锁后 10 分钟内查看卡号无需再次验密，
@@ -79,7 +77,6 @@ class _BankPageState extends State<BankPage> {
       if (err != null) {
         setState(() {
           _revealed = false;
-          _bioHint = err;
         });
         _clearUnlock();
       }
@@ -239,7 +236,6 @@ class _BankPageState extends State<BankPage> {
   Widget build(BuildContext context) {
     context.watch<ThemeState>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
     final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
     final ink400 = isDark ? AppColors.darkInk400 : AppColors.lightInk400;
     final pageBg = isDark ? AppColors.darkPageBg : AppColors.lightPageBg;
@@ -294,10 +290,11 @@ class _BankPageState extends State<BankPage> {
                     onPressed: () => showModalBottomSheet(
                       context: context,
                       isScrollControlled: true,
-                      builder: (_) => _CardSheet(
+                      builder: (sheetCtx) => _CardSheet(
                         onSave: (c) async {
+                          final nav = Navigator.of(sheetCtx);
                           await _saveCard(c);
-                          if (mounted) Navigator.of(context).pop();
+                          if (mounted) nav.pop();
                         },
                       ),
                     ).then((_) {
@@ -325,11 +322,12 @@ class _BankPageState extends State<BankPage> {
                       onEdit: () => showModalBottomSheet(
                         context: context,
                         isScrollControlled: true,
-                        builder: (_) => _CardSheet(
+                        builder: (sheetCtx) => _CardSheet(
                           initial: c,
                           onSave: (updated) async {
+                            final nav = Navigator.of(sheetCtx);
                             await _saveCard(updated);
-                            if (mounted) Navigator.of(context).pop();
+                            if (mounted) nav.pop();
                           },
                         ),
                       ).then((_) {
@@ -565,7 +563,6 @@ class _BankCardTileState extends State<_BankCardTile> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
     final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
-    final ink400 = isDark ? AppColors.darkInk400 : AppColors.lightInk400;
     final blue = isDark ? AppColors.darkSemanticBlue : AppColors.lightSemanticBlue;
     final icon = card.type == '信用卡' ? '🏧' : '🏦';
 

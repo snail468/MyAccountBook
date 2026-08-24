@@ -380,7 +380,6 @@ class _CompareRow extends StatelessWidget {
     final hasBase = prev != 0;
     final diff = cur - prev;
     final up = diff > 0;
-    final down = diff < 0;
     // 对齐网页端 ChangeBadge：纯涨跌色（涨=红 / 跌=绿，股票涨跌惯例），
     // 与收入/支出无关；持平或无可比基数 = 灰。
     final color =
@@ -597,7 +596,7 @@ class _TrendChartState extends State<_TrendChart> {
                               behavior: HitTestBehavior.opaque,
                               onTap: () => setState(
                                   () => _active = _active == i ? null : i),
-                              child: Container(
+                              child: const SizedBox(
                                   width: double.infinity, height: double.infinity),
                             ),
                           ),
@@ -640,7 +639,7 @@ class _TrendChartState extends State<_TrendChart> {
                                 color: widget.incomeColor, fontSize: 12),
                           ),
                         ),
-                        TextSpan(text: ' · 支出 '),
+                        const TextSpan(text: ' · 支出 '),
                         WidgetSpan(
                           alignment: PlaceholderAlignment.middle,
                           child: Money(
@@ -732,11 +731,15 @@ class _TrendPainter extends CustomPainter {
         ..strokeJoin = StrokeJoin.round;
       if (pts.length > 1) {
         final path = Path()..moveTo(pts.first.dx, pts.first.dy);
-        for (var i = 1; i < pts.length; i++) path.lineTo(pts[i].dx, pts[i].dy);
+        for (var i = 1; i < pts.length; i++) {
+          path.lineTo(pts[i].dx, pts[i].dy);
+        }
         canvas.drawPath(path, linePaint);
       }
       final dotPaint = Paint()..color = color;
-      for (final p in pts) canvas.drawCircle(p, 2.5, dotPaint);
+      for (final p in pts) {
+        canvas.drawCircle(p, 2.5, dotPaint);
+      }
     }
 
     // 命中月份高亮：竖向虚线 + 两端实心点

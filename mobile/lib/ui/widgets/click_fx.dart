@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:audioplayers/audioplayers.dart';
 import '../../state/theme_state.dart';
@@ -167,7 +166,9 @@ class _RippleOverlayState extends State<_RippleOverlay>
 
   @override
   void dispose() {
-    for (final r in _ripples) r.controller.dispose();
+    for (final r in _ripples) {
+      r.controller.dispose();
+    }
     super.dispose();
   }
 
@@ -278,7 +279,7 @@ class _SparklePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = Color(0xE6FFFFFF) // rgba(255,255,255,0.9)
+      ..color = const Color(0xE6FFFFFF) // rgba(255,255,255,0.9)
       ..style = PaintingStyle.fill;
     final cx = size.width / 2;
     final cy = size.height / 2;

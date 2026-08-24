@@ -49,8 +49,6 @@ class _BodyState extends State<_Body> {
   Widget build(BuildContext context) {
     final state = context.watch<SearchState>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
-    final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
     final ink400 = isDark ? AppColors.darkInk400 : AppColors.lightInk400;
     final surface = isDark ? AppColors.darkSurface : AppColors.lightSurface;
     final border = isDark ? AppColors.darkBorder : AppColors.lightBorder;
@@ -304,7 +302,6 @@ class _FilterPanel extends StatelessWidget {
     final surface =
         isDark ? AppColors.darkSurface : AppColors.lightSurfaceSubtle;
     final border = isDark ? AppColors.darkBorder : AppColors.lightBorder;
-    final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
     final ink400 = isDark ? AppColors.darkInk400 : AppColors.lightInk400;
 
     return Container(
@@ -383,7 +380,7 @@ class _FilterPanel extends StatelessWidget {
               runSpacing: 8,
               children: kSearchSources
                   .map(
-                    (s) => _SourceChip(
+                    (s) => _sourceChip(
                       context,
                       s,
                       state.sources.contains(s),
@@ -539,7 +536,7 @@ class _DateField extends StatelessWidget {
 }
 
 /// 搜索范围切换芯片（选中=填充，未选=描边）。
-Widget _SourceChip(
+Widget _sourceChip(
   BuildContext context,
   String source,
   bool selected,
@@ -585,7 +582,6 @@ class _PanelButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
     final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
     final border = isDark ? AppColors.darkBorder : AppColors.lightBorder;
     final surface = isDark ? AppColors.darkSurface : AppColors.lightSurface;
@@ -798,7 +794,6 @@ class _EntryDetailSheet extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
     final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
-    final ink400 = isDark ? AppColors.darkInk400 : AppColors.lightInk400;
     final badgeBg = isDark ? AppColors.darkBorder : AppColors.lightInk100;
     final green = isDark ? AppColors.darkSemanticGreen : AppColors.lightSemanticGreen;
     final amountColor = result.direction == 'income' ? green : ink900;

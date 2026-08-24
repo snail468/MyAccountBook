@@ -1,4 +1,3 @@
-import 'package:sqflite/sqflite.dart';
 import '../../core/money.dart';
 import '../db/database.dart';
 import '../models/general_entry.dart';
@@ -65,7 +64,9 @@ class SearchDao {
     final ledgerNames = <String, String>{};
     try {
       final ledgers = await LedgerDao().listAll();
-      for (final l in ledgers) ledgerNames[l.id] = l.displayName;
+      for (final l in ledgers) {
+        ledgerNames[l.id] = l.displayName;
+      }
     } catch (_) {
       // 忽略：徽标回退到来源文案
     }

@@ -2,6 +2,7 @@
 ///
 /// 注意：账本协作用的是「邀请 token 链接」模型（/invite/<token>），不是按用户名
 /// 直接添加；旅游账本的「同伴」(TripMember) 是另一套实体，与此无关。
+library;
 
 enum LedgerRole { owner, editor, viewer }
 

@@ -141,7 +141,7 @@ class _SyncCard extends StatelessWidget {
     final state = context.watch<GeneralState>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final amberText =
-        isDark ? const Color(0xFCD34D) : const Color(0xB45309);
+        isDark ? const Color(0x00fcd34d) : const Color(0x00b45309);
     final amberBg = isDark ? const Color(0x33F59E0B) : const Color(0xFFFEF3C7);
     final amberBorder =
         isDark ? const Color(0x66F59E0B) : const Color(0xFFFDE68A);
@@ -189,7 +189,6 @@ class _SummaryCard extends StatelessWidget {
     final state = context.watch<GeneralState>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
-    final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
     final green = isDark ? AppColors.darkSemanticGreen : AppColors.lightSemanticGreen;
     final red = isDark ? AppColors.darkSemanticRed : AppColors.lightSemanticRed;
 
@@ -277,7 +276,7 @@ class _BudgetCard extends StatelessWidget {
     final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
     final red = isDark ? AppColors.darkSemanticRed : AppColors.lightSemanticRed;
     final green = isDark ? AppColors.darkSemanticGreen : AppColors.lightSemanticGreen;
-    final amber = const Color(0xFFF59E0B);
+    const amber = Color(0xFFF59E0B);
 
     final budget = state.ledger.budgetCents ?? 0;
     if (budget <= 0) return const SizedBox.shrink();
@@ -441,7 +440,7 @@ class _CategoryRow extends StatelessWidget {
     final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
     final red = isDark ? AppColors.darkSemanticRed : AppColors.lightSemanticRed;
     final green = isDark ? AppColors.darkSemanticGreen : AppColors.lightSemanticGreen;
-    final amber = const Color(0xFFF59E0B);
+    const amber = Color(0xFFF59E0B);
 
     final hasBudget = budget != null && budget! > 0;
     final ratio = hasBudget
@@ -1259,8 +1258,12 @@ class _CategoryManagerSheetState extends State<_CategoryManagerSheet> {
   @override
   void dispose() {
     _newCat.dispose();
-    for (final c in _monthCtl.values) c.dispose();
-    for (final c in _weekCtl.values) c.dispose();
+    for (final c in _monthCtl.values) {
+      c.dispose();
+    }
+    for (final c in _weekCtl.values) {
+      c.dispose();
+    }
     super.dispose();
   }
 

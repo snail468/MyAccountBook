@@ -204,36 +204,36 @@ class TaoyuanEvent {
   /// 从服务端 JSON 构造（拉取同步时用）。
   factory TaoyuanEvent.fromApi(Map<String, dynamic> j, String ledgerId,
       {String? localId}) {
-    final iso = (v) {
+    iso(v) {
       if (v is String) return DateTime.tryParse(v)?.millisecondsSinceEpoch;
       return null;
-    };
+    }
     return TaoyuanEvent(
       id: localId ?? (j['id'] as String),
       serverId: j['id'] as String,
       ledgerId: ledgerId,
       title: j['title'] as String,
-      startAt: iso(j['startAt']) as int?,
+      startAt: iso(j['startAt']),
       content: j['content'] as String?,
       rewardMethod: j['rewardMethod'] as String?,
       rewardMethods: j['rewardMethods'] as String?,
       reward: j['reward'] as String?,
       topicTag: j['topicTag'] as String?,
       contentImages: j['contentImages'] as String?,
-      publishedAt: iso(j['publishedAt']) as int? ??
+      publishedAt: iso(j['publishedAt']) ??
           DateTime.now().millisecondsSinceEpoch,
       participate: j['participate'] as bool? ?? true,
-      deadline: iso(j['deadline']) as int?,
+      deadline: iso(j['deadline']),
       predictedCents: j['predictedCents'] as int?,
       announcedCents: j['announcedCents'] as int?,
       paidCents: j['paidCents'] as int?,
-      predictedAt: iso(j['predictedAt']) as int?,
-      announcedAt: iso(j['announcedAt']) as int?,
-      paidAt: iso(j['paidAt']) as int?,
+      predictedAt: iso(j['predictedAt']),
+      announcedAt: iso(j['announcedAt']),
+      paidAt: iso(j['paidAt']),
       status: j['status'] as String? ?? 'published',
       note: j['note'] as String?,
       parentId: j['parentId'] as String?,
-      deletedAt: iso(j['deletedAt']) as int?,
+      deletedAt: iso(j['deletedAt']),
       synced: 1,
     );
   }

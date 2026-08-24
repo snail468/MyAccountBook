@@ -143,7 +143,9 @@ class StatsState extends ChangeNotifier {
     List<String> keys,
   ) {
     final map = <String, ({int income, int expense})>{};
-    for (final k in keys) map[k] = (income: 0, expense: 0);
+    for (final k in keys) {
+      map[k] = (income: 0, expense: 0);
+    }
     for (final r in rows) {
       final key = _monthKeyOf(r.occurredAt);
       final cur = map[key];
