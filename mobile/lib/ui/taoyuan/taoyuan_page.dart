@@ -511,7 +511,8 @@ class _BodyState extends State<_Body> {
                     ),
                 ],
               ),
-              if (!_selecting)
+              // 只读协作账本(viewer)隐藏「新活动」。
+              if (!_selecting && store.ledger.canRecord)
                 Padding(
                   padding: const EdgeInsets.only(top: 4, bottom: 4),
                   child: AppPrimaryButton(

@@ -149,12 +149,14 @@ class _Body extends StatelessWidget {
 
               const SizedBox(height: 16),
 
-              // ---- 记一笔 ----
-              AppPrimaryButton(
-                label: '+ 记一笔',
-                onPressed: () => _openForm(context, state, month, null),
-              ),
-              const SizedBox(height: 8),
+              // ---- 记一笔（只读协作账本 viewer 隐藏）----
+              if (state.ledger.canRecord) ...[
+                AppPrimaryButton(
+                  label: '+ 记一笔',
+                  onPressed: () => _openForm(context, state, month, null),
+                ),
+                const SizedBox(height: 8),
+              ],
 
               const SectionLabel('本月记录'),
 

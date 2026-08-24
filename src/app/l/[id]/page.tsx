@@ -148,9 +148,9 @@ export default async function LedgerPage({ params }: { params: Promise<{ id: str
     },
   });
   if (!ledger || ledger.members.length === 0) notFound();
-  // 角色暂时只在服务器端做拦截；UI 上的"隐藏写按钮"要等成员管理面板一并做。
-  // 拿出来只是为了往下游 view 组件传（当前签名还没接，先留 void）。
-  void ledger.members[0]!.role;
+  // 受邀 viewer(只读)协作者隐藏「记一笔」等写入入口；owner/editor 可写。
+  // 服务端 route handler 仍按 minRole 拦截写操作，这里只是 UI 不再显示入口。
+  const canEdit = ledger.members[0]!.role !== 'viewer';
   const displayName = displaySharedLedgerName(
     ledger.name,
     ledger.userId,
@@ -185,6 +185,7 @@ export default async function LedgerPage({ params }: { params: Promise<{ id: str
           initialEntries={data.entries}
           initialCursor={data.nextCursor}
           recentUsage={data.recentUsage}
+          canEdit={canEdit}
         />
       </div>
     );
@@ -218,6 +219,7 @@ export default async function LedgerPage({ params }: { params: Promise<{ id: str
           duringCursor={data.duringCursor}
           daily={data.daily}
           currencyTotals={data.currencyTotals}
+          canEdit={canEdit}
         />
       </div>
     );
@@ -247,7 +249,7 @@ export default async function LedgerPage({ params }: { params: Promise<{ id: str
       '@/app/taoyuan/_views/TaoyuanSection'
     );
     return (
-      <TaoyuanSection ledgerId={ledger.id} ledgerName={`🌸 ${displayName}`} backHref="/" />
+      <TaoyuanSection ledgerId={ledger.id} ledgerName={`🌸 ${displayName}`} backHref="/" canEdit={canEdit} />
     );
   }
 

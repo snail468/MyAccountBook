@@ -20,11 +20,14 @@ export default async function WorkMonthSection({
   ledgerName,
   month,
   backHref,
+  canEdit = true,
 }: {
   ledgerId: string;
   ledgerName: string;
   month: string;
   backHref: string;
+  /** 只读协作者(viewer)传 false：隐藏「记一笔」入口。默认可写（owner 自有路由）。 */
+  canEdit?: boolean;
 }) {
   const entries = await prisma.entry.findMany({
     where: { ledgerId, ...NOT_DELETED, yearMonth: month },
@@ -58,7 +61,7 @@ export default async function WorkMonthSection({
         </div>
       </div>
 
-      <NewEntryFlow yearMonth={month} ledgerId={ledgerId} />
+      {canEdit && <NewEntryFlow yearMonth={month} ledgerId={ledgerId} />}
 
       <div className="mt-6 space-y-2">
         {entries.length === 0 && (

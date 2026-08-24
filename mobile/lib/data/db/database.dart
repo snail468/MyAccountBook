@@ -11,7 +11,7 @@ class AppDatabase {
   AppDatabase._internal();
   static final AppDatabase instance = AppDatabase._internal();
 
-  static const int _version = 8;
+  static const int _version = 9;
   Database? _db;
 
   Future<Database> get database async {
@@ -67,6 +67,11 @@ class AppDatabase {
     // 遗漏导致新装库缺失；此处幂等补列 + 新装表结构修正）。
     if (oldV < 8) {
       await _migrateToV8(db);
+    }
+    // 版本 9：账本补 role 列（当前用户在该账本的角色 owner/editor/viewer），
+    // 只读协作账本据此隐藏「记一笔」。幂等迁移。
+    if (oldV < 9) {
+      await _migrateToV9(db);
     }
   }
 
@@ -184,6 +189,14 @@ class AppDatabase {
     });
   }
 
+  /// 升级到 v9：账本补 role 列（当前用户角色 owner/editor/viewer，服务端 myRole）。
+  /// 只读协作账本据此隐藏「记一笔」等写入入口。幂等迁移。
+  Future<void> _migrateToV9(Database db) async {
+    await _addColumnsIfMissing(db, 'ledgers', const {
+      'role': 'TEXT',
+    });
+  }
+
   /// 对指定表探测列，仅 ALTER ADD 缺失列（幂等）。
   Future<void> _addColumnsIfMissing(
     Database db,
@@ -255,6 +268,7 @@ class AppDatabase {
         is_own INTEGER NOT NULL DEFAULT 0,
         owner_name TEXT,
         last_pull_at INTEGER,
+        role TEXT,
         synced INTEGER NOT NULL DEFAULT 1
       );
     ''');

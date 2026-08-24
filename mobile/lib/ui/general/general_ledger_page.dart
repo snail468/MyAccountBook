@@ -96,8 +96,11 @@ class _GeneralLedgerScaffold extends StatelessWidget {
                   const _WeekCategoryCard(),
                 ],
                 const SizedBox(height: 16),
-                const _AddButton(),
-                const SizedBox(height: 16),
+                // 只读协作账本(viewer)隐藏「记一笔」。
+                if (state.ledger.canRecord) ...const [
+                  _AddButton(),
+                  SizedBox(height: 16),
+                ],
                 const _EntryList(),
               ],
             ],

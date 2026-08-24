@@ -27,6 +27,7 @@ export default async function SharedWorkMonthPage({
     },
   });
   if (!ledger || ledger.kind !== 'work' || ledger.members.length === 0) notFound();
+  const canEdit = ledger.members[0]!.role !== 'viewer';
 
   return (
     <WorkMonthSection
@@ -34,6 +35,7 @@ export default async function SharedWorkMonthPage({
       ledgerName={`💼 ${ledger.name}`}
       month={month}
       backHref={`/l/${ledger.id}`}
+      canEdit={canEdit}
     />
   );
 }

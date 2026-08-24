@@ -11,6 +11,7 @@ export default function TaoyuanClient({
   initialEvents,
   initialPaidCursor,
   ledgerId,
+  canEdit = true,
 }: {
   initialEvents: ClientEvent[];
   /** 只有"已到账"归档需要翻页；活跃项已全量加载 */
@@ -19,6 +20,8 @@ export default function TaoyuanClient({
    * Phase 3：加载更多分页 / 新建活动都要按此账本走；缺省 = 请求方 owner 的桃源。
    */
   ledgerId?: string;
+  /** 只读协作者(viewer)传 false：隐藏「新活动」/「选择」等写入入口。默认可写。 */
+  canEdit?: boolean;
 }) {
   const [selecting, setSelecting] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
@@ -93,7 +96,7 @@ export default function TaoyuanClient({
               ? `共 ${events.length} 个活动`
               : ''}
         </div>
-        {events.length > 0 && (
+        {canEdit && events.length > 0 && (
           <button
             onClick={() => (selecting ? exitSelecting() : setSelecting(true))}
             className="text-sm text-ink-700 dark:text-ink-200 underline"
@@ -103,7 +106,7 @@ export default function TaoyuanClient({
         )}
       </div>
 
-      {!selecting && <NewEventButton ledgerId={ledgerId} />}
+      {!selecting && canEdit && <NewEventButton ledgerId={ledgerId} />}
 
       <div className="mt-6 space-y-6">
         {STATUS_ORDER.map((s) => {

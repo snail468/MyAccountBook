@@ -56,6 +56,9 @@ class _ManageLedgersPageState extends State<ManageLedgersPage> {
     );
     if (!ok || !mounted) return;
     await LedgerDao().softDelete(l.id);
+    // 关键：把删除同步到服务端，否则下次 _pullAll 会把服务端仍在的账本 upsert
+    // 回来（GET /ledgers 只排除已删的），本地软删被覆盖成"复活"。[删除复活修复]
+    await _propagateLedgerDelete(l, permanent: false);
     await _load();
   }
 
@@ -68,10 +71,43 @@ class _ManageLedgersPageState extends State<ManageLedgersPage> {
     );
     if (!ok || !mounted) return;
     await LedgerDao().upsert(l.copyWith(deletedAt: null, synced: 0));
+    // 恢复也要通知服务端：否则服务端仍是软删态，下次拉取时该账本不在列表里，
+    // deleteSyncedNotIn 会把刚恢复的本地行再删掉（恢复被"撤销"）。
+    if (l.serverId != null && l.isOwn != false) {
+      await SyncService.instance.enqueueCoalesced(
+        method: 'POST',
+        path: '/ledgers/${l.serverId}/restore',
+        entity: 'ledger',
+        entityLocalId: l.id,
+      );
+    }
     if (!mounted) return;
     ScaffoldMessenger.of(context)
         .showSnackBar(const SnackBar(content: Text('已恢复')));
     await _load();
+  }
+
+  /// 把账本删除同步到服务端。
+  ///
+  /// - 未同步的本地新建账本（serverId==null）：清掉待推送的 POST 创建操作即可，
+  ///   否则会被创建到服务端后又在下次拉取时"复活"。
+  /// - 协作账本（isOwn==false）：本人无删除权限，不推送（UI 亦不提供删除入口）。
+  /// - 自有已同步账本：入队 DELETE（permanent 时带 ?permanent=1 硬删），
+  ///   用 coalesced 顶掉该账本此前可能残留的编辑/软删待操作。
+  Future<void> _propagateLedgerDelete(Ledger l, {required bool permanent}) async {
+    if (l.serverId == null) {
+      await SyncService.instance.removePendingFor(l.id);
+      return;
+    }
+    if (l.isOwn == false) return;
+    await SyncService.instance.enqueueCoalesced(
+      method: 'DELETE',
+      path: permanent
+          ? '/ledgers/${l.serverId}?permanent=1'
+          : '/ledgers/${l.serverId}',
+      entity: 'ledger',
+      entityLocalId: l.id,
+    );
   }
 
   Future<void> _purge(Ledger l) async {
@@ -86,6 +122,8 @@ class _ManageLedgersPageState extends State<ManageLedgersPage> {
       confirmText: '永久删除',
     );
     if (!ok || !mounted) return;
+    // 先入队服务端硬删（需要 serverId，趁本地行还在），再物理删本地行。
+    await _propagateLedgerDelete(l, permanent: true);
     await LedgerDao().delete(l.id);
     if (!mounted) return;
     ScaffoldMessenger.of(context)
@@ -106,6 +144,10 @@ class _ManageLedgersPageState extends State<ManageLedgersPage> {
     final green = isDark ? AppColors.darkSemanticGreen : AppColors.lightSemanticGreen;
 
     final active = _all.where((l) => l.deletedAt == null).toList();
+    // 拆分：自有账本（isOwn==true 或本地未同步 null）可删；受邀协作账本（isOwn==false）
+    // 本人无删除权限，单独成段、只读展示「受邀协作」，不提供删除入口。[#协作只读]
+    final owned = active.where((l) => l.isOwn != false).toList();
+    final collab = active.where((l) => l.isOwn == false).toList();
     final recycled = _all.where((l) => l.deletedAt != null).toList();
 
     final maxOrder = _all.isEmpty
@@ -132,14 +174,14 @@ class _ManageLedgersPageState extends State<ManageLedgersPage> {
                 ),
 
                 // ① 我的账本
-                _sectionTitle('我的账本', '${active.length} 个', headColor, ink400),
+                _sectionTitle('我的账本', '${owned.length} 个', headColor, ink400),
                 const SizedBox(height: 8),
                 if (_loading)
                   _hint('加载中…', ink400)
-                else if (active.isEmpty)
+                else if (owned.isEmpty)
                   _hint('还没有账本，从下方添加一个', ink500)
                 else
-                  ...active.map(
+                  ...owned.map(
                     (l) => _LedgerTile(
                       ledger: l,
                       ink900: ink900,
@@ -148,6 +190,20 @@ class _ManageLedgersPageState extends State<ManageLedgersPage> {
                       onDelete: _softDelete,
                     ),
                   ),
+
+                // ①' 受邀协作（他人共享给我、本人非 owner）：只读展示，无删除入口
+                if (collab.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  _sectionTitle('协作账本', '${collab.length} 个', headColor, ink400),
+                  const SizedBox(height: 8),
+                  ...collab.map(
+                    (l) => _CollabLedgerTile(
+                      ledger: l,
+                      ink900: ink900,
+                      ink500: ink500,
+                    ),
+                  ),
+                ],
 
                 const SizedBox(height: 16),
 
@@ -348,6 +404,53 @@ class _LedgerTile extends StatelessWidget {
                   child: Text('删除',
                       style: TextStyle(color: red, fontSize: 13)),
                 ),
+              ],
+            ),
+          ),
+        ),
+      );
+}
+
+/// 受邀协作账本卡片：他人共享给我、本人非 owner。只读展示，无删除入口。
+/// 标题走 [Ledger.displayName]（自动带「owner · 」前缀），副标题「类型 · 共享」，
+/// 右侧「受邀协作」标签替代删除按钮。
+class _CollabLedgerTile extends StatelessWidget {
+  final Ledger ledger;
+  final Color ink900;
+  final Color ink500;
+
+  const _CollabLedgerTile({
+    required this.ledger,
+    required this.ink900,
+    required this.ink500,
+  });
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: AppCard(
+          frosted: false,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Text(ledger.icon ?? '📒',
+                    style: TextStyle(fontSize: 24, color: ink900)),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(ledger.displayName,
+                          style: TextStyle(color: ink900, fontSize: 15)),
+                      const SizedBox(height: 2),
+                      Text('${_kindLabel(ledger.kind)} · 共享',
+                          style: TextStyle(color: ink500, fontSize: 13)),
+                    ],
+                  ),
+                ),
+                Text('受邀协作',
+                    style: TextStyle(color: ink500, fontSize: 13)),
               ],
             ),
           ),

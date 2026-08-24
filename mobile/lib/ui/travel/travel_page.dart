@@ -479,12 +479,15 @@ class _TravelBodyState extends State<_TravelBody> {
                   ),
                 ),
               const SizedBox(height: 12),
-              AppPrimaryButton(
-                label: state.members.isEmpty ? '请先添加成员' : '+ 记一笔',
-                onPressed:
-                    state.members.isEmpty ? null : () => _openExpense(null),
-              ),
-              const SizedBox(height: 12),
+              // 只读协作账本(viewer)隐藏「记一笔」。
+              if (state.ledger.canRecord) ...[
+                AppPrimaryButton(
+                  label: state.members.isEmpty ? '请先添加成员' : '+ 记一笔',
+                  onPressed:
+                      state.members.isEmpty ? null : () => _openExpense(null),
+                ),
+                const SizedBox(height: 12),
+              ],
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton(

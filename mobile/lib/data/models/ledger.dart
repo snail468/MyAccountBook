@@ -19,6 +19,9 @@ class Ledger {
   // 协同共享：服务端标记当前用户是否为 owner，以及 owner 用户名（用于前缀显示）。
   final bool? isOwn;
   final String? ownerName;
+  // 当前用户在该账本的角色：owner / editor / viewer（服务端 myRole）。
+  // null = 本地自建未同步（视为可写）。viewer=只读，隐藏「记一笔」等写入入口。
+  final String? role;
   // 增量同步水线：上次成功拉取该账本条目变更的时间戳（epoch ms）。null = 尚未拉过。
   final int? lastPullAt;
 
@@ -41,6 +44,7 @@ class Ledger {
     this.synced = 1,
     this.isOwn,
     this.ownerName,
+    this.role,
     this.lastPullAt,
   });
 
@@ -63,6 +67,7 @@ class Ledger {
         synced: m['synced'] as int? ?? 1,
         isOwn: (m['is_own'] as int? ?? 0) == 1 ? true : (m['is_own'] == null ? null : false),
         ownerName: m['owner_name'] as String?,
+        role: m['role'] as String?,
         lastPullAt: m['last_pull_at'] as int?,
       );
 
@@ -85,6 +90,7 @@ class Ledger {
         'synced': synced,
         'is_own': isOwn == true ? 1 : 0,
         'owner_name': ownerName,
+        'role': role,
         'last_pull_at': lastPullAt,
       };
 
@@ -108,6 +114,7 @@ class Ledger {
         synced: 1,
         isOwn: j['isOwn'] as bool?,
         ownerName: j['ownerName'] as String?,
+        role: j['myRole'] as String?,
       );
 
   static int? _toMillis(dynamic v) {
@@ -140,6 +147,7 @@ class Ledger {
     int? synced,
     bool? isOwn,
     String? ownerName,
+    String? role,
     int? lastPullAt,
   }) =>
       Ledger(
@@ -161,6 +169,7 @@ class Ledger {
         synced: synced ?? this.synced,
         isOwn: isOwn ?? this.isOwn,
         ownerName: ownerName ?? this.ownerName,
+        role: role ?? this.role,
         lastPullAt: lastPullAt ?? this.lastPullAt,
       );
 
@@ -168,4 +177,8 @@ class Ledger {
   /// 本地自建或未同步（ownerName 为空）账本不加前缀，避免误标。
   String get displayName =>
       (ownerName != null && isOwn != true) ? '$ownerName · $name' : name;
+
+  /// 当前用户是否可写入（记一笔 / 编辑 / 删除条目）。
+  /// viewer=只读；owner/editor=可写；role 为 null（本地自建未同步）视为可写。
+  bool get canRecord => role != 'viewer';
 }

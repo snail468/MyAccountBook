@@ -68,6 +68,10 @@ export async function GET(_req: Request) {
     const isOwn = l.members.some(
       (m) => m.userId === user.id && m.role === 'owner',
     );
+    // 当前用户在该账本的角色（owner / editor / viewer）。原生 App 据此隐藏
+    // 只读(viewer)协作账本的「记一笔」等写入入口。缺省 viewer（最保守）。
+    const myRole =
+      l.members.find((m) => m.userId === user.id)?.role ?? 'viewer';
     return {
       id: l.id,
       kind: l.kind,
@@ -77,6 +81,7 @@ export async function GET(_req: Request) {
       order: l.order,
       archived: l.archived,
       isOwn,
+      myRole,
       ownerName: owner?.user.username ?? null,
       budgetCents: l.budgetCents,
       customCategories: l.customCategories,

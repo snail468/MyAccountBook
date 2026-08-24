@@ -59,10 +59,13 @@ export default async function TaoyuanSection({
   ledgerId,
   ledgerName,
   backHref,
+  canEdit = true,
 }: {
   ledgerId: string;
   ledgerName: string;
   backHref: string;
+  /** 只读协作者(viewer)传 false：隐藏「新活动」等写入入口。默认可写（owner 自有路由）。 */
+  canEdit?: boolean;
 }) {
   const data = await loadTaoyuan(ledgerId);
 
@@ -87,6 +90,7 @@ export default async function TaoyuanSection({
         initialEvents={data.events}
         initialPaidCursor={data.paidCursor}
         ledgerId={ledgerId}
+        canEdit={canEdit}
       />
     </div>
   );

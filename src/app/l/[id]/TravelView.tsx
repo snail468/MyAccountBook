@@ -103,6 +103,7 @@ export default function TravelView({
   daily,
   currencyTotals,
   readOnly,
+  canEdit = true,
   initialAllExpenses,
 }: {
   ledger: LedgerMeta;
@@ -126,6 +127,10 @@ export default function TravelView({
   /** 只读分享页：隐藏所有写操作（记一笔/编辑/删除/成员管理/设置），
    *  报告与结算单改用服务端预拉全量数据，不依赖登录态 */
   readOnly?: boolean;
+  /** 只读协作者(viewer)传 false：隐藏「记一笔」等写入入口。默认可写。
+   *  与 readOnly 区别：readOnly 是免登录分享页且改数据源；canEdit=false 仍是登录态、
+   *  正常数据路径，只是无写权限。 */
+  canEdit?: boolean;
   /** readOnly 时直接用于报告/结算单的全量支出，省去客户端登录态拉取 */
   initialAllExpenses?: Expense[];
 }) {
@@ -320,7 +325,7 @@ export default function TravelView({
     if (res.ok) startTransition(() => router.refresh());
   }
 
-  const canRecord = !readOnly && members.length > 0;
+  const canRecord = !readOnly && canEdit && members.length > 0;
 
   return (
     <>
@@ -477,13 +482,15 @@ export default function TravelView({
 
       {!readOnly && (
         <>
-          <button
-            onClick={() => canRecord && setShowAdd(true)}
-            disabled={!canRecord}
-            className="mt-3 w-full py-4 rounded-2xl bg-ink-900 dark:bg-ink-100 text-white dark:text-ink-900 text-base font-medium disabled:opacity-50"
-          >
-            {canRecord ? '+ 记一笔' : '请先添加成员'}
-          </button>
+          {canEdit && (
+            <button
+              onClick={() => canRecord && setShowAdd(true)}
+              disabled={!canRecord}
+              className="mt-3 w-full py-4 rounded-2xl bg-ink-900 dark:bg-ink-100 text-white dark:text-ink-900 text-base font-medium disabled:opacity-50"
+            >
+              {canRecord ? '+ 记一笔' : '请先添加成员'}
+            </button>
+          )}
 
           <button
             onClick={async () => {

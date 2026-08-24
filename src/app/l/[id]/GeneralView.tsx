@@ -62,6 +62,7 @@ export default function GeneralView({
   initialEntries,
   initialCursor,
   recentUsage,
+  canEdit = true,
 }: {
   ledger: LedgerMeta;
   /** 本月汇总由服务端用 SQL 聚合算好 —— 分页后客户端手里没有全量数据，算不出来 */
@@ -70,6 +71,8 @@ export default function GeneralView({
   initialCursor: string | null;
   /** 类别智能排序用：最近 N 条条目的方向 + 时间，直接透传给录入/编辑弹窗 */
   recentUsage: RecentUse[];
+  /** 只读协作者(viewer)传 false：隐藏「记一笔」等写入入口。默认可写。 */
+  canEdit?: boolean;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -395,22 +398,24 @@ export default function GeneralView({
         </div>
       )}
 
-      <button
-        onClick={async () => {
-          // 离线时首次点开：dynamic chunk 可能没进过缓存（用户没在线打开过账本），
-          // 直接打 setShowRecord 会让 next/dynamic 抛未捕获异常，掉进
-          // "Application error"。这里先探一下 chunk 能否加载，不能就跳静态兜底页
-          try {
-            await import('./general/RecordModal');
-            setShowRecord(true);
-          } catch {
-            window.location.href = '/offline-record.html';
-          }
-        }}
-        className="mt-4 w-full py-4 rounded-2xl bg-ink-900 dark:bg-ink-100 text-white dark:text-ink-900 text-base font-medium active:scale-[0.98]"
-      >
-        + 记一笔
-      </button>
+      {canEdit && (
+        <button
+          onClick={async () => {
+            // 离线时首次点开：dynamic chunk 可能没进过缓存（用户没在线打开过账本），
+            // 直接打 setShowRecord 会让 next/dynamic 抛未捕获异常，掉进
+            // "Application error"。这里先探一下 chunk 能否加载，不能就跳静态兜底页
+            try {
+              await import('./general/RecordModal');
+              setShowRecord(true);
+            } catch {
+              window.location.href = '/offline-record.html';
+            }
+          }}
+          className="mt-4 w-full py-4 rounded-2xl bg-ink-900 dark:bg-ink-100 text-white dark:text-ink-900 text-base font-medium active:scale-[0.98]"
+        >
+          + 记一笔
+        </button>
+      )}
 
       <div className="mt-6 space-y-4">
         {dayKeys.length === 0 && (
