@@ -118,6 +118,12 @@ class _HomePageState extends State<HomePage> {
     try {
       final ledgers = context.read<LedgerListState>().all;
 
+      // DAO 无状态（仅持有 AppDatabase 单例）：复用同一实例，避免在循环里反复 new。
+      final workDao = WorkEntryDao();
+      final generalDao = GeneralEntryDao();
+      final eventDao = EventDao();
+      final tripDao = TripDao();
+
       final workLedgers =
           ledgers.where((l) => l.kind == AppConfig.kindWork).toList();
       final taoyuanLedgers =
@@ -142,11 +148,11 @@ class _HomePageState extends State<HomePage> {
       final sharedWorkCount = <String, int>{};
       for (final l in sharedWorkLedgers) {
         sharedWorkCount[l.id] =
-            (await WorkEntryDao().listByLedger(l.id)).length;
+            (await workDao.listByLedger(l.id)).length;
       }
       final sharedTaoyuanCount = <String, int>{};
       for (final l in sharedTaoyuanLedgers) {
-        sharedTaoyuanCount[l.id] = await EventDao().pendingCount(l.id);
+        sharedTaoyuanCount[l.id] = await eventDao.pendingCount(l.id);
       }
 
       // ---- 总收入 A 的分量 ----
@@ -155,17 +161,36 @@ class _HomePageState extends State<HomePage> {
 
       int B = 0;
       if (_ownWork != null) {
-        B = (await WorkEntryDao().cumulativeTotals(_ownWork!.id)).income;
+        B = (await workDao.cumulativeTotals(_ownWork!.id)).income;
       }
       int C = 0, D = 0;
       if (_ownTaoyuan != null) {
-        final r = await EventDao().rewardTotals(_ownTaoyuan!.id);
+        final r = await eventDao.rewardTotals(_ownTaoyuan!.id);
         C = r.cash;
         D = r.jdcard;
         _otherReward = r.other;
         _countReward = r.count;
         _textReward = r.text;
-        _pendingCount = await EventDao().pendingCount(_ownTaoyuan!.id);
+        _pendingCount = await eventDao.pendingCount(_ownTaoyuan!.id);
+      }
+
+      // 普通账本累计（进项/出项来自同一次查询）：预先算好，供下方进项/出项两段
+      // 复用，消除此前对每本普通账本重复调用 cumulativeTotals 两次的冗余查询。
+      final generalCums = <String, ({int income, int expense})>{};
+      for (final l in generalLedgers) {
+        generalCums[l.id] = await generalDao.cumulativeTotals(l.id);
+      }
+      // 旅游账本：花费合计 + 成员数一次算好，供进项分量与卡片汇总复用
+      // （此前进项分量与卡片各查一次 listExpenses，成员再单独查）。
+      final travelData = <String, ({int spent, int members})>{};
+      for (final l in travelLedgers) {
+        final exps = await tripDao.listExpenses(l.id);
+        final mems = await tripDao.listMembers(l.id);
+        var spent = 0;
+        for (final e in exps) {
+          if (e.deletedAt == null) spent += e.amountBaseCents;
+        }
+        travelData[l.id] = (spent: spent, members: mems.length);
       }
 
       if (_ownWork != null) {
@@ -194,32 +219,29 @@ class _HomePageState extends State<HomePage> {
         ));
       }
       for (final l in generalLedgers) {
-        final cum = await GeneralEntryDao().cumulativeTotals(l.id);
         components.add(IncomeComponent(
           key: 'general:${l.id}',
           letter: letterFor(),
           name: '${l.displayName} · 进项',
-          cents: cum.income,
+          cents: generalCums[l.id]!.income,
           sign: 1,
         ));
       }
       for (final l in generalLedgers) {
-        final cum = await GeneralEntryDao().cumulativeTotals(l.id);
         components.add(IncomeComponent(
           key: 'general-expense:${l.id}',
           letter: letterFor(),
           name: '${l.displayName} · 出项',
-          cents: cum.expense,
+          cents: generalCums[l.id]!.expense,
           sign: -1,
         ));
       }
       for (final l in travelLedgers) {
-        final spent = await _travelCumulative(l.id);
         components.add(IncomeComponent(
           key: 'travel-expense:${l.id}',
           letter: letterFor(),
           name: '${l.displayName} · 出项',
-          cents: spent,
+          cents: travelData[l.id]!.spent,
           sign: -1,
         ));
       }
@@ -240,9 +262,9 @@ class _HomePageState extends State<HomePage> {
         final custom = CustomCategories.parse(l.customCategories);
         if (custom.budgets.isEmpty && custom.budgetsWeekly.isEmpty) continue;
         final monthSpend =
-            await GeneralEntryDao().categorySpend(l.id, monthStart, monthEnd);
+            await generalDao.categorySpend(l.id, monthStart, monthEnd);
         final weekSpend =
-            await GeneralEntryDao().categorySpend(l.id, weekStart, weekEnd);
+            await generalDao.categorySpend(l.id, weekStart, weekEnd);
         var overCount = 0;
         for (final e in custom.budgets.entries) {
           if ((monthSpend[e.key] ?? 0) > e.value) overCount += 1;
@@ -264,7 +286,7 @@ class _HomePageState extends State<HomePage> {
       final ym = '${now.year}-${now.month.toString().padLeft(2, '0')}';
       final cards = <_HomeLedgerCard>[];
       for (final l in generalLedgers) {
-        final t = await GeneralEntryDao().monthlyTotals(l.id, ym);
+        final t = await generalDao.monthlyTotals(l.id, ym);
         var summary =
             '本月支出 ${money.Money.formatPlain(t.expense)} · 收入 ${money.Money.formatPlain(t.income)}';
         if (l.budgetCents != null && l.budgetCents! > 0) {
@@ -278,16 +300,11 @@ class _HomePageState extends State<HomePage> {
         ));
       }
       for (final l in travelLedgers) {
-        final members = await TripDao().listMembers(l.id);
-        final expenses = await TripDao().listExpenses(l.id);
-        var spent = 0;
-        for (final e in expenses) {
-          if (e.deletedAt == null) spent += e.amountBaseCents;
-        }
+        final td = travelData[l.id]!;
         cards.add(_HomeLedgerCard(
           ledger: l,
-          summary: '${members.length} 人 · 已花 '
-              '${money.Money.formatPlain(spent)} ${l.baseCurrency ?? ''}',
+          summary: '${td.members} 人 · 已花 '
+              '${money.Money.formatPlain(td.spent)} ${l.baseCurrency ?? ''}',
         ));
       }
 
@@ -304,15 +321,6 @@ class _HomePageState extends State<HomePage> {
     } catch (_) {
       // 汇总失败仅静默，保留已有 UI。
     }
-  }
-
-  Future<int> _travelCumulative(String ledgerId) async {
-    final expenses = await TripDao().listExpenses(ledgerId);
-    var spent = 0;
-    for (final e in expenses) {
-      if (e.deletedAt == null) spent += e.amountBaseCents;
-    }
-    return spent;
   }
 
   /// 从同类型账本列表中挑选"我的"那一本：优先 isOwn==true；若都无标记

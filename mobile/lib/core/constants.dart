@@ -16,9 +16,15 @@ class AppConfig {
   /// 生产环境服务端地址（release / profile 构建生效）。
   static const String _releaseApiBaseUrl = 'https://jz.686295.xyz';
 
-  /// 当前生效的 API 基地址：debug 连本地、release 连线上，构建时自动切换，无需手动改。
-  static const String apiBaseUrl =
-      kDebugMode ? _debugApiBaseUrl : _releaseApiBaseUrl;
+  /// 当前生效的 API 基地址。
+  ///
+  /// 优先取构建期注入的 `--dart-define=API_BASE_URL=...`（CI / 多环境切换用，
+  /// 无需改源码）；未注入时回退到 debug 连本地、release 连线上的默认值。
+  /// 例：`flutter build apk --dart-define=API_BASE_URL=https://staging.example.com`
+  static const String apiBaseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: kDebugMode ? _debugApiBaseUrl : _releaseApiBaseUrl,
+  );
 
   /// Ledger 四种类型。
   static const String kindWork = 'work';
