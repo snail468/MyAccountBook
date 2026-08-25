@@ -3,7 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
-import '../../core/general_categories.dart' show iconOf, defaultCategories, CustomCategories;
+import '../../core/general_categories.dart'
+    show iconOf, defaultCategories, CustomCategories, GeneralCategory;
 import '../../core/constants.dart';
 import '../../core/money.dart' as money;
 import '../../data/models/general_entry.dart';
@@ -17,6 +18,7 @@ import '../widgets/image_picker_field.dart';
 import '../widgets/money.dart';
 import '../widgets/page_header.dart';
 import '../collaborators/collaborators_page.dart';
+import '../widgets/emoji_picker.dart';
 
 /// 普通账本页（1:1 还原网页端 src/app/l/[id]/GeneralView）。
 ///
@@ -464,7 +466,10 @@ class _CategoryRow extends StatelessWidget {
         children: [
           Row(
             children: [
-              Text(iconOf(name), style: const TextStyle(fontSize: 16)),
+              Text(
+                  iconOf(name,
+                      context.read<GeneralState>().ledger.customCategories),
+                  style: const TextStyle(fontSize: 16)),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(name,
@@ -733,7 +738,9 @@ class _EntryRowTile extends StatelessWidget {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 alignment: Alignment.center,
-                child: Text(iconOf(entry.category),
+                child: Text(
+                    iconOf(entry.category,
+                        context.read<GeneralState>().ledger.customCategories),
                     style: const TextStyle(fontSize: 18)),
               ),
               const SizedBox(width: 12),
@@ -924,7 +931,7 @@ class _EntryFormSheetState extends State<_EntryFormSheet> {
     for (final en in state.entries) {
       if (!recent.contains(en.category)) recent.add(en.category);
     }
-    final added = state.customCategories.added.map((x) => x.toString());
+    final added = state.customCategories.added.map((c) => c.name);
     return <String>{...recent, ...defaultCategories, ...added}.toList();
   }
 
@@ -1156,6 +1163,9 @@ class _SettingsSheetState extends State<_SettingsSheet> {
     final updated = state.ledger.copyWith(
       name: _name.text.trim().isEmpty ? state.ledger.name : _name.text.trim(),
       budgetCents: budgetCents > 0 ? budgetCents : null,
+      // 填 0 / 留空 = 不限制：必须显式清除，否则 copyWith 的 `?? this.budgetCents`
+      // 会保留旧预算，导致「改为不限制不生效」。[#2]
+      clearBudgetCents: budgetCents <= 0,
       baseCurrency: _currency.text.trim().isEmpty ? null : _currency.text.trim(),
     );
     await state.updateLedger(updated);
@@ -1223,7 +1233,7 @@ class _CategoryManagerSheet extends StatefulWidget {
 class _CategoryManagerSheetState extends State<_CategoryManagerSheet> {
   String _mode = 'categories'; // 'categories' | 'budgets'
   final Set<String> _selected = {};
-  late List<String> _added;
+  late List<GeneralCategory> _added;
   late List<String> _hidden;
   late Map<String, int> _budgets;
   late Map<String, int> _budgetsWeekly;
@@ -1236,8 +1246,19 @@ class _CategoryManagerSheetState extends State<_CategoryManagerSheet> {
     final hiddenSet = Set<String>.from(_hidden);
     final presets =
         defaultCategories.where((c) => !hiddenSet.contains(c)).toList();
-    final addedKept = _added.where((c) => !hiddenSet.contains(c)).toList();
+    final addedKept = _added
+        .where((c) => !hiddenSet.contains(c.name))
+        .map((c) => c.name)
+        .toList();
     return <String>{...presets, ...addedKept}.toList();
+  }
+
+  /// 某类别的展示图标：本地新增（未保存）优先取其选定 emoji，否则回退内置图标表。
+  String _iconFor(String name) {
+    for (final c in _added) {
+      if (c.name == name) return c.icon;
+    }
+    return iconOf(name);
   }
 
   TextEditingController _monthCtlFor(String c) => _monthCtl.putIfAbsent(
@@ -1260,7 +1281,7 @@ class _CategoryManagerSheetState extends State<_CategoryManagerSheet> {
   void initState() {
     super.initState();
     final cc = context.read<GeneralState>().customCategories;
-    _added = List<String>.from(cc.added.map((x) => x.toString()));
+    _added = List<GeneralCategory>.from(cc.added);
     _hidden = List<String>.from(cc.hidden);
     _budgets = Map<String, int>.from(cc.budgets);
     _budgetsWeekly = Map<String, int>.from(cc.budgetsWeekly);
@@ -1278,14 +1299,13 @@ class _CategoryManagerSheetState extends State<_CategoryManagerSheet> {
     super.dispose();
   }
 
-  void _addCategoryName(String v) {
-    final name = v.trim();
-    if (name.isEmpty || _effective.contains(name)) {
+  void _addCategory(GeneralCategory c) {
+    if (c.name.isEmpty || _effective.contains(c.name)) {
       _newCat.clear();
       return;
     }
     setState(() {
-      _added.add(name);
+      _added.add(c);
       _newCat.clear();
     });
   }
@@ -1327,7 +1347,7 @@ class _CategoryManagerSheetState extends State<_CategoryManagerSheet> {
     if (ok != true) return;
     setState(() {
       for (final n in names) {
-        _added.remove(n);
+        _added.removeWhere((c) => c.name == n);
         if (!_hidden.contains(n)) _hidden.add(n);
       }
       _selected.clear();
@@ -1390,42 +1410,123 @@ class _CategoryManagerSheetState extends State<_CategoryManagerSheet> {
     if (mounted) Navigator.of(context).pop();
   }
 
+  /// 新增分类弹窗：类别名 + emoji 图标（全量图标库）+ 收支方向（对齐网页端
+  /// AddCategoryModal）。此前端上只能填名字、图标恒为默认，现补齐图标选择。[#1]
   Future<void> _showAddDialog() async {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final ink400 = isDark ? AppColors.darkInk400 : AppColors.lightInk400;
+    final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
+    final ink900 = isDark ? AppColors.darkInk100 : AppColors.lightInk900;
     final border = isDark ? AppColors.darkBorder : AppColors.lightBorder;
     _newCat.clear();
-    final ok = await showDialog<bool>(
+    String icon = '🌟';
+    String direction = 'expense';
+    String? error;
+
+    final result = await showDialog<GeneralCategory>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('新增分类'),
-        content: TextField(
-          controller: _newCat,
-          autofocus: true,
-          decoration: InputDecoration(
-            hintText: '分类名',
-            hintStyle: TextStyle(color: ink400, fontSize: 13),
-            isCollapsed: true,
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: border, width: 1),
-            ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          title: const Text('新增分类'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TextField(
+                controller: _newCat,
+                autofocus: true,
+                maxLength: 12,
+                decoration: InputDecoration(
+                  hintText: '类别名，如：健身、买菜、副业A',
+                  hintStyle: TextStyle(color: ink400, fontSize: 13),
+                  counterText: '',
+                  isCollapsed: true,
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: border, width: 1),
+                  ),
+                ),
+                onChanged: (_) {
+                  if (error != null) setLocal(() => error = null);
+                },
+              ),
+              const SizedBox(height: 12),
+              Text('方向', style: TextStyle(color: ink500, fontSize: 12)),
+              const SizedBox(height: 6),
+              SegmentedButton<String>(
+                segments: const [
+                  ButtonSegment(value: 'expense', label: Text('支出')),
+                  ButtonSegment(value: 'income', label: Text('收入')),
+                ],
+                selected: {direction},
+                onSelectionChanged: (s) => setLocal(() => direction = s.first),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Text('图标', style: TextStyle(color: ink500, fontSize: 12)),
+                  const SizedBox(width: 12),
+                  InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: () async {
+                      final picked =
+                          await showEmojiPicker(ctx, selected: icon);
+                      if (picked != null) setLocal(() => icon = picked);
+                    },
+                    child: Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: border, width: 1),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(icon, style: const TextStyle(fontSize: 24)),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text('点击选择', style: TextStyle(color: ink400, fontSize: 12)),
+                ],
+              ),
+              if (error != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(error!,
+                      style: TextStyle(
+                          color: isDark
+                              ? AppColors.darkSemanticRed
+                              : AppColors.lightSemanticRed,
+                          fontSize: 12)),
+                ),
+            ],
           ),
-          onSubmitted: (_) => Navigator.of(ctx).pop(true),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('取消')),
+            TextButton(
+              onPressed: () {
+                final name = _newCat.text.trim();
+                if (name.isEmpty) {
+                  setLocal(() => error = '请输入类别名');
+                  return;
+                }
+                if (_effective.contains(name)) {
+                  setLocal(() => error = '该类别名已存在');
+                  return;
+                }
+                Navigator.of(ctx).pop(GeneralCategory(
+                    name: name, icon: icon, direction: direction));
+              },
+              child: Text('添加', style: TextStyle(color: ink900)),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('取消')),
-          TextButton(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text('添加')),
-        ],
       ),
     );
-    if (ok == true) _addCategoryName(_newCat.text);
+    if (result != null) _addCategory(result);
   }
 
   Widget _budgetInput(TextEditingController ctl, ValueChanged<String> onChanged,
@@ -1483,7 +1584,7 @@ class _CategoryManagerSheetState extends State<_CategoryManagerSheet> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(iconOf(c), style: const TextStyle(fontSize: 22)),
+                  Text(_iconFor(c), style: const TextStyle(fontSize: 22)),
                   const SizedBox(height: 4),
                   Text(c,
                       style: TextStyle(color: ink900, fontSize: 11),
@@ -1646,7 +1747,7 @@ class _CategoryManagerSheetState extends State<_CategoryManagerSheet> {
                     Expanded(
                       child: Row(
                         children: [
-                          Text(iconOf(c), style: const TextStyle(fontSize: 18)),
+                          Text(_iconFor(c), style: const TextStyle(fontSize: 18)),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(c,

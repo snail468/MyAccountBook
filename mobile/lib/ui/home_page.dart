@@ -224,9 +224,12 @@ class _HomePageState extends State<HomePage> {
           sign: 1,
         ));
       }
+      // 组件 key 用 serverId（对齐网页端以服务端 cuid 生成的 key）。本地 UUID 与
+      // 服务端 id 不同，若用本地 id，端上保存的启用开关在网页端会因 key 不匹配而
+      // 失效（反之亦然）。未同步的新建账本回退本地 id（其在网页端尚不存在）。[#3]
       for (final l in generalLedgers) {
         components.add(IncomeComponent(
-          key: 'general:${l.id}',
+          key: 'general:${l.serverId ?? l.id}',
           letter: letterFor(),
           name: '${l.displayName} · 进项',
           cents: generalCums[l.id]!.income,
@@ -235,7 +238,7 @@ class _HomePageState extends State<HomePage> {
       }
       for (final l in generalLedgers) {
         components.add(IncomeComponent(
-          key: 'general-expense:${l.id}',
+          key: 'general-expense:${l.serverId ?? l.id}',
           letter: letterFor(),
           name: '${l.displayName} · 出项',
           cents: generalCums[l.id]!.expense,
@@ -244,7 +247,7 @@ class _HomePageState extends State<HomePage> {
       }
       for (final l in travelLedgers) {
         components.add(IncomeComponent(
-          key: 'travel-expense:${l.id}',
+          key: 'travel-expense:${l.serverId ?? l.id}',
           letter: letterFor(),
           name: '${l.displayName} · 出项',
           cents: travelData[l.id]!.spent,

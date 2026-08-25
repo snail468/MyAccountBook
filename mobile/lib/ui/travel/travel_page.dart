@@ -14,6 +14,8 @@ import '../../data/local/ledger_dao.dart';
 import '../../data/models/ledger.dart';
 import '../../data/models/trip.dart';
 import '../../state/travel_state.dart';
+import '../../sync/sync_service.dart';
+import '../widgets/emoji_picker.dart';
 import '../../theme/design_tokens.dart';
 import '../widgets/app_card.dart';
 import '../widgets/app_primary_button.dart';
@@ -3130,8 +3132,13 @@ class _SettingsSheetState extends State<_SettingsSheet> {
         startDate: _startDateMs,
         endDate: _endDateMs,
         tripBudget: tripBudget,
+        // 「不限制」= 清空预算：必须显式清除，否则 copyWith 的 `?? this.tripBudget`
+        // 会保留旧预算，导致「改为不限制不生效」。[#2]
+        clearTripBudget: tripBudget == null,
       );
-      await LedgerDao().upsert(updated);
+      await LedgerDao().upsert(updated.copyWith(synced: 0));
+      // 回传服务端：否则旅游预算改动只留在本地、同步不到网页端。[#2]
+      await SyncService.instance.enqueueLedgerUpdate(updated);
       st.applyLedger(updated);
       if (mounted) Navigator.of(context).pop();
     } catch (e) {
@@ -3182,7 +3189,32 @@ class _SettingsSheetState extends State<_SettingsSheet> {
             const SizedBox(height: 12),
             Text('图标（emoji）', style: TextStyle(color: ink500, fontSize: 12)),
             const SizedBox(height: 4),
-            _field(_icon, '✈️', surface, border, ink400, maxLen: 8),
+            InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () async {
+                final picked = await showEmojiPicker(context,
+                    selected: _icon.text.trim().isEmpty ? null : _icon.text.trim());
+                if (picked != null) setState(() => _icon.text = picked);
+              },
+              child: Container(
+                decoration: BoxDecoration(
+                  color: surface,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: border, width: 1),
+                ),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                child: Row(
+                  children: [
+                    Text(_icon.text.trim().isEmpty ? '✈️' : _icon.text.trim(),
+                        style: const TextStyle(fontSize: 24)),
+                    const SizedBox(width: 12),
+                    Text('点击选择图标',
+                        style: TextStyle(color: ink400, fontSize: 13)),
+                  ],
+                ),
+              ),
+            ),
             const SizedBox(height: 12),
             Text('本位币', style: TextStyle(color: ink500, fontSize: 12)),
             const SizedBox(height: 4),

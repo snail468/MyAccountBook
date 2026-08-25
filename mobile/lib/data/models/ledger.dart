@@ -149,6 +149,10 @@ class Ledger {
     String? ownerName,
     String? role,
     int? lastPullAt,
+    // copyWith 用 `?? this.x` 无法把可空字段显式改回 null（传 null 会被当作"不改"）。
+    // 预算类字段需要「清空=不限制」语义，故加显式清除开关。[#2]
+    bool clearBudgetCents = false,
+    bool clearTripBudget = false,
   }) =>
       Ledger(
         id: id ?? this.id,
@@ -160,12 +164,12 @@ class Ledger {
         order: order ?? this.order,
         archived: archived ?? this.archived,
         deletedAt: deletedAt ?? this.deletedAt,
-        budgetCents: budgetCents ?? this.budgetCents,
+        budgetCents: clearBudgetCents ? null : (budgetCents ?? this.budgetCents),
         customCategories: customCategories ?? this.customCategories,
         baseCurrency: baseCurrency ?? this.baseCurrency,
         startDate: startDate ?? this.startDate,
         endDate: endDate ?? this.endDate,
-        tripBudget: tripBudget ?? this.tripBudget,
+        tripBudget: clearTripBudget ? null : (tripBudget ?? this.tripBudget),
         synced: synced ?? this.synced,
         isOwn: isOwn ?? this.isOwn,
         ownerName: ownerName ?? this.ownerName,

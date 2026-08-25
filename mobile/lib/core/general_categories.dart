@@ -1,15 +1,53 @@
 import 'dart:convert';
 
+/// 自定义类别（对齐网页端 src/lib/generalCategories.ts 的 GeneralCategory）。
+///
+/// 服务端 `customCategories.added` 要求是 `{name, icon, direction}` 对象数组
+/// （见 /api/ledgers/[id] 的 zod schema），故移动端也用对象存储，才能与网页端
+/// 双向兼容：网页端建的带 emoji 自定义类别能在端上显示图标，端上建的也能在
+/// 网页端正确归入收入/支出分组。[#1]
+class GeneralCategory {
+  final String name;
+  final String icon;
+  final String direction; // 'income' | 'expense'
+
+  const GeneralCategory({
+    required this.name,
+    this.icon = '🌟',
+    this.direction = 'expense',
+  });
+
+  Map<String, dynamic> toJson() =>
+      {'name': name, 'icon': icon, 'direction': direction};
+
+  /// 从任意 JSON 值构造：新格式为对象；兼容老端上的「纯字符串名」格式
+  /// （无 icon/direction，兜底 🌟 / expense）。
+  static GeneralCategory fromAny(dynamic v) {
+    if (v is Map) {
+      final name = (v['name'] ?? '').toString().trim();
+      final icon = (v['icon'] ?? '').toString().trim();
+      final dir = (v['direction'] ?? 'expense').toString();
+      return GeneralCategory(
+        name: name,
+        icon: icon.isEmpty ? '🌟' : icon,
+        direction: dir == 'income' ? 'income' : 'expense',
+      );
+    }
+    return GeneralCategory(name: v.toString().trim());
+  }
+}
+
 /// 普通账本分类预算解析（对齐网页端 src/lib/generalCategories.ts 的 parseCustom）。
 ///
 /// 账本 [Ledger.customCategories] 存一段 JSON：
 /// ```json
-/// { "added":[...], "hidden":[...], "budgets":{ "餐饮": 50000 }, "budgetsWeekly":{ "餐饮": 12000 } }
+/// { "added":[{"name":"健身","icon":"🏋️","direction":"expense"}], "hidden":[...],
+///   "budgets":{ "餐饮": 50000 }, "budgetsWeekly":{ "餐饮": 12000 } }
 /// ```
 /// 其中 budgets / budgetsWeekly 是分类别预算（分）。老账本可能没有这两个字段，
 /// 兜底成空 map。
 class CustomCategories {
-  final List<dynamic> added;
+  final List<GeneralCategory> added;
   final List<String> hidden;
   final Map<String, int> budgets;
   final Map<String, int> budgetsWeekly;
@@ -28,7 +66,12 @@ class CustomCategories {
       final p = jsonDecode(json);
       if (p is! Map) return const CustomCategories();
       return CustomCategories(
-        added: p['added'] is List ? p['added'] as List : const [],
+        added: p['added'] is List
+            ? (p['added'] as List)
+                .map(GeneralCategory.fromAny)
+                .where((c) => c.name.isNotEmpty)
+                .toList()
+            : const [],
         hidden: p['hidden'] is List
             ? (p['hidden'] as List).map((e) => e.toString()).toList()
             : const [],
@@ -40,9 +83,9 @@ class CustomCategories {
     }
   }
 
-  /// 序列化回 JSON（分类管理页保存时用）。
+  /// 序列化回 JSON（分类管理页保存时用）。added 落成对象数组，与服务端 schema 一致。
   Map<String, dynamic> toJson() => {
-        'added': added,
+        'added': added.map((c) => c.toJson()).toList(),
         'hidden': hidden,
         'budgets': budgets,
         'budgetsWeekly': budgetsWeekly,
@@ -120,5 +163,71 @@ const Map<String, String> _categoryIcons = <String, String>{
   '其他': '📦',
 };
 
-/// 返回某分类的展示图标；未知分类回退到 📦。
-String iconOf(String category) => _categoryIcons[category] ?? '📦';
+/// 返回某分类的展示图标。
+///
+/// 优先用账本自定义类别里保存的 emoji（[customJson] 传账本 customCategories 时），
+/// 其次内置分类图标表，最后回退 📦。这样端上/网页端新建的带 emoji 自定义类别，
+/// 在列表、分类预算、记账条目里都能显示正确图标。[#1]
+String iconOf(String category, [String? customJson]) {
+  if (customJson != null && customJson.isNotEmpty) {
+    for (final c in CustomCategories.parse(customJson).added) {
+      if (c.name == category && c.icon.isNotEmpty) return c.icon;
+    }
+  }
+  return _categoryIcons[category] ?? '📦';
+}
+
+/// 自定义类别可选 emoji 图标库（1:1 对齐网页端 generalCategories.ts 的 ICON_LIBRARY）。
+///
+/// 分组供「新增类别」时按类目浏览选择，覆盖餐饮/交通/购物/居家/娱乐/健康/人情/
+/// 学习/宠物/通讯/收入/其它等常用图标。
+const List<({String group, List<String> icons})> iconLibrary = [
+  (
+    group: '餐饮',
+    icons: ['🍜', '🍚', '🍱', '🍔', '🍕', '🍣', '🍰', '☕', '🥤', '🍺', '🍷', '🍎', '🍇', '🥗', '🍳', '🥟'],
+  ),
+  (
+    group: '交通',
+    icons: ['🚌', '🚗', '🚕', '🚇', '✈️', '🚄', '🛵', '🚲', '⛽', '🅿️', '🛴', '🚢'],
+  ),
+  (
+    group: '购物',
+    icons: ['🛍️', '👗', '👟', '💄', '💍', '👜', '📱', '💻', '🎧', '⌚', '🧸', '🎮'],
+  ),
+  (
+    group: '居家',
+    icons: ['🏠', '🛏️', '🛋️', '🧴', '🧻', '💡', '🔧', '🧹', '🪴', '📦'],
+  ),
+  (
+    group: '娱乐',
+    icons: ['🎬', '🎵', '🎤', '🎨', '🎭', '🎳', '🎲', '🎯', '🎪', '🏖️', '🌊', '⛰️', '🎢', '🎡', '🕹️'],
+  ),
+  (
+    group: '健康',
+    icons: ['💊', '🏥', '🩺', '🦷', '👓', '🏋️', '🧘', '🚴', '⚽', '🏀', '🎾'],
+  ),
+  (
+    group: '人情',
+    icons: ['🎁', '💐', '🎂', '🎉', '💒', '👶', '🧧', '💌', '🥂'],
+  ),
+  (
+    group: '学习',
+    icons: ['📚', '✏️', '🎓', '📖', '📝', '🎒', '🖥️', '📊', '🔬'],
+  ),
+  (
+    group: '宠物',
+    icons: ['🐶', '🐱', '🐰', '🐹', '🐦', '🐟', '🦴', '🥩'],
+  ),
+  (
+    group: '通讯',
+    icons: ['📞', '📶', '📡', '💬', '📧', '📮'],
+  ),
+  (
+    group: '收入',
+    icons: ['💰', '💵', '💴', '💶', '💷', '💳', '🏦', '📈', '🎊', '🏆', '💎'],
+  ),
+  (
+    group: '其它',
+    icons: ['💸', '🌟', '⭐', '❤️', '🔥', '⚡', '☔', '☀️', '🌙', '🌈', '📌', '🔔'],
+  ),
+];

@@ -4,6 +4,7 @@ import 'package:uuid/uuid.dart';
 
 import '../core/constants.dart';
 import '../core/exceptions.dart';
+import '../core/general_categories.dart' show CustomCategories;
 import '../api/api_client.dart';
 import '../api/ledger_api.dart';
 import '../api/general_entry_api.dart';
@@ -131,6 +132,71 @@ class SyncService {
       entity: entity,
       entityLocalId: entityLocalId,
     );
+  }
+
+  /// 入队「账本设置变更」PATCH（名称 / 预算 / 自定义分类 / 旅游多币种预算等）。
+  ///
+  /// 此前账本设置只落本地、从不回传服务端，导致端上改的分类图标、月度预算、
+  /// 旅游预算永远同步不到网页端。这里对齐网页端 `PATCH /api/ledgers/[id]` 的
+  /// 载荷把变更推上去；PATCH 语义为「合并」，按账本类型只发相关字段，互不覆盖。[#1][#2]
+  ///
+  /// 仅当账本已同步（有 server_id）时才 PATCH；未同步的新建账本其字段随首次
+  /// POST 一起带上，待拿到 server_id 后的后续编辑再走 PATCH。用 coalesced 合并，
+  /// 连续多次改设置只保留最后一次。
+  Future<void> enqueueLedgerUpdate(Ledger l) async {
+    final sid = l.serverId;
+    if (sid == null || sid.isEmpty) return;
+    await enqueueCoalesced(
+      method: 'PATCH',
+      path: '/ledgers/$sid',
+      body: _ledgerPatchBody(l),
+      entity: 'ledger',
+      entityLocalId: l.id,
+    );
+  }
+
+  /// 构造账本 PATCH 载荷（对齐网页端各设置弹层发送的字段，按类型裁剪）。
+  Map<String, dynamic> _ledgerPatchBody(Ledger l) {
+    final body = <String, dynamic>{
+      'name': l.name,
+      'icon': l.icon,
+    };
+    // 币种：服务端要求恰好 3 位或 null，非法值宁可发 null，避免整条 PATCH 被拒。
+    final cur =
+        (l.baseCurrency != null && l.baseCurrency!.length == 3) ? l.baseCurrency : null;
+    if (l.kind == AppConfig.kindGeneral) {
+      body['budgetCents'] = l.budgetCents; // null = 不限制（清空）
+      body['baseCurrency'] = cur;
+      // 归一化：老数据里 added 可能是纯字符串，parse→toJson 统一成
+      // {name,icon,direction} 对象数组，才能通过服务端 zod 校验。
+      body['customCategories'] = l.customCategories == null
+          ? null
+          : CustomCategories.parse(l.customCategories).toJson();
+    } else if (l.kind == AppConfig.kindTravel) {
+      body['baseCurrency'] = cur;
+      body['startDate'] = l.startDate == null
+          ? null
+          : DateTime.fromMillisecondsSinceEpoch(l.startDate!)
+              .toUtc()
+              .toIso8601String();
+      body['endDate'] = l.endDate == null
+          ? null
+          : DateTime.fromMillisecondsSinceEpoch(l.endDate!)
+              .toUtc()
+              .toIso8601String();
+      body['tripBudget'] = _decodeJsonOrNull(l.tripBudget);
+    }
+    return body;
+  }
+
+  /// 把存库的 JSON 字符串解析成对象；空/损坏返回 null。
+  Object? _decodeJsonOrNull(String? json) {
+    if (json == null || json.isEmpty) return null;
+    try {
+      return jsonDecode(json);
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<int> pendingCount() => _opDao.pendingCount();

@@ -150,11 +150,13 @@ class GeneralState extends ChangeNotifier {
     await load();
   }
 
-  /// 保存账本设置（名称 / 月度预算 / 自定义分类等），落本地后刷新汇总。
+  /// 保存账本设置（名称 / 月度预算 / 自定义分类等），落本地后刷新汇总，
+  /// 并入队 PATCH 回传服务端（否则分类图标 / 预算永远同步不到网页端）。[#1][#2]
   Future<void> updateLedger(Ledger updated) async {
     final next = updated.copyWith(synced: 0);
     await _ledgerDao.upsert(next);
     ledger = next;
+    await _sync.enqueueLedgerUpdate(next);
     await _reloadSummary();
     pendingCount = await PendingOpDao().pendingCount();
     notifyListeners();
