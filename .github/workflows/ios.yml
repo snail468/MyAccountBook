@@ -87,9 +87,12 @@ jobs:
       - name: Generate iOS app icon from project original (icon-512.png)
         # 用项目原图标替换 flutter create 的默认 Flutter logo；自包含（仅 Pillow），
         # 重写整套 AppIcon.appiconset + Contents.json。
+        # macOS runner 的系统 Python 受 PEP 668 管控，--user 装包会报
+        # externally-managed-environment；改用 venv 隔离安装，规范且不污染系统环境。
         run: |
-          python3 -m pip install --quiet --user Pillow
-          python3 - <<'PY'
+          python3 -m venv "$RUNNER_TEMP/iconvenv"
+          "$RUNNER_TEMP/iconvenv/bin/pip" install --quiet Pillow
+          "$RUNNER_TEMP/iconvenv/bin/python" - <<'PY'
           from PIL import Image
           import json, os
           src = Image.open('public/icon-512.png').convert('RGBA')
