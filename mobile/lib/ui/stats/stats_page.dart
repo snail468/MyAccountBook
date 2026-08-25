@@ -153,47 +153,52 @@ class _StatsBody extends StatelessWidget {
                 const SizedBox(height: 16),
 
                 // ---- 环比 / 同比（两张并排）----
-                Row(
-                  children: [
-                    Expanded(
-                      child: _CompareCard(
-                        title: '环比（vs 上月）',
-                        ink500: ink500,
-                        rows: [
-                          _CompareRow(
-                            label: '收入',
-                            cur: state.curIncome,
-                            prev: state.prevIncome,
-                          ),
-                          _CompareRow(
-                            label: '支出',
-                            cur: state.curExpense,
-                            prev: state.prevExpense,
-                          ),
-                        ],
+                // IntrinsicHeight + stretch：两卡内容行数不同（同比可能只有
+                // 「还没满一年」一行）时也强制等高，避免右卡明显比左卡矮。
+                IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(
+                        child: _CompareCard(
+                          title: '环比（vs 上月）',
+                          ink500: ink500,
+                          rows: [
+                            _CompareRow(
+                              label: '收入',
+                              cur: state.curIncome,
+                              prev: state.prevIncome,
+                            ),
+                            _CompareRow(
+                              label: '支出',
+                              cur: state.curExpense,
+                              prev: state.prevExpense,
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: _CompareCard(
-                        title: '同比（vs 去年同月）',
-                        ink500: ink500,
-                        emptyHint: state.hasYoy ? null : '还没满一年',
-                        rows: [
-                          _CompareRow(
-                            label: '收入',
-                            cur: state.curIncome,
-                            prev: state.yoyIncome,
-                          ),
-                          _CompareRow(
-                            label: '支出',
-                            cur: state.curExpense,
-                            prev: state.yoyExpense,
-                          ),
-                        ],
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _CompareCard(
+                          title: '同比（vs 去年同月）',
+                          ink500: ink500,
+                          emptyHint: state.hasYoy ? null : '还没满一年',
+                          rows: [
+                            _CompareRow(
+                              label: '收入',
+                              cur: state.curIncome,
+                              prev: state.yoyIncome,
+                            ),
+                            _CompareRow(
+                              label: '支出',
+                              cur: state.curExpense,
+                              prev: state.yoyExpense,
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 16),
 
@@ -231,6 +236,7 @@ class _StatsBody extends StatelessWidget {
                     child: Padding(
                       padding: const EdgeInsets.all(20),
                       child: _CategoryBreakdown(
+                        title: '支出构成',
                         categories: state.categories,
                         ink900: ink900,
                         ink500: ink500,
@@ -252,6 +258,7 @@ class _StatsBody extends StatelessWidget {
                     child: Padding(
                       padding: const EdgeInsets.all(20),
                       child: _CategoryBreakdown(
+                        title: '收入构成',
                         categories: state.incomeCategories,
                         ink900: ink900,
                         ink500: ink500,
@@ -405,8 +412,11 @@ class _CompareRow extends StatelessWidget {
   }
 }
 
-/// 支出构成：横向占比条（按总额占比，1:1 对齐网页端 categoryShare 渲染）。
+/// 类别构成：横向占比条（按总额占比，1:1 对齐网页端 categoryShare 渲染）。
+///
+/// [title] 由调用方指定（「支出构成」/「收入构成」），支出与收入两卡复用同一组件。
 class _CategoryBreakdown extends StatelessWidget {
+  final String title;
   final List<({String label, int cents})> categories;
   final Color ink900;
   final Color ink500;
@@ -414,6 +424,7 @@ class _CategoryBreakdown extends StatelessWidget {
   final Color track;
 
   const _CategoryBreakdown({
+    required this.title,
     required this.categories,
     required this.ink900,
     required this.ink500,
@@ -436,7 +447,7 @@ class _CategoryBreakdown extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('支出构成',
+        Text(title,
             style: TextStyle(
                 color: ink900, fontSize: 14, fontWeight: FontWeight.w500)),
         const SizedBox(height: 12),

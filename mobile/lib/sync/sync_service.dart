@@ -30,6 +30,7 @@ import '../data/local/recurring_rule_dao.dart';
 import '../data/local/pending_op_dao.dart';
 import '../data/models/pending_op.dart';
 import '../data/db/database.dart';
+import '../state/income_prefs.dart';
 
 /// 离线优先的同步引擎。
 ///
@@ -403,6 +404,12 @@ class SyncService {
       // ignore: avoid_print
       print('周期规则同步失败（已跳过）：$e');
     }
+
+    // 用户偏好里的「总收入 A 的组成」勾选：此前只在登录/注册时拉一次，导致已登录
+    // 设备在别处（网页/另一台机）改了勾选后本地配置一直陈旧，统计口径跟着不更新
+    // （表现为「安卓端没改」）。这里随常规同步一并拉取，使配置像数据一样跨设备传播。
+    // 该函数内部已吞掉全部异常（离线保留本地），故天然非致命。[#3]
+    await fetchIncomeOverridesFromServer();
   }
 
   /// 拉取银行卡：GET /api/cards 全量拉回，按 server_id 复用本地 id 覆盖；

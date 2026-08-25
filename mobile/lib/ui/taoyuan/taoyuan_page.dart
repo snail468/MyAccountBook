@@ -890,25 +890,31 @@ class _EventCardState extends State<_EventCard> {
                   ),
                 ),
               // 三阶段金额卡（含子活动金额）
+              // IntrinsicHeight + stretch：某一阶段的金额/文字换行更长时，三张
+              // 带边框的小卡也保持等高，不会一高两矮。
               Padding(
                 padding: const EdgeInsets.only(top: 12),
-                child: Row(
-                  children: stages
-                      .map(
-                        (s) => Expanded(
-                          child: _StageMiniCard(
-                            stage: s,
-                            amounts: _stageAmounts(s),
-                            highlight: s == 'paid' && sums['paid']! > 0,
-                            count: _stageAmounts(s).length,
-                            isDark: isDark,
-                            onTap: widget.selecting
-                                ? null
-                                : () => _openStage(context, widget.store, event, s),
+                child: IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: stages
+                        .map(
+                          (s) => Expanded(
+                            child: _StageMiniCard(
+                              stage: s,
+                              amounts: _stageAmounts(s),
+                              highlight: s == 'paid' && sums['paid']! > 0,
+                              count: _stageAmounts(s).length,
+                              isDark: isDark,
+                              onTap: widget.selecting
+                                  ? null
+                                  : () =>
+                                      _openStage(context, widget.store, event, s),
+                            ),
                           ),
-                        ),
-                      )
-                      .toList(),
+                        )
+                        .toList(),
+                  ),
                 ),
               ),
               if (afterTaxCard != null)
