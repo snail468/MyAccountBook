@@ -140,11 +140,17 @@ class _HomePageState extends State<HomePage> {
       _ownTaoyuan = _pickOwn(taoyuanLedgers);
 
       // ---- 共享 work/taoyuan 卡片（对齐网页端 sharedWork/taoyuanLedgers） ----
-      // 非本人所有的账本（isOwn!=true）视为被共享给我的；其标题走 displayName 自动带 owner 前缀 [#3]。
-      final sharedWorkLedgers =
-          workLedgers.where((l) => l != _ownWork && l.isOwn != true).toList();
-      final sharedTaoyuanLedgers =
-          taoyuanLedgers.where((l) => l != _ownTaoyuan && l.isOwn != true).toList();
+      // 仅「明确属于他人」（isOwn==false，对齐网页端 userId!==userId）才算被共享给我的；
+      // 其标题走 displayName 自动带 owner 前缀 [#3]。
+      // 注意：这里用 isOwn==false 而非 isOwn!=true——后者会把 isOwn 未知(null) 的本地
+      // 未同步自家账本也塞进共享段，导致同一工作账本既出现在 own 入口又出现在共享段
+      // （且共享副本无 owner 前缀）的重复卡片。用 !=_ownWork?.id 按 id 去重更稳。[#3]
+      final sharedWorkLedgers = workLedgers
+          .where((l) => l.id != _ownWork?.id && l.isOwn == false)
+          .toList();
+      final sharedTaoyuanLedgers = taoyuanLedgers
+          .where((l) => l.id != _ownTaoyuan?.id && l.isOwn == false)
+          .toList();
       final sharedWorkCount = <String, int>{};
       for (final l in sharedWorkLedgers) {
         sharedWorkCount[l.id] =
@@ -323,17 +329,37 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  /// 从同类型账本列表中挑选"我的"那一本：优先 isOwn==true；若都无标记
-  /// （本地新建尚未同步），兜底取第一本，避免自家账本被误判为共享 [#3]。
+  /// 从同类型账本列表中挑选"我的"那一本：优先 isOwn==true。
+  ///
+  /// 兜底仅限「本地新建、尚未同步」的自家账本（isOwn 未知(null) 且无 owner 前缀）；
+  /// 绝不再兜底取 list.first——否则当用户没有自己的工作/桃源账本、只被共享了一本时，
+  /// 会把他人共享账本(isOwn==false) 误当作"我的"塞进 own 入口，进而与共享段重复显示 [#3]。
   Ledger? _pickOwn(List<Ledger> list) {
     final owned = list.where((l) => l.isOwn == true).toList();
     if (owned.isNotEmpty) return owned.first;
-    return list.isNotEmpty ? list.first : null;
+    final localOwn =
+        list.where((l) => l.isOwn == null && l.ownerName == null).toList();
+    return localOwn.isNotEmpty ? localOwn.first : null;
   }
 
-  void _openLedger(Ledger ledger) {
-    Navigator.of(context)
+  Future<void> _openLedger(Ledger ledger) async {
+    await Navigator.of(context)
         .push(MaterialPageRoute(builder: (_) => pageForLedger(ledger)));
+    await _refreshAfterReturn();
+  }
+
+  /// 打开任意详情页并在返回后刷新首页（删除/编辑等改动即时反映）。
+  Future<void> _openPage(Widget page) async {
+    await Navigator.of(context)
+        .push(MaterialPageRoute(builder: (_) => page));
+    await _refreshAfterReturn();
+  }
+
+  /// 从账本详情页返回首页后：重算首页汇总，使刚在详情页里删除/编辑的条目
+  /// 立即从首页卡片（如旅游账本「已花」合计）消失，消除"删除延迟残留"[#1]。
+  Future<void> _refreshAfterReturn() async {
+    if (!mounted) return;
+    await _loadSummary();
   }
 
   @override
@@ -448,10 +474,7 @@ class _HomePageState extends State<HomePage> {
                   subtitle: '按月记录进项与出项',
                   // 工作账本入口统一进多月总览（WorkSummaryPage），
                   // 单月视图通过总览里的月份卡片进入；修复与“工作出项汇总”入口搞混 [#2]
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(
-                        builder: (_) => WorkSummaryPage(ledger: _ownWork)),
-                  ),
+                  onTap: () => _openPage(WorkSummaryPage(ledger: _ownWork)),
                 ));
               }
               if (_ownTaoyuan != null) {

@@ -38,10 +38,6 @@ class _WorkSummaryPageState extends State<WorkSummaryPage> {
   /// 参与聚合的工作账本（用于点击进入单月页）。
   List<Ledger> _workLedgers = [];
 
-  /// 累计进项 / 出项。
-  int _totalIncome = 0;
-  int _totalExpense = 0;
-
   /// 是否正在加载。
   bool _loading = true;
 
@@ -76,19 +72,10 @@ class _WorkSummaryPageState extends State<WorkSummaryPage> {
         });
       }
 
-      int ti = 0;
-      int te = 0;
-      for (final t in merged.values) {
-        ti += t.income;
-        te += t.expense;
-      }
-
       if (!mounted) return;
       setState(() {
         _byMonth = merged;
         _workLedgers = ledgers;
-        _totalIncome = ti;
-        _totalExpense = te;
         _loading = false;
       });
     } catch (_) {
@@ -143,13 +130,6 @@ class _WorkSummaryPageState extends State<WorkSummaryPage> {
     final ink400 = isDark ? AppColors.darkInk400 : AppColors.lightInk400;
     final surface = isDark ? AppColors.darkSurface : AppColors.lightSurface;
     final pageBg = isDark ? AppColors.darkPageBg : AppColors.lightPageBg;
-    final red = isDark ? AppColors.darkSemanticRed : AppColors.lightSemanticRed;
-    final green = isDark ? AppColors.darkSemanticGreen : AppColors.lightSemanticGreen;
-
-    final balance = _totalIncome - _totalExpense;
-    final rate = _totalExpense > 0
-        ? (_totalIncome / _totalExpense * 100).round()
-        : (_totalIncome > 0 ? 100 : 0);
 
     final now = DateTime.now();
     final currentMonth =
@@ -220,63 +200,8 @@ class _WorkSummaryPageState extends State<WorkSummaryPage> {
               ),
               const SizedBox(height: 16),
 
-              // ---- 累计汇总 ----
-              AppCard(
-                radius: 24,
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('累计',
-                          style: TextStyle(color: ink500, fontSize: 12)),
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _Stat(
-                              label: '进项',
-                              cents: _totalIncome,
-                              sign: true,
-                              color: green,
-                            ),
-                          ),
-                          Expanded(
-                            child: _Stat(
-                              label: '出项',
-                              cents: -_totalExpense,
-                              sign: true,
-                              color: red,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _Stat(
-                              label: '结余',
-                              cents: balance,
-                              sign: true,
-                              color: balance >= 0 ? green : red,
-                            ),
-                          ),
-                          Expanded(
-                            child: _Stat(
-                              label: '回款率',
-                              text: _totalExpense > 0 ? '$rate%' : '—',
-                              color: ink900,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 16),
+              // 网页端工作账本总览只有「出项汇总」入口 + 月份列表，没有「累计」卡片，
+              // 这里对齐移除累计卡（进项/出项/结余/回款率）。[#2]
 
               const SectionLabel('按月查看'),
 
@@ -412,42 +337,3 @@ class _WorkSummaryPageState extends State<WorkSummaryPage> {
   }
 }
 
-/// 汇总小块（标签 + 金额 / 文本）。
-class _Stat extends StatelessWidget {
-  final String label;
-  final int cents;
-  final String? text;
-  final bool sign;
-  final Color color;
-
-  const _Stat({
-    required this.label,
-    this.cents = 0,
-    this.text,
-    this.sign = false,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final ink500 = isDark ? AppColors.darkInk500 : AppColors.lightInk500;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: TextStyle(color: ink500, fontSize: 12)),
-        const SizedBox(height: 4),
-        text != null
-            ? Text(text!,
-                style: TextStyle(
-                    color: color, fontSize: 18, fontWeight: FontWeight.w600))
-            : Money(
-                cents: cents,
-                sign: sign,
-                style: TextStyle(
-                    color: color, fontSize: 18, fontWeight: FontWeight.w600),
-              ),
-      ],
-    );
-  }
-}
