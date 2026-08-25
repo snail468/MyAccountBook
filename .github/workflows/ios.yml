@@ -159,12 +159,22 @@ jobs:
           echo "$IOS_PROVISION_PROFILE_BASE64" | base64 -d > "$HOME/Library/MobileDevice/Provisioning Profiles/app.mobileprovision"
           echo "signed=true" >> "$GITHUB_OUTPUT"
 
-      - name: Build unsigned .app (no secrets)
+      - name: Build unsigned IPA (no secrets)
+        # 未配签名 secret 时：编译出未签名 .app，再按 IPA 规范打包成
+        # Payload/Runner.app 的 .ipa。该 IPA **尚未签名，不能直接安装**，
+        # 需后续用证书 + 描述文件重签名（见工作流末尾说明）后才能装机。
         if: steps.signing.outputs.signed == 'false'
         working-directory: mobile
         run: |
           flutter build ios --release --no-codesign
-          cd build/ios/iphoneos && zip -r Runner-unsigned.app.zip Runner.app
+          cd build/ios/iphoneos
+          rm -rf Payload myaccountbook-unsigned.ipa
+          mkdir Payload
+          cp -R Runner.app Payload/
+          # -y 保留符号链接（.app 内 Frameworks 依赖软链，跟随会损坏包结构）
+          zip -qr -y myaccountbook-unsigned.ipa Payload
+          echo "Built unsigned IPA: $(pwd)/myaccountbook-unsigned.ipa"
+          ls -lh myaccountbook-unsigned.ipa
 
       - name: Build signed IPA (secrets present)
         if: steps.signing.outputs.signed == 'true'
@@ -188,12 +198,12 @@ jobs:
           EOF
           flutter build ipa --release --export-options-plist=ExportOptions.plist
 
-      - name: Upload unsigned .app
+      - name: Upload unsigned IPA
         if: steps.signing.outputs.signed == 'false'
         uses: actions/upload-artifact@v4
         with:
-          name: myaccountbook-ios-unsigned
-          path: mobile/build/ios/iphoneos/Runner-unsigned.app.zip
+          name: myaccountbook-unsigned-ipa
+          path: mobile/build/ios/iphoneos/myaccountbook-unsigned.ipa
 
       - name: Upload IPA
         if: steps.signing.outputs.signed == 'true'
@@ -216,3 +226,31 @@ jobs:
           IPA=$(ls mobile/build/ios/ipa/*.ipa | head -1)
           xcrun altool --upload-app -f "$IPA" -t ios \
             --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"
+
+# ─────────────────────────────────────────────────────────────────────────
+# 如何给 myaccountbook-unsigned-ipa 重签名后安装（需 Apple Developer 账号）
+#
+# 未签名 IPA 不能直接装机，必须先用你的证书 + 描述文件重签。两种常见做法：
+#
+# A. fastlane（最省事，需在 Mac 上）
+#    fastlane sigh resign myaccountbook-unsigned.ipa \
+#      --signing_identity "Apple Distribution: Your Name (TEAMID)" \
+#      -p your_profile.mobileprovision
+#
+# B. 手动 codesign（Mac）
+#    unzip myaccountbook-unsigned.ipa -d resign && cd resign
+#    cp your_profile.mobileprovision "Payload/Runner.app/embedded.mobileprovision"
+#    # 先重签内部 Frameworks，再签主 app（entitlements 从描述文件导出）
+#    codesign -f -s "Apple Distribution: Your Name (TEAMID)" \
+#      Payload/Runner.app/Frameworks/*
+#    codesign -f -s "Apple Distribution: Your Name (TEAMID)" \
+#      --entitlements entitlements.plist Payload/Runner.app
+#    zip -qr -y ../myaccountbook-signed.ipa Payload
+#
+# 重签后：Ad-hoc profile → 用 Apple Configurator/Xcode Devices/爱思助手 装到
+# 已登记 UDID 的设备；app-store profile → 上传 TestFlight。
+#
+# 注意：无论 A/B，证书与描述文件都来自 $99/年 的 Apple Developer 账号——
+# "先出 IPA 后签名" 只是把签名推迟，并不能免掉账号。若本就有账号，直接配
+# 上面的 IOS_CERT_* / IOS_PROVISION_PROFILE_* secret 让 CI 一步出签名 IPA 更省事。
+# ─────────────────────────────────────────────────────────────────────────
