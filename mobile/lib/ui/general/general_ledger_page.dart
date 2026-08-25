@@ -927,12 +927,18 @@ class _EntryFormSheetState extends State<_EntryFormSheet> {
   }
 
   List<String> _suggestions(GeneralState state) {
+    final cc = state.customCategories;
+    // 隐藏的类别（预设被隐藏 / 自定义被删）不应出现在记一笔的类别选项里，
+    // 与「管理类别」页的可见集合（_visible）保持一致。[#bug]
+    final hiddenSet = Set<String>.from(cc.hidden);
     final recent = <String>[];
     for (final en in state.entries) {
       if (!recent.contains(en.category)) recent.add(en.category);
     }
-    final added = state.customCategories.added.map((c) => c.name);
-    return <String>{...recent, ...defaultCategories, ...added}.toList();
+    final added = cc.added.map((c) => c.name);
+    return <String>{...recent, ...defaultCategories, ...added}
+        .where((c) => !hiddenSet.contains(c))
+        .toList();
   }
 
   Future<void> _save() async {
