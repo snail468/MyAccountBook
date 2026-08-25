@@ -1,0 +1,94 @@
+# Codemagic 云端出包配置（iOS）。
+#
+# 为什么同时给 Codemagic：GitHub Actions 手动管理证书/描述文件较繁琐，
+# Codemagic 的「自动代码签名」直接对接 App Store Connect API Key，自动拉取/
+# 生成证书 + 描述文件并注入，出 IPA、推 TestFlight 一步到位——这是**实际分发**
+# 最省心的路径。GitHub Actions 那份适合「顺带验证能否编译」。
+#
+# ── 一次性准备（在 Codemagic 网页控制台，不写进仓库）──
+# 1. 连接本 GitHub 仓库。
+# 2. Teams → Integrations → App Store Connect：上传一个 ASC API Key
+#    （Key ID / Issuer ID / .p8），命名为下面 integrations 引用的名字。
+# 3. 若首次上架，先在 App Store Connect 建好 App 记录（Bundle ID 一致）。
+#
+# ── 与仓库现状的衔接 ──
+# 仓库不提交 ios/ 工程，脚本里先 `flutter create` 现场脚手架（与 flutter.yml 一致）。
+
+workflows:
+  ios-release:
+    name: iOS Release (TestFlight)
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment:
+      flutter: 3.24.5
+      xcode: latest
+      cocoapods: default
+      groups:
+        - appstore                 # 可选：放 APP_STORE_APP_ID 等自定义变量
+      ios_signing:
+        distribution_type: app_store
+        # 换成你实际拥有的 Bundle ID（与 App Store Connect 里的 App 一致）
+        bundle_identifier: com.myaccountbook.myaccountbook
+      integrations:
+        # 与控制台里 App Store Connect 集成的名字一致
+        app_store_connect: MyAccountBook ASC Key
+    triggering:
+      events:
+        - tag
+      tag_patterns:
+        - pattern: 'v*.*.*'
+          include: true
+    scripts:
+      - name: Scaffold iOS platform
+        script: |
+          cd mobile
+          flutter create --org com.myaccountbook --platforms=ios .
+
+      - name: Inject version from tag
+        script: |
+          cd mobile
+          TAG="${CM_TAG#v}"
+          if [ -n "$TAG" ]; then
+            IFS='.' read -r MAJ MIN PAT <<< "$TAG"
+            CODE=$(( MAJ * 10000 + MIN * 100 + PAT ))
+            sed -i '' "s/static const String appVersion = '.*'/static const String appVersion = '${TAG}'/" lib/core/constants.dart
+            sed -i '' "s/^version: .*/version: ${TAG}+${CODE}/" pubspec.yaml
+          fi
+
+      - name: Configure Info.plist + deployment target
+        script: |
+          cd mobile
+          PLIST=ios/Runner/Info.plist
+          /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName 心愿便利贴" "$PLIST" \
+            || /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string 心愿便利贴" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :NSPhotoLibraryUsageDescription string 用于选择记账的票据/花费图片" "$PLIST" || true
+          /usr/libexec/PlistBuddy -c "Add :NSCameraUsageDescription string 用于拍摄记账票据" "$PLIST" || true
+          /usr/libexec/PlistBuddy -c "Add :NSFaceIDUsageDescription string 用于用面容 ID 解锁应用" "$PLIST" || true
+          sed -i '' "s/# platform :ios, .*/platform :ios, '13.0'/" ios/Podfile || true
+
+      - name: Flutter pub get
+        script: |
+          cd mobile
+          flutter pub get
+
+      - name: Set up automatic code signing
+        # Codemagic 用 ASC 集成自动准备证书 + 描述文件，并生成 export options。
+        script: |
+          cd mobile
+          xcode-project use-profiles
+
+      - name: Build IPA
+        script: |
+          cd mobile
+          flutter build ipa --release \
+            --export-options-plist=/Users/builder/export_options.plist
+    artifacts:
+      - mobile/build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+    publishing:
+      app_store_connect:
+        auth: integration
+        # 先进 TestFlight 内测；确认无误再手动在 App Store Connect 提交审核。
+        submit_to_testflight: true
+        # 若要自动提交审核，取消下面注释并按需设置分组：
+        # submit_to_app_store: false

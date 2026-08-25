@@ -1,0 +1,212 @@
+name: Flutter iOS (IPA)
+
+# iOS 云端出包。必须跑在 macOS runner（Apple 工具链限制）。
+#
+# 与 flutter.yml 一致的思路：仓库不提交 ios/ 工程，由 CI 用 `flutter create`
+# 现场脚手架，再注入版本 / 权限文案 / 图标，最后构建。
+#
+# 两种模式（自动判定，无需改文件）：
+#   1) 未配置签名 secret → `flutter build ios --no-codesign`
+#      仅验证「能否编译成 .app」，产物是未签名 .app（不能装真机/上架），
+#      但无需任何 Apple 账号即可跑通——等价于 flutter.yml 回退 debug 签名的哲学。
+#   2) 配置了签名 secret → `flutter build ipa` 出可分发 IPA，并可选上传 TestFlight。
+#
+# 注意成本：GitHub 托管的 macOS runner 计费是 Linux 的 10 倍。默认同样监听
+# v*.*.* tag（一次发版同时出 APK+IPA）；若想省钱可把 tags 触发注释掉、只留
+# workflow_dispatch 手动出包。
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+jobs:
+  build-ios:
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.x'
+          channel: 'stable'
+          cache: true
+
+      - name: Scaffold iOS platform
+        # 与 flutter.yml 同理：本地无 ios/ 工程，CI 现场生成。
+        # flutter create 不会覆盖已存在的 lib/ 源码。
+        working-directory: mobile
+        run: flutter create --org com.myaccountbook --platforms=ios .
+
+      - name: Verify lib/main.dart is our real app (not scaffold default)
+        working-directory: mobile
+        run: |
+          if grep -q "Flutter Demo Home Page" lib/main.dart; then
+            echo "::error::lib/main.dart was overwritten by flutter create scaffold!"
+            exit 1
+          fi
+          echo "OK: lib/main.dart is our real app entry."
+
+      - name: Inject app version from git tag
+        # 仅 tag 触发时注入版本（与 flutter.yml 口径一致：去 v 前缀写入
+        # AppConfig.appVersion + pubspec.yaml，versionCode 从 tag 推导）。
+        # workflow_dispatch（分支触发）时跳过，避免把分支名当版本号。
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          TAG=${GITHUB_REF_NAME#v}
+          IFS='.' read -r MAJ MIN PAT <<< "$TAG"
+          CODE=$(( MAJ * 10000 + MIN * 100 + PAT ))
+          sed -i '' "s/static const String appVersion = '.*'/static const String appVersion = '${TAG}'/" \
+            mobile/lib/core/constants.dart
+          sed -i '' "s/^version: .*/version: ${TAG}+${CODE}/" mobile/pubspec.yaml
+
+      - name: Set display name + iOS deployment target
+        run: |
+          PLIST=mobile/ios/Runner/Info.plist
+          /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName 心愿便利贴" "$PLIST" \
+            || /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string 心愿便利贴" "$PLIST"
+          # audioplayers 6.x / local_auth 2.x 的下限，锁 13.0 更稳。
+          sed -i '' "s/# platform :ios, .*/platform :ios, '13.0'/" mobile/ios/Podfile || true
+          if ! grep -q "platform :ios" mobile/ios/Podfile; then
+            printf "platform :ios, '13.0'\n%s" "$(cat mobile/ios/Podfile)" > mobile/ios/Podfile
+          fi
+
+      - name: Inject Info.plist usage descriptions
+        # 缺这些字符串，App 调用相册/面容时会**直接崩溃**（iOS 强制）。
+        run: |
+          PLIST=mobile/ios/Runner/Info.plist
+          /usr/libexec/PlistBuddy -c "Add :NSPhotoLibraryUsageDescription string 用于选择记账的票据/花费图片" "$PLIST" || true
+          /usr/libexec/PlistBuddy -c "Add :NSCameraUsageDescription string 用于拍摄记账票据" "$PLIST" || true
+          /usr/libexec/PlistBuddy -c "Add :NSFaceIDUsageDescription string 用于用面容 ID 解锁应用" "$PLIST" || true
+
+      - name: Generate iOS app icon from project original (icon-512.png)
+        # 用项目原图标替换 flutter create 的默认 Flutter logo；自包含（仅 Pillow），
+        # 重写整套 AppIcon.appiconset + Contents.json。
+        run: |
+          python3 -m pip install --quiet --user Pillow
+          python3 - <<'PY'
+          from PIL import Image
+          import json, os
+          src = Image.open('public/icon-512.png').convert('RGBA')
+          out = 'mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset'
+          os.makedirs(out, exist_ok=True)
+          # (idiom, pt, scale) -> px
+          specs = [
+              ('iphone','20x20','2x',40),('iphone','20x20','3x',60),
+              ('iphone','29x29','2x',58),('iphone','29x29','3x',87),
+              ('iphone','40x40','2x',80),('iphone','40x40','3x',120),
+              ('iphone','60x60','2x',120),('iphone','60x60','3x',180),
+              ('ipad','20x20','1x',20),('ipad','20x20','2x',40),
+              ('ipad','29x29','1x',29),('ipad','29x29','2x',58),
+              ('ipad','40x40','1x',40),('ipad','40x40','2x',80),
+              ('ipad','76x76','1x',76),('ipad','76x76','2x',152),
+              ('ipad','83.5x83.5','2x',167),
+              ('ios-marketing','1024x1024','1x',1024),
+          ]
+          images, made = [], {}
+          for idiom, size, scale, px in specs:
+              fn = f'AppIcon-{px}.png'
+              if px not in made:
+                  img = src.resize((px, px), Image.LANCZOS)
+                  # marketing 图不能带 alpha，铺白底
+                  if idiom == 'ios-marketing':
+                      bg = Image.new('RGB', (px, px), (255, 255, 255))
+                      bg.paste(img, mask=img.split()[3])
+                      bg.save(os.path.join(out, fn))
+                  else:
+                      img.save(os.path.join(out, fn))
+                  made[px] = fn
+              images.append({'idiom': idiom, 'size': size, 'scale': scale, 'filename': fn})
+          json.dump({'images': images, 'info': {'author': 'xcode', 'version': 1}},
+                    open(os.path.join(out, 'Contents.json'), 'w'), indent=2)
+          print('iOS AppIcon set generated.')
+          PY
+
+      - name: Pub get
+        working-directory: mobile
+        run: flutter pub get
+
+      # ---- 代码签名（配置了 secret 才生效；否则走 no-codesign 验证构建）----
+      - name: Import signing assets (if secrets provided)
+        id: signing
+        env:
+          IOS_CERT_P12_BASE64: ${{ secrets.IOS_CERT_P12_BASE64 }}
+          IOS_CERT_PASSWORD: ${{ secrets.IOS_CERT_PASSWORD }}
+          IOS_PROVISION_PROFILE_BASE64: ${{ secrets.IOS_PROVISION_PROFILE_BASE64 }}
+        run: |
+          if [ -z "$IOS_CERT_P12_BASE64" ] || [ -z "$IOS_PROVISION_PROFILE_BASE64" ]; then
+            echo "签名 secret 未配置 → 走 --no-codesign 验证构建。"
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          KEYCHAIN=$RUNNER_TEMP/app.keychain-db
+          security create-keychain -p "" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "" "$KEYCHAIN"
+          echo "$IOS_CERT_P12_BASE64" | base64 -d > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -P "$IOS_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          security set-key-partition-list -S apple-tool:,apple: -k "" "$KEYCHAIN" >/dev/null
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          echo "$IOS_PROVISION_PROFILE_BASE64" | base64 -d > "$HOME/Library/MobileDevice/Provisioning Profiles/app.mobileprovision"
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Build unsigned .app (no secrets)
+        if: steps.signing.outputs.signed == 'false'
+        working-directory: mobile
+        run: |
+          flutter build ios --release --no-codesign
+          cd build/ios/iphoneos && zip -r Runner-unsigned.app.zip Runner.app
+
+      - name: Build signed IPA (secrets present)
+        if: steps.signing.outputs.signed == 'true'
+        working-directory: mobile
+        env:
+          # 在 repo Variables 里配置：team id / bundle id / profile 名称
+          IOS_TEAM_ID: ${{ vars.IOS_TEAM_ID }}
+          IOS_BUNDLE_ID: ${{ vars.IOS_BUNDLE_ID }}
+          IOS_PROFILE_NAME: ${{ vars.IOS_PROFILE_NAME }}
+        run: |
+          cat > ExportOptions.plist <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store</string>
+            <key>teamID</key><string>${IOS_TEAM_ID}</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>provisioningProfiles</key>
+            <dict><key>${IOS_BUNDLE_ID}</key><string>${IOS_PROFILE_NAME}</string></dict>
+          </dict></plist>
+          EOF
+          flutter build ipa --release --export-options-plist=ExportOptions.plist
+
+      - name: Upload unsigned .app
+        if: steps.signing.outputs.signed == 'false'
+        uses: actions/upload-artifact@v4
+        with:
+          name: myaccountbook-ios-unsigned
+          path: mobile/build/ios/iphoneos/Runner-unsigned.app.zip
+
+      - name: Upload IPA
+        if: steps.signing.outputs.signed == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: myaccountbook-ipa
+          path: mobile/build/ios/ipa/*.ipa
+
+      - name: Upload to TestFlight (optional)
+        # 需在 repo Secrets 配置 App Store Connect API Key（推荐，免密码上传）：
+        #   ASC_KEY_ID / ASC_ISSUER_ID / ASC_API_KEY_P8_BASE64
+        if: steps.signing.outputs.signed == 'true' && env.ASC_KEY_ID != ''
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_API_KEY_P8_BASE64: ${{ secrets.ASC_API_KEY_P8_BASE64 }}
+        run: |
+          mkdir -p ~/.appstoreconnect/private_keys
+          echo "$ASC_API_KEY_P8_BASE64" | base64 -d > ~/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8
+          IPA=$(ls mobile/build/ios/ipa/*.ipa | head -1)
+          xcrun altool --upload-app -f "$IPA" -t ios \
+            --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"
