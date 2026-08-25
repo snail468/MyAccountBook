@@ -59,7 +59,12 @@ class PageHeader extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // 单行截断（对齐网页端 h1 的 truncate）：右侧操作较多时，
+                  // 长/中文标题也不会逐字竖排换行，只会省略号收尾。
                   Text(title,
+                      maxLines: 1,
+                      softWrap: false,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                           color: ink900,
                           fontSize: 22,

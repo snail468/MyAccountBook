@@ -357,7 +357,6 @@ class _TravelBodyState extends State<_TravelBody> {
                 title: state.ledger.displayName,
                 subtitle: '',
                 actions: [
-                  if (state.pending > 0) _PendingBadge(count: state.pending),
                   // 账本设置（写操作）：只读协作账本 viewer 隐藏。
                   if (state.ledger.canRecord)
                     IconButton(
@@ -381,6 +380,16 @@ class _TravelBodyState extends State<_TravelBody> {
                   ),
                 ],
               ),
+              // 待处理徽标单独占一行（对齐网页端 <PendingBadge/> 在标题行下方），
+              // 不再挤进头部操作区导致标题被压窄逐字竖排。
+              if (state.pending > 0)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: _PendingBadge(count: state.pending),
+                  ),
+                ),
               if (state.loading)
                 Padding(
                   padding: const EdgeInsets.only(top: 8),

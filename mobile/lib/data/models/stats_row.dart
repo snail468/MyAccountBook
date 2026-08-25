@@ -16,10 +16,18 @@ class StatRow {
   /// 类别（用于「支出构成 / 收入构成」占比；桃源取活动 topicTag）。
   final String category;
 
+  /// 来源分量 key，对齐首页「总收入 A 的组成」的稳定键（见 income_prefs / 网页端
+  /// lib/userPrefs.ts）：'work' / 'taoyuan:cash' / 'taoyuan:jd' /
+  /// 'general:<id>' / 'general-expense:<id>' / 'travel-expense:<id>'。
+  /// 统计页据此过滤——用户在首页取消勾选的来源不计入统计。
+  /// 为 null 表示该行不对应任何分量（无对应开关，始终计入）。
+  final String? sourceKey;
+
   const StatRow({
     required this.occurredAt,
     required this.amountCents,
     required this.direction,
     required this.category,
+    this.sourceKey,
   });
 }

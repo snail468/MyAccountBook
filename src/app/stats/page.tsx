@@ -3,6 +3,12 @@ import { redirect } from 'next/navigation';
 import { requireUserWithRole } from '@/lib/session';
 import { prisma } from '@/lib/db';
 import { parseRewardMethods, rewardValueKind } from '@/lib/rewardMethod';
+import {
+  isIncomeComponentEnabled,
+  parsePrefs,
+  type IncomeComponentKey,
+  type UserPrefs,
+} from '@/lib/userPrefs';
 import { NOT_DELETED } from '@/lib/softDelete';
 import Money from '@/components/ui/Money';
 import {
@@ -29,7 +35,16 @@ const WINDOW_MONTHS = 13;
  * 只取三列、且限定在 13 个月窗口内 —— 不像列表页那样需要 SQL 聚合，
  * 理由见 lib/stats.ts 顶部。
  */
-async function loadRows(userId: string, since: Date): Promise<StatRow[]> {
+async function loadRows(
+  userId: string,
+  since: Date,
+  prefs: UserPrefs,
+): Promise<StatRow[]> {
+  // 统计只计入首页「总收入 A 的组成」里勾选的来源：用户显式取消勾选
+  // （incomeComponents[key] === false）的分量不进统计。key 为 null 的行无对应
+  // 开关（如桃源非现金/京东卡的金额奖励），始终计入。默认全开（缺失=启用）。
+  const enabled = (key: IncomeComponentKey | null) =>
+    key === null || isIncomeComponentEnabled(prefs, key);
   // Phase 2：所有来源统一按"user 是账本成员"过滤。个人统计包含共享账本 ——
   // 现金流概念上就应该看所有能看到的账本（与首页 hasWork/hasTaoyuan 的口径不同：
   // 首页 B/C/D 是"我的收入"，只算 owner；统计页是"我关注的所有账本的现金流"）。
@@ -53,7 +68,13 @@ async function loadRows(userId: string, since: Date): Promise<StatRow[]> {
         ledger: memberLedger,
         occurredAt: { gte: since },
       },
-      select: { occurredAt: true, amountCents: true, direction: true, category: true },
+      select: {
+        occurredAt: true,
+        amountCents: true,
+        direction: true,
+        category: true,
+        ledgerId: true,
+      },
     }),
     prisma.tripExpense.findMany({
       where: {
@@ -61,7 +82,7 @@ async function loadRows(userId: string, since: Date): Promise<StatRow[]> {
         ledger: memberLedger,
         occurredAt: { gte: since },
       },
-      select: { occurredAt: true, amountBaseCents: true, category: true },
+      select: { occurredAt: true, amountBaseCents: true, category: true, ledgerId: true },
     }),
     // 桃源账本只把**已到账**的钱算进收入 —— 预测和公示都还没落袋，
     // 混进统计会让"收入"虚高
@@ -82,27 +103,41 @@ async function loadRows(userId: string, since: Date): Promise<StatRow[]> {
   ]);
 
   return [
-    ...entries.map((e) => ({
-      occurredAt: e.occurredAt,
-      amountCents: e.amountCents,
-      direction: (e.direction === 'income' ? 'income' : 'expense') as StatRow['direction'],
-      category: e.category,
-      sourceLabel: '工作账本',
-    })),
-    ...generals.map((g) => ({
-      occurredAt: g.occurredAt,
-      amountCents: g.amountCents,
-      direction: (g.direction === 'income' ? 'income' : 'expense') as StatRow['direction'],
-      category: g.category,
-      sourceLabel: '普通账本',
-    })),
-    ...trips.map((t) => ({
-      occurredAt: t.occurredAt,
-      amountCents: t.amountBaseCents,
-      direction: 'expense' as const,
-      category: t.category,
-      sourceLabel: '旅游账本',
-    })),
+    // 工作账本进项统一对应分量 'work'。
+    ...(enabled('work')
+      ? entries.map((e) => ({
+          occurredAt: e.occurredAt,
+          amountCents: e.amountCents,
+          direction: (e.direction === 'income' ? 'income' : 'expense') as StatRow['direction'],
+          category: e.category,
+          sourceLabel: '工作账本',
+        }))
+      : []),
+    ...generals
+      // 进项对应 'general:<id>'，出项对应 'general-expense:<id>'。
+      .filter((g) =>
+        enabled(
+          (g.direction === 'income'
+            ? `general:${g.ledgerId}`
+            : `general-expense:${g.ledgerId}`) as IncomeComponentKey,
+        ),
+      )
+      .map((g) => ({
+        occurredAt: g.occurredAt,
+        amountCents: g.amountCents,
+        direction: (g.direction === 'income' ? 'income' : 'expense') as StatRow['direction'],
+        category: g.category,
+        sourceLabel: '普通账本',
+      })),
+    ...trips
+      .filter((t) => enabled(`travel-expense:${t.ledgerId}` as IncomeComponentKey))
+      .map((t) => ({
+        occurredAt: t.occurredAt,
+        amountCents: t.amountBaseCents,
+        direction: 'expense' as const,
+        category: t.category,
+        sourceLabel: '旅游账本',
+      })),
     // 只把**金额类**奖励计入收入 —— Q币个数、周边件数不是钱，
     // 混进来会让总收入凭空多出一堆不存在的钱
     ...paidAmounts
@@ -111,7 +146,12 @@ async function loadRows(userId: string, since: Date): Promise<StatRow[]> {
           a.rewardMethod ??
           parseRewardMethods(a.event.rewardMethods, a.event.rewardMethod)[0] ??
           null;
-        return rewardValueKind(method) === 'money';
+        if (rewardValueKind(method) !== 'money') return false;
+        // 首页只把现金/京东卡两种金额奖励拆成分量；其它金额奖励无对应开关，
+        // 始终计入（key=null）。
+        const key: IncomeComponentKey | null =
+          method === 'cash' ? 'taoyuan:cash' : method === 'jdcard' ? 'taoyuan:jd' : null;
+        return enabled(key);
       })
       .map((a) => ({
         occurredAt: a.occurredAt,
@@ -150,7 +190,13 @@ export default async function StatsPage() {
 
   const now = new Date();
   const keys = recentMonthKeys(now, WINDOW_MONTHS);
-  const rows = await loadRows(user.id, windowStart(now, WINDOW_MONTHS));
+  // 读用户偏好里的「总收入组成」勾选，统计据此过滤来源。
+  const userRow = await prisma.user.findUnique({
+    where: { id: user.id },
+    select: { preferences: true },
+  });
+  const prefs = parsePrefs(userRow?.preferences ?? null);
+  const rows = await loadRows(user.id, windowStart(now, WINDOW_MONTHS), prefs);
 
   const buckets = bucketByMonth(rows, keys);
   // 折线只画最近 12 个月；第 13 个月是给同比垫底的
@@ -171,7 +217,7 @@ export default async function StatsPage() {
         </Link>
         <h1 className="text-2xl font-semibold flex-1">统计</h1>
       </div>
-      <p className="text-xs text-ink-500">全部账本 · 最近 12 个月</p>
+      <p className="text-xs text-ink-500">按「总收入组成」勾选的来源 · 最近 12 个月</p>
 
       {!hasData && (
         <p className="text-ink-500 text-sm py-12 text-center">

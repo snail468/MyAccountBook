@@ -4,6 +4,7 @@ import '../../data/local/work_entry_dao.dart';
 import '../../data/local/trip_dao.dart';
 import '../../data/local/event_dao.dart';
 import '../../data/models/stats_row.dart';
+import '../../state/income_prefs.dart';
 
 /// 统计页状态。
 ///
@@ -55,12 +56,22 @@ class StatsState extends ChangeNotifier {
       final since = _windowStartMs(now, months);
 
       // 四个账本统一归一成 StatRow，再一起聚合（对齐网页端 loadRows 合并 rows）。
-      final rows = [
+      final allRows = [
         ...await GeneralEntryDao().statsRows(since),
         ...await WorkEntryDao().statsRows(since),
         ...await TripDao().statsRows(since),
         ...await EventDao().statsRows(since),
       ];
+
+      // 只统计首页「总收入 A 的组成」里勾选的来源：用户显式取消勾选（override=false）
+      // 的分量不计入统计。缺失/true = 启用（默认全开）；sourceKey 为 null 的行
+      // 无对应开关，始终计入。
+      final overrides = await readIncomeOverrides();
+      final rows = allRows.where((r) {
+        final key = r.sourceKey;
+        if (key == null) return true;
+        return overrides[key] != false;
+      }).toList();
 
       // 13 个连续月份的桶；画图 / 汇总只取后 12 个（visible）。
       final buckets = _bucketByMonth(rows, keys);

@@ -263,12 +263,20 @@ class EventDao {
       if (rewardValueKind(method) != RewardValueKind.money) continue;
       final tag = (r['topic_tag'] as String?)?.trim();
       final category = tag != null && tag.isNotEmpty ? tag : '桃源奖励';
+      // 首页只把桃源现金/京东卡两种金额奖励拆成分量（taoyuan:cash / taoyuan:jd）；
+      // 其它金额类奖励无对应开关 → sourceKey 置空，统计始终计入。
+      final sourceKey = method == 'cash'
+          ? 'taoyuan:cash'
+          : method == 'jdcard'
+              ? 'taoyuan:jd'
+              : null;
       result.add(StatRow(
         occurredAt:
             DateTime.fromMillisecondsSinceEpoch(r['occurred_at'] as int),
         amountCents: cents,
         direction: 'income',
         category: category,
+        sourceKey: sourceKey,
       ));
     }
     return result;

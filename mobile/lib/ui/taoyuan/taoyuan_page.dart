@@ -481,7 +481,6 @@ class _BodyState extends State<_Body> {
                 title: store.ledger.displayName,
                 subtitle: '${store.ledger.displayName} · 发布 → 预测 → 公示 → 发钱',
                 actions: <Widget>[
-                  if (store.pending > 0) _PendingBadge(count: store.pending),
                   IconButton(
                     icon: const Icon(Icons.group_outlined),
                     tooltip: '协作',
@@ -493,6 +492,15 @@ class _BodyState extends State<_Body> {
                   ),
                 ],
               ),
+              // 待处理徽标单独占一行，避免挤压头部标题逐字竖排。
+              if (store.pending > 0)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4, bottom: 4),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: _PendingBadge(count: store.pending),
+                  ),
+                ),
               const SizedBox(height: 8),
               // 选择 / 计数
               Row(

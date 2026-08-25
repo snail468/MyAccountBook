@@ -226,16 +226,25 @@ class TripDao {
   Future<List<StatRow>> statsRows(int since) async {
     final db = await _db.database;
     final rows = await db.rawQuery(
-      '''SELECT occurred_at, amount_base_cents, category
-         FROM trip_expenses
-         WHERE deleted_at IS NULL AND occurred_at >= ?''',
+      '''SELECT t.occurred_at AS occurred_at,
+                t.amount_base_cents AS amount_base_cents,
+                t.category AS category,
+                COALESCE(l.server_id, l.id) AS ledger_key
+         FROM trip_expenses t
+         JOIN ledgers l ON l.id = t.ledger_id
+         WHERE t.deleted_at IS NULL AND t.occurred_at >= ?''',
       [since],
     );
-    return rows.map((r) => StatRow(
-      occurredAt: DateTime.fromMillisecondsSinceEpoch(r['occurred_at'] as int),
-      amountCents: (r['amount_base_cents'] as num?)?.toInt() ?? 0,
-      direction: 'expense',
-      category: (r['category'] as String?) ?? '旅游',
-    )).toList();
+    return rows.map((r) {
+      final ledgerKey = r['ledger_key'] as String?;
+      return StatRow(
+        occurredAt:
+            DateTime.fromMillisecondsSinceEpoch(r['occurred_at'] as int),
+        amountCents: (r['amount_base_cents'] as num?)?.toInt() ?? 0,
+        direction: 'expense',
+        category: (r['category'] as String?) ?? '旅游',
+        sourceKey: ledgerKey == null ? null : 'travel-expense:$ledgerKey',
+      );
+    }).toList();
   }
 }

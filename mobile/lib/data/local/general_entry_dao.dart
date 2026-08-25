@@ -277,18 +277,33 @@ class GeneralEntryDao {
   /// income / expense 两个方向都包含。对齐网页端 loadRows 的 generals 分支。
   Future<List<StatRow>> statsRows(int since) async {
     final db = await _db.database;
+    // JOIN ledgers 取账本 key（server_id 优先，与首页分量 key 一致），
+    // 供统计页按「总收入组成」勾选过滤。
     final rows = await db.rawQuery(
-      '''SELECT occurred_at, amount_cents, direction, category
-         FROM general_entries
-         WHERE deleted_at IS NULL AND occurred_at >= ?''',
+      '''SELECT g.occurred_at AS occurred_at, g.amount_cents AS amount_cents,
+                g.direction AS direction, g.category AS category,
+                COALESCE(l.server_id, l.id) AS ledger_key
+         FROM general_entries g
+         JOIN ledgers l ON l.id = g.ledger_id
+         WHERE g.deleted_at IS NULL AND g.occurred_at >= ?''',
       [since],
     );
-    return rows.map((r) => StatRow(
-      occurredAt: DateTime.fromMillisecondsSinceEpoch(r['occurred_at'] as int),
-      amountCents: (r['amount_cents'] as num?)?.toInt() ?? 0,
-      direction: (r['direction'] as String?) ?? 'expense',
-      category: (r['category'] as String?) ?? '未分类',
-    )).toList();
+    return rows.map((r) {
+      final direction = (r['direction'] as String?) ?? 'expense';
+      final ledgerKey = r['ledger_key'] as String?;
+      return StatRow(
+        occurredAt:
+            DateTime.fromMillisecondsSinceEpoch(r['occurred_at'] as int),
+        amountCents: (r['amount_cents'] as num?)?.toInt() ?? 0,
+        direction: direction,
+        category: (r['category'] as String?) ?? '未分类',
+        sourceKey: ledgerKey == null
+            ? null
+            : (direction == 'income'
+                ? 'general:$ledgerKey'
+                : 'general-expense:$ledgerKey'),
+      );
+    }).toList();
   }
 
   static int _monthStart(String ym) {

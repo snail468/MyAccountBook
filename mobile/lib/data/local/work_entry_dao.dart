@@ -147,6 +147,8 @@ class WorkEntryDao {
       amountCents: (r['amount_cents'] as num?)?.toInt() ?? 0,
       direction: 'income',
       category: (r['category'] as String?) ?? '工作',
+      // 工作账本进项统一对应首页分量 'work'（无按账本细分）。
+      sourceKey: 'work',
     )).toList();
   }
 }
