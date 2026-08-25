@@ -45,18 +45,28 @@ async function loadRows(
   // 开关（如桃源非现金/京东卡的金额奖励），始终计入。默认全开（缺失=启用）。
   const enabled = (key: IncomeComponentKey | null) =>
     key === null || isIncomeComponentEnabled(prefs, key);
-  // Phase 2：所有来源统一按"user 是账本成员"过滤。个人统计包含共享账本 ——
-  // 现金流概念上就应该看所有能看到的账本（与首页 hasWork/hasTaoyuan 的口径不同：
-  // 首页 B/C/D 是"我的收入"，只算 owner；统计页是"我关注的所有账本的现金流"）。
+  // 统计口径必须与首页「总收入组成」一致：只统计首页里出现、且被勾选的来源。
+  //
+  // 关键区分——首页两类分量的账本口径不同：
+  //  - 工作 / 桃源在首页是**单一**分量（work / taoyuan:cash / taoyuan:jd），只代表
+  //    「我自己创建的那一本」（owner），共享给我的工作/桃源账本不进首页分量；
+  //  - 普通 / 旅游在首页是**逐账本**分量（general:<id> / general-expense:<id> /
+  //    travel-expense:<id>），含共享账本（标题带 owner 前缀），每本都能单独勾选。
+  //
+  // 因此工作进项、桃源到账金额只能取 **我拥有的**账本（ledger.userId === 我），否则
+  // 协作共享账本的进项会漏进统计、却在首页没有对应开关可取消（本次修复的 bug）。
+  // 普通/旅游仍按成员口径（含共享），因为它们每本都是首页里独立可勾选的分量。
   const memberLedger = { members: { some: { userId } }, deletedAt: null };
+  const ownedLedger = { userId, deletedAt: null };
   const [entries, generals, trips, paidAmounts] = await Promise.all([
     // 工作账本**只算进项**：出项本质是"垫款"，公司迟早回款，
     // 记进"支出"会让个人现金流看起来虚亏。回款条目也不需要单独算成收入 ——
-    // 它们只是让原来的垫款归零，本身不是新收入
+    // 它们只是让原来的垫款归零，本身不是新收入。
+    // 只取我拥有的工作账本，对齐首页 work 分量（owner-only）。
     prisma.entry.findMany({
       where: {
         ...NOT_DELETED,
-        ledger: memberLedger,
+        ledger: ownedLedger,
         direction: 'income',
         occurredAt: { gte: since },
       },
@@ -85,11 +95,12 @@ async function loadRows(
       select: { occurredAt: true, amountBaseCents: true, category: true, ledgerId: true },
     }),
     // 桃源账本只把**已到账**的钱算进收入 —— 预测和公示都还没落袋，
-    // 混进统计会让"收入"虚高
+    // 混进统计会让"收入"虚高。
+    // 只取我拥有的桃源账本，对齐首页 taoyuan:cash / taoyuan:jd 分量（owner-only）。
     prisma.eventAmount.findMany({
       where: {
         ...NOT_DELETED,
-        event: { ledger: memberLedger, ...NOT_DELETED },
+        event: { ledger: ownedLedger, ...NOT_DELETED },
         stage: 'paid',
         occurredAt: { gte: since },
       },

@@ -236,6 +236,10 @@ class EventDao {
   /// 类别取活动 topicTag（空则兜底「桃源奖励」）。对齐网页端 loadRows 的 paidAmounts 分支。
   Future<List<StatRow>> statsRows(int since) async {
     final db = await _db.database;
+    // 只统计**我拥有的**桃源账本到账金额，对齐首页「总收入组成」的
+    // taoyuan:cash / taoyuan:jd 分量（首页只代表 owner 的桃源账本；共享给我的
+    // 桃源账本不进首页分量）。否则协作共享桃源账本的到账进项会漏进统计，却在
+    // 首页没有对应开关可取消。[#3] 拥有判定与首页 _pickOwn 一致（见 work_entry_dao）。
     final rows = await db.rawQuery(
       '''SELECT a.occurred_at AS occurred_at, a.cents AS cents,
                 a.reward_method AS reward_method,
@@ -244,8 +248,10 @@ class EventDao {
                 e.topic_tag AS topic_tag
          FROM event_amounts a
          JOIN taoyuan_events e ON e.id = a.event_id
+         JOIN ledgers l ON l.id = e.ledger_id
          WHERE a.stage = 'paid' AND a.deleted_at IS NULL
-           AND e.deleted_at IS NULL AND a.occurred_at >= ?''',
+           AND e.deleted_at IS NULL AND a.occurred_at >= ?
+           AND (l.is_own = 1 OR l.owner_name IS NULL)''',
       [since],
     );
     final result = <StatRow>[];

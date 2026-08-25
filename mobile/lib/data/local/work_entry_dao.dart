@@ -136,10 +136,19 @@ class WorkEntryDao {
   /// 取窗口内记录。对齐网页端 loadRows 的 entries 分支（direction: 'income'）。
   Future<List<StatRow>> statsRows(int since) async {
     final db = await _db.database;
+    // 只统计**我拥有的**工作账本进项，对齐首页「总收入组成」的 work 分量
+    // （首页 work 只代表 owner 的工作账本；共享给我的工作账本不进首页分量）。
+    // 否则协作共享工作账本的进项会漏进统计，却在首页没有对应开关可取消。[#3]
+    // 拥有判定与首页 _pickOwn 一致：is_own=1（已同步自有）或 owner_name 为空
+    //（本地新建、尚未同步的自有账本，其 is_own 落库为 0 但无 owner）。
     final rows = await db.rawQuery(
-      '''SELECT occurred_at, amount_cents, category
-         FROM work_entries
-         WHERE deleted_at IS NULL AND direction = 'income' AND occurred_at >= ?''',
+      '''SELECT w.occurred_at AS occurred_at, w.amount_cents AS amount_cents,
+                w.category AS category
+         FROM work_entries w
+         JOIN ledgers l ON l.id = w.ledger_id
+         WHERE w.deleted_at IS NULL AND w.direction = 'income'
+           AND w.occurred_at >= ?
+           AND (l.is_own = 1 OR l.owner_name IS NULL)''',
       [since],
     );
     return rows.map((r) => StatRow(
