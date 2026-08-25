@@ -17,7 +17,8 @@ name: Flutter iOS (IPA)
 on:
   push:
     tags:
-      - 'v*.*.*'
+      - 'v*.*.*'      # 正式发版：与 APK 一并出 iOS 包
+      - 'ios-v*'      # 仅 iOS（如 ios-v2.1.01）：不触发 flutter.yml，用于单独验证/出包
   workflow_dispatch:
 
 jobs:
@@ -50,17 +51,19 @@ jobs:
           echo "OK: lib/main.dart is our real app entry."
 
       - name: Inject app version from git tag
-        # 仅 tag 触发时注入版本（与 flutter.yml 口径一致：去 v 前缀写入
-        # AppConfig.appVersion + pubspec.yaml，versionCode 从 tag 推导）。
-        # workflow_dispatch（分支触发）时跳过，避免把分支名当版本号。
-        if: startsWith(github.ref, 'refs/tags/v')
+        # tag 触发时注入版本：从 tag 抽取 x.y.z（兼容 v2.1.01 与 ios-v2.1.01 前缀），
+        # 写入 AppConfig.appVersion + pubspec.yaml，versionCode 从版本号推导。
+        # workflow_dispatch（分支触发）或 tag 无版本号时跳过，避免把分支名当版本。
+        if: startsWith(github.ref, 'refs/tags/')
         run: |
-          TAG=${GITHUB_REF_NAME#v}
-          IFS='.' read -r MAJ MIN PAT <<< "$TAG"
-          CODE=$(( MAJ * 10000 + MIN * 100 + PAT ))
-          sed -i '' "s/static const String appVersion = '.*'/static const String appVersion = '${TAG}'/" \
+          NUM=$(echo "$GITHUB_REF_NAME" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+          if [ -z "$NUM" ]; then echo "tag 无 x.y.z 版本号，跳过注入"; exit 0; fi
+          IFS='.' read -r MAJ MIN PAT <<< "$NUM"
+          # 10# 强制十进制，避免 08/09 被当八进制报错。
+          CODE=$(( 10#$MAJ * 10000 + 10#$MIN * 100 + 10#$PAT ))
+          sed -i '' "s/static const String appVersion = '.*'/static const String appVersion = '${NUM}'/" \
             mobile/lib/core/constants.dart
-          sed -i '' "s/^version: .*/version: ${TAG}+${CODE}/" mobile/pubspec.yaml
+          sed -i '' "s/^version: .*/version: ${NUM}+${CODE}/" mobile/pubspec.yaml
 
       - name: Set display name + iOS deployment target
         run: |
