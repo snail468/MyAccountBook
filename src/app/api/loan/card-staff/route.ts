@@ -6,7 +6,7 @@ import { badRequest } from '@/lib/apiError';
 
 const cardStaffSchema = z.object({
   name: z.string().trim().min(1, '姓名必填').max(50),
-  workNo: z.string().trim().min(1, '卡部工号必填').max(50),
+  workNo: z.string().trim().max(50).nullable().optional(),
   phone: z.string().trim().max(30).nullable().optional(),
   branch: z.string().trim().max(100).nullable().optional(),
   commissionNote: z.string().trim().max(100).nullable().optional(),
@@ -62,7 +62,7 @@ export async function POST(req: Request) {
     data: {
       userId: user.id,
       name: parsed.data.name,
-      workNo: parsed.data.workNo,
+      workNo: parsed.data.workNo || null,
       phone: parsed.data.phone || null,
       branch: parsed.data.branch || null,
       commissionNote: parsed.data.commissionNote || null,

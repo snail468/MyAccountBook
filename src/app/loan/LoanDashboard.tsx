@@ -21,7 +21,7 @@ export type OrderListItem = {
   cardStaffWorkNoSnapshot: string | null;
   createdAt: string;
   broker?: { id: string; name: string; company: string | null } | null;
-  cardStaff?: { id: string; name: string; workNo: string } | null;
+  cardStaff?: { id: string; name: string; workNo: string | null } | null;
   _count?: { logs: number; attachments: number };
 };
 
@@ -39,11 +39,8 @@ type Props = {
 const STAGES = [
   { key: 'all', label: '全部单据' },
   { key: 'intention', label: '意向单' },
-  { key: 'scheme', label: '方案中' },
   { key: 'approval', label: '审批中' },
-  { key: 'lending', label: '放款履约' },
-  { key: 'settled', label: '已结清' },
-  { key: 'overdue', label: '逾期' },
+  { key: 'lending', label: '已放款' },
 ];
 
 export default function LoanDashboard({ orders, businessName: _businessName, stats }: Props) {
@@ -94,7 +91,7 @@ export default function LoanDashboard({ orders, businessName: _businessName, sta
       case 'approval':
         return <span className="px-2 py-0.5 rounded-full text-[11px] bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 font-medium">行内审批中</span>;
       case 'lending':
-        return <span className="px-2 py-0.5 rounded-full text-[11px] bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 font-medium">已放款履约</span>;
+        return <span className="px-2 py-0.5 rounded-full text-[11px] bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 font-medium">已放款</span>;
       case 'settled':
         return <span className="px-2 py-0.5 rounded-full text-[11px] bg-gray-100 dark:bg-gray-800 text-gray-500 font-medium">已结清</span>;
       case 'overdue':

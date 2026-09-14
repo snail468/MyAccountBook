@@ -6,7 +6,7 @@ import { useToast, useConfirm } from '@/components/ui/Dialog';
 export type CardStaffItem = {
   id: string;
   name: string;
-  workNo: string;
+  workNo: string | null;
   phone: string | null;
   branch: string | null;
   commissionNote: string | null;
@@ -49,7 +49,7 @@ export default function CardStaffList({ initialList }: { initialList: CardStaffI
   function openEdit(item: CardStaffItem) {
     setEditingId(item.id);
     setName(item.name);
-    setWorkNo(item.workNo);
+    setWorkNo(item.workNo || '');
     setPhone(item.phone || '');
     setBranch(item.branch || '');
     setCommissionNote(item.commissionNote || '');
@@ -63,10 +63,6 @@ export default function CardStaffList({ initialList }: { initialList: CardStaffI
       toast({ message: '卡部人员姓名必填' });
       return;
     }
-    if (!workNo.trim()) {
-      toast({ message: '卡部工号必填' });
-      return;
-    }
     setBusy(true);
     try {
       if (editingId) {
@@ -76,7 +72,7 @@ export default function CardStaffList({ initialList }: { initialList: CardStaffI
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             name: name.trim(),
-            workNo: workNo.trim(),
+            workNo: workNo.trim() || null,
             phone: phone.trim() || null,
             branch: branch.trim() || null,
             commissionNote: commissionNote.trim() || null,
@@ -96,7 +92,7 @@ export default function CardStaffList({ initialList }: { initialList: CardStaffI
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             name: name.trim(),
-            workNo: workNo.trim(),
+            workNo: workNo.trim() || null,
             phone: phone.trim() || null,
             branch: branch.trim() || null,
             commissionNote: commissionNote.trim() || null,
@@ -119,7 +115,7 @@ export default function CardStaffList({ initialList }: { initialList: CardStaffI
   async function handleDelete(item: CardStaffItem) {
     const ok = await confirm({
       title: '删除卡部人员？',
-      body: `确定要删除卡部人员“${item.name} (${item.workNo})”吗？已关联的单据快照仍会保留。`,
+      body: `确定要删除卡部人员“${item.name}${item.workNo ? ` (${item.workNo})` : ''}”吗？已关联的单据快照仍会保留。`,
       confirmText: '删除',
       cancelText: '取消',
       danger: true,
@@ -141,7 +137,7 @@ export default function CardStaffList({ initialList }: { initialList: CardStaffI
     const q = search.trim().toLowerCase();
     return (
       item.name.toLowerCase().includes(q) ||
-      item.workNo.toLowerCase().includes(q) ||
+      (item.workNo && item.workNo.toLowerCase().includes(q)) ||
       (item.phone && item.phone.includes(q)) ||
       (item.branch && item.branch.toLowerCase().includes(q))
     );
@@ -195,9 +191,15 @@ export default function CardStaffList({ initialList }: { initialList: CardStaffI
                 <div>
                   <div className="flex items-center gap-2">
                     <span className="font-semibold text-base">{item.name}</span>
-                    <span className="text-xs px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 font-mono font-medium">
-                      工号: {item.workNo}
-                    </span>
+                    {item.workNo ? (
+                      <span className="text-xs px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 font-mono font-medium">
+                        工号: {item.workNo}
+                      </span>
+                    ) : (
+                      <span className="text-xs px-2 py-0.5 rounded-md bg-ink-100 dark:bg-ink-700 text-ink-400 font-mono">
+                        未设工号
+                      </span>
+                    )}
                   </div>
                   <div className="text-xs text-ink-500 mt-1 flex items-center gap-2">
                     {item.branch && <span>🏛️ {item.branch}</span>}
@@ -281,14 +283,13 @@ export default function CardStaffList({ initialList }: { initialList: CardStaffI
 
               <div>
                 <label className="block text-xs font-medium text-ink-500 mb-1">
-                  卡部工号 <span className="text-red-500">* (业务挂单关键标识)</span>
+                  卡部工号 <span className="text-ink-400 font-normal">(选填)</span>
                 </label>
                 <input
                   type="text"
-                  required
                   value={workNo}
                   onChange={(e) => setWorkNo(e.target.value)}
-                  placeholder="如: KB88201"
+                  placeholder="如: KB88201 (选填)"
                   className="w-full px-3 py-2 rounded-xl border border-ink-300 dark:border-ink-600 bg-transparent text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>

@@ -6,18 +6,15 @@ import { useToast } from '@/components/ui/Dialog';
 
 export const LOAN_TYPES = [
   { key: 'mortgage', label: '房按揭 (二手房/新房)', icon: '🏠' },
-  { key: 'house_pledge', label: '房产抵押贷', icon: '🏢' },
-  { key: 'credit', label: '个人信用贷', icon: '💳' },
-  { key: 'consumer', label: '消费贷', icon: '🛍️' },
+  { key: 'house_pledge', label: '房抵押', icon: '🏢' },
   { key: 'business', label: '经营贷', icon: '💼' },
-  { key: 'car', label: '车贷', icon: '🚗' },
-  { key: 'card_staging', label: '卡部专项分期', icon: '🏷️' },
-  { key: 'bridge', label: '过桥垫资', icon: '🔄' },
+  { key: 'sui_e_dai', label: '随e贷 (消费贷)', icon: '📱' },
+  { key: 'card_e_dai', label: '卡e贷 (消费贷)', icon: '💳' },
 ];
 
 type Props = {
   brokers: Array<{ id: string; name: string; company: string | null }>;
-  cardStaffs: Array<{ id: string; name: string; workNo: string; branch: string | null }>;
+  cardStaffs: Array<{ id: string; name: string; workNo: string | null; branch: string | null }>;
 };
 
 export default function NewOrderForm({ brokers: initialBrokers, cardStaffs: initialCardStaffs }: Props) {
@@ -99,8 +96,8 @@ export default function NewOrderForm({ brokers: initialBrokers, cardStaffs: init
 
   async function handleQuickStaff(e: React.FormEvent) {
     e.preventDefault();
-    if (!qsName.trim() || !qsWorkNo.trim()) {
-      toast({ message: '姓名和工号均为必填项' });
+    if (!qsName.trim()) {
+      toast({ message: '卡部人员姓名必填' });
       return;
     }
     setQsSaving(true);
@@ -110,7 +107,7 @@ export default function NewOrderForm({ brokers: initialBrokers, cardStaffs: init
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: qsName.trim(),
-          workNo: qsWorkNo.trim(),
+          workNo: qsWorkNo.trim() || null,
           branch: qsBranch.trim() || null,
         }),
       });
@@ -406,7 +403,7 @@ export default function NewOrderForm({ brokers: initialBrokers, cardStaffs: init
               <option value="">-- 不挂卡部工号 / 无卡部协同 --</option>
               {cardStaffs.map((s) => (
                 <option key={s.id} value={s.id}>
-                  {s.name} [工号: {s.workNo}] {s.branch ? `· ${s.branch}` : ''}
+                  {s.name} {s.workNo ? `[工号: ${s.workNo}]` : ''} {s.branch ? `· ${s.branch}` : ''}
                 </option>
               ))}
             </select>
@@ -544,13 +541,12 @@ export default function NewOrderForm({ brokers: initialBrokers, cardStaffs: init
                 />
               </div>
               <div>
-                <label className="block text-xs text-ink-500 mb-1">卡部工号 *</label>
+                <label className="block text-xs text-ink-500 mb-1">卡部工号 (选填)</label>
                 <input
                   type="text"
-                  required
                   value={qsWorkNo}
                   onChange={(e) => setQsWorkNo(e.target.value)}
-                  placeholder="挂号工号 (如: KB88201)"
+                  placeholder="挂号工号 (如: KB88201，选填)"
                   className="w-full px-3 py-2 rounded-xl border border-ink-300 dark:border-ink-600 bg-transparent text-sm font-mono"
                 />
               </div>

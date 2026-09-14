@@ -40,3 +40,32 @@ export async function POST(
 
   return NextResponse.json({ ok: true, log });
 }
+
+export async function DELETE(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const user = await requireSessionUser();
+  if (user instanceof Response) return user;
+
+  const { id } = await params;
+  const order = await prisma.loanOrder.findFirst({
+    where: { id, userId: user.id, deletedAt: null },
+  });
+  if (!order) return notFound('单据不存在');
+
+  const url = new URL(req.url);
+  const logId = url.searchParams.get('logId');
+  if (!logId) return badRequest('缺少日志ID');
+
+  const log = await prisma.loanOrderLog.findFirst({
+    where: { id: logId, orderId: id },
+  });
+  if (!log) return notFound('日志不存在');
+
+  await prisma.loanOrderLog.delete({
+    where: { id: logId },
+  });
+
+  return NextResponse.json({ ok: true });
+}

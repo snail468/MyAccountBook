@@ -466,7 +466,7 @@ model CardStaff {
   userId         String
   user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   name           String    // 姓名
-  workNo         String    // 卡部工号（核心唯一业务标识）
+  workNo         String?   // 卡部工号（选填）
   phone          String?   // 联系电话
   branch         String?   // 所属支行/卡部团队
   commissionNote String?   // 协同提成/分润约定

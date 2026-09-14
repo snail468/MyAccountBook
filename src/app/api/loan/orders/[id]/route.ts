@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { requireSessionUser } from '@/lib/ownership';
+import { requireSessionUser, resolveOwnLedgerId } from '@/lib/ownership';
 import { badRequest, notFound } from '@/lib/apiError';
 
 export async function GET(
@@ -120,12 +120,12 @@ export async function PATCH(
     }
   }
 
-  // 自动核算净收益（如果提供了收入与支出）
+  // 自动核算个人净收益（个人提成为收入）
   const serviceFee = updateData.serviceFeeCents ?? existing.serviceFeeCents ?? 0;
-  const brokerComm = updateData.brokerCommissionCents ?? existing.brokerCommissionCents ?? 0;
-  const cardComm = updateData.cardCommissionCents ?? existing.cardCommissionCents ?? 0;
-  if (body.serviceFeeCents !== undefined || body.brokerCommissionCents !== undefined || body.cardCommissionCents !== undefined) {
-    updateData.netIncomeCents = serviceFee - brokerComm - cardComm;
+  if (body.netIncomeCents !== undefined) {
+    updateData.netIncomeCents = body.netIncomeCents;
+  } else if (body.serviceFeeCents !== undefined) {
+    updateData.netIncomeCents = serviceFee;
   }
 
   // 是否随推进生成日志流水
@@ -137,6 +137,53 @@ export async function PATCH(
         content: String(body.logContent).trim(),
       },
     });
+  }
+
+  // 联动工作账本：确认放款且勾选记录工作账本垫款
+  if (
+    Boolean(body.recordWorkExpense) &&
+    (updateData.stage === 'lending' || updateData.status === 'loaned' || body.stage === 'lending')
+  ) {
+    const brokerCommission = updateData.brokerCommissionCents ?? existing.brokerCommissionCents ?? 0;
+    if (brokerCommission > 0) {
+      try {
+        const workLedgerId = await resolveOwnLedgerId(user.id, 'work');
+        const loanDateVal = updateData.loanDate ?? existing.loanDate ?? new Date();
+        const d = new Date(loanDateVal);
+        const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+
+        const borrowerText = existing.borrowerName + (existing.phone ? `(${existing.phone})` : '');
+        const brokerText =
+          updateData.brokerNameSnapshot ||
+          existing.brokerNameSnapshot ||
+          (existing.brokerId ? (await prisma.broker.findUnique({ where: { id: existing.brokerId } }))?.name : null) ||
+          '未指定经纪人';
+        const note = `借款人: ${borrowerText}，经纪人: ${brokerText}`;
+
+        await prisma.entry.create({
+          data: {
+            userId: user.id,
+            ledgerId: workLedgerId,
+            yearMonth: ym,
+            category: '房贷垫款',
+            direction: 'expense',
+            amountCents: brokerCommission,
+            note,
+            occurredAt: d,
+          },
+        });
+
+        await prisma.loanOrderLog.create({
+          data: {
+            orderId: id,
+            action: '工作账本垫款同步',
+            content: `已同步在工作账本记一笔出项【房贷垫款】¥${(brokerCommission / 100).toFixed(2)}，备注：${note}`,
+          },
+        });
+      } catch (e) {
+        console.error('Failed to sync work ledger expense:', e);
+      }
+    }
   }
 
   const updated = await prisma.loanOrder.update({

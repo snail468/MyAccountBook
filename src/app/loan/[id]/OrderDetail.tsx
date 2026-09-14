@@ -42,22 +42,20 @@ type OrderData = {
   createdAt: string;
   updatedAt: string;
   broker?: { id: string; name: string; phone: string | null; company: string | null; rateNote: string | null } | null;
-  cardStaff?: { id: string; name: string; workNo: string; phone: string | null; branch: string | null; commissionNote: string | null } | null;
+  cardStaff?: { id: string; name: string; workNo: string | null; phone: string | null; branch: string | null; commissionNote: string | null } | null;
   logs: Array<{ id: string; action: string; content: string; occurredAt: string }>;
 };
 
 type Props = {
   initialOrder: OrderData;
   brokers: Array<{ id: string; name: string; company: string | null }>;
-  cardStaffs: Array<{ id: string; name: string; workNo: string }>;
+  cardStaffs: Array<{ id: string; name: string; workNo: string | null }>;
 };
 
 const STAGE_STEPS = [
   { key: 'intention', label: '1. 意向初筛' },
-  { key: 'scheme', label: '2. 方案匹配' },
-  { key: 'approval', label: '3. 行内审批' },
-  { key: 'lending', label: '4. 放款履约' },
-  { key: 'settled', label: '5. 结清完结' },
+  { key: 'approval', label: '2. 行内审批' },
+  { key: 'lending', label: '3. 已放款' },
 ];
 
 export default function OrderDetail({ initialOrder, brokers: _brokers, cardStaffs: _cardStaffs }: Props) {
@@ -78,16 +76,7 @@ export default function OrderDetail({ initialOrder, brokers: _brokers, cardStaff
   const [logContent, setLogContent] = useState('');
   const [logSaving, setLogSaving] = useState(false);
 
-  // 3. 推进方案弹窗
-  const [schemeModalOpen, setSchemeModalOpen] = useState(false);
-  const [bankName, setBankName] = useState(order.bankName || '');
-  const [repaymentMethod, setRepaymentMethod] = useState(order.repaymentMethod || '等额本息');
-  const [planAmountWan, setPlanAmountWan] = useState(
-    order.demandAmountCents ? (order.demandAmountCents / 1000000).toString() : ''
-  );
-  const [planRate, setPlanRate] = useState(order.approvedRate ? order.approvedRate.toString() : '3.25');
-
-  // 4. 推进批复弹窗
+  // 3. 推进批复弹窗
   const [approvalModalOpen, setApprovalModalOpen] = useState(false);
   const [approvedWan, setApprovedWan] = useState(
     order.approvedAmountCents ? (order.approvedAmountCents / 1000000).toString() : ''
@@ -95,26 +84,33 @@ export default function OrderDetail({ initialOrder, brokers: _brokers, cardStaff
   const [approvedRate, setApprovedRate] = useState(order.approvedRate ? order.approvedRate.toString() : '3.25');
   const [approvalResult, setApprovalResult] = useState<'approved' | 'rejected'>('approved');
 
-  // 5. 登记放款弹窗
+  // 4. 登记放款弹窗
+  const initialWan = order.approvedAmountCents ? (order.approvedAmountCents / 1000000).toString() : '';
+  const initialFeeYuan = order.serviceFeeCents
+    ? (order.serviceFeeCents / 100).toString()
+    : order.approvedAmountCents
+    ? ((order.approvedAmountCents / 100) * 0.0004).toFixed(2)
+    : '';
+  const initialBrokerYuan = order.brokerCommissionCents
+    ? (order.brokerCommissionCents / 100).toString()
+    : order.approvedAmountCents
+    ? ((order.approvedAmountCents / 100) * 0.002).toFixed(2)
+    : '';
+
   const [lendModalOpen, setLendModalOpen] = useState(false);
-  const [actualWan, setActualWan] = useState(
-    order.approvedAmountCents ? (order.approvedAmountCents / 1000000).toString() : ''
-  );
+  const [actualWan, setActualWan] = useState(initialWan);
   const [loanDateStr, setLoanDateStr] = useState(
     new Date().toISOString().slice(0, 10)
   );
   const [monthlyPaymentYuan, setMonthlyPaymentYuan] = useState(
     order.monthlyPaymentCents ? (order.monthlyPaymentCents / 100).toString() : ''
   );
-  const [serviceFeeYuan, setServiceFeeYuan] = useState(
-    order.serviceFeeCents ? (order.serviceFeeCents / 100).toString() : ''
-  );
-  const [brokerCommissionYuan, setBrokerCommissionYuan] = useState(
-    order.brokerCommissionCents ? (order.brokerCommissionCents / 100).toString() : ''
-  );
+  const [serviceFeeYuan, setServiceFeeYuan] = useState(initialFeeYuan);
+  const [brokerCommissionYuan, setBrokerCommissionYuan] = useState(initialBrokerYuan);
   const [cardCommissionYuan, setCardCommissionYuan] = useState(
     order.cardCommissionCents ? (order.cardCommissionCents / 100).toString() : ''
   );
+  const [recordWorkExpense, setRecordWorkExpense] = useState(true);
 
   const [busy, setBusy] = useState(false);
 
@@ -176,36 +172,16 @@ export default function OrderDetail({ initialOrder, brokers: _brokers, cardStaff
     }
   }
 
-  // 提交方案
-  async function submitScheme(e: React.FormEvent) {
-    e.preventDefault();
-    setBusy(true);
-    const amountCents = planAmountWan ? Math.round(parseFloat(planAmountWan) * 10000 * 100) : null;
-    const rate = planRate ? parseFloat(planRate) : null;
-    try {
-      const res = await fetch(`/api/loan/orders/${order.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          stage: 'scheme',
-          status: 'scheme',
-          bankName: bankName.trim() || null,
-          demandAmountCents: amountCents,
-          approvedRate: rate,
-          repaymentMethod,
-          logAction: '制定贷款方案',
-          logContent: `拟申请机构: ${bankName || '本行'}，方案金额: ${planAmountWan}万元，预估年化利率: ${planRate}%，还款方式: ${repaymentMethod}`,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || '方案保存失败');
-      setOrder(data.order);
-      setSchemeModalOpen(false);
-      toast({ message: '方案已确定，进入审批阶段', kind: 'success' });
-    } catch (err: any) {
-      toast({ message: err.message || '操作失败', kind: 'error' });
-    } finally {
-      setBusy(false);
+  // 实际放款金额变更时自动按比例计算提成与返佣（支持手工修改）
+  function handleActualWanChange(val: string) {
+    setActualWan(val);
+    const wan = parseFloat(val);
+    if (!isNaN(wan) && wan > 0) {
+      const amountYuan = wan * 10000;
+      // 个人提成 = 放款金额 * 0.04%
+      setServiceFeeYuan((amountYuan * 0.0004).toFixed(2));
+      // 应付经纪人返佣 = 放款金额 * 0.2%
+      setBrokerCommissionYuan((amountYuan * 0.002).toFixed(2));
     }
   }
 
@@ -270,16 +246,17 @@ export default function OrderDetail({ initialOrder, brokers: _brokers, cardStaff
           serviceFeeCents: feeCents,
           brokerCommissionCents: brokerCents,
           cardCommissionCents: cardCents,
-          netIncomeCents: feeCents - brokerCents - cardCents,
+          netIncomeCents: feeCents,
+          recordWorkExpense,
           logAction: '放款成功登记',
-          logContent: `实际放款金额: ${actualWan}万元，放款日期: ${loanDateStr}，月供: ${monthlyPaymentYuan || '未计'}元`,
+          logContent: `实际放款金额: ${actualWan}万元，放款日期: ${loanDateStr}，个人提成: ¥${serviceFeeYuan || '0'}，应付经纪人返佣: ¥${brokerCommissionYuan || '0'}${recordWorkExpense && brokerCents > 0 ? '（已同步记录工作账本房贷垫款）' : ''}`,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || '放款登记失败');
       setOrder(data.order);
       setLendModalOpen(false);
-      toast({ message: '放款登记成功，进入正常履约期', kind: 'success' });
+      toast({ message: '放款登记成功，进入已放款状态', kind: 'success' });
     } catch (err: any) {
       toast({ message: err.message || '操作失败', kind: 'error' });
     } finally {
@@ -287,37 +264,32 @@ export default function OrderDetail({ initialOrder, brokers: _brokers, cardStaff
     }
   }
 
-  // 结清或逾期操作
-  async function handleSettle(status: 'settled' | 'overdue') {
-    const isSettled = status === 'settled';
+  // 删除单条流水日志（二次确认）
+  async function handleDeleteLog(logId: string, actionName: string) {
     const ok = await confirm({
-      title: isSettled ? '确认本单已全部结清？' : '标记单据为逾期？',
-      body: isSettled
-        ? '确认客户已按期全额偿还贷款本息并办理结清解押手续。'
-        : '标记后单据将置为逾期状态并在列表中重点预警提醒。',
-      confirmText: isSettled ? '确认结清' : '确认标记逾期',
+      title: '确认删除该条流水记录？',
+      body: `确定要删除流水记录【${actionName}】吗？删除后不可恢复。`,
+      confirmText: '确认删除',
       cancelText: '取消',
-      danger: !isSettled,
+      danger: true,
     });
     if (!ok) return;
 
     try {
-      const res = await fetch(`/api/loan/orders/${order.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          stage: status,
-          status,
-          logAction: isSettled ? '业务正常结清' : '业务标记逾期',
-          logContent: isSettled ? '个贷经理确认客户贷款本息结清归档' : '客户发生逾期，进入风险催收',
-        }),
+      const res = await fetch(`/api/loan/orders/${order.id}/logs?logId=${logId}`, {
+        method: 'DELETE',
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || '状态更新失败');
-      setOrder(data.order);
-      toast({ message: isSettled ? '单据已成功结清' : '已标记为逾期', kind: 'success' });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error || '删除失败');
+      }
+      setOrder((prev) => ({
+        ...prev,
+        logs: prev.logs.filter((l) => l.id !== logId),
+      }));
+      toast({ message: '跟进流水记录已删除', kind: 'success' });
     } catch (err: any) {
-      toast({ message: err.message || '操作失败', kind: 'error' });
+      toast({ message: err.message || '删除失败', kind: 'error' });
     }
   }
 
@@ -343,7 +315,15 @@ export default function OrderDetail({ initialOrder, brokers: _brokers, cardStaff
   }
 
   const typeMeta = LOAN_TYPES.find((t) => t.key === order.loanType) || { label: order.loanType, icon: '📄' };
-  const currentStageIdx = STAGE_STEPS.findIndex((s) => s.key === order.stage);
+  const stageRank: Record<string, number> = {
+    draft: 0,
+    intention: 0,
+    scheme: 0,
+    approval: 1,
+    lending: 2,
+    settled: 2,
+  };
+  const currentStageIdx = stageRank[order.stage] ?? 0;
 
   return (
     <div className="space-y-6">
@@ -567,34 +547,20 @@ export default function OrderDetail({ initialOrder, brokers: _brokers, cardStaff
         <div className="grid grid-cols-2 gap-2.5">
           <button
             type="button"
-            onClick={() => setSchemeModalOpen(true)}
-            className="p-3 rounded-2xl bg-indigo-50 dark:bg-indigo-950/30 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 text-xs font-semibold active:scale-95 transition"
-          >
-            📋 制定/调整方案
-          </button>
-
-          <button
-            type="button"
             onClick={() => setApprovalModalOpen(true)}
-            className="p-3 rounded-2xl bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 text-xs font-semibold active:scale-95 transition"
+            className="p-3.5 rounded-2xl bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 text-xs font-semibold active:scale-95 transition flex items-center justify-center gap-1.5"
           >
-            🏛️ 录入行内批贷
+            <span>🏛️</span>
+            <span>录入行内批贷</span>
           </button>
 
           <button
             type="button"
             onClick={() => setLendModalOpen(true)}
-            className="p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 text-xs font-semibold active:scale-95 transition"
+            className="p-3.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 text-xs font-semibold active:scale-95 transition flex items-center justify-center gap-1.5"
           >
-            💰 确认登记放款
-          </button>
-
-          <button
-            type="button"
-            onClick={() => handleSettle('settled')}
-            className="p-3 rounded-2xl bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700 text-xs font-semibold active:scale-95 transition"
-          >
-            ✅ 结清归档
+            <span>💰</span>
+            <span>确认登记放款</span>
           </button>
         </div>
       </div>
@@ -656,13 +622,23 @@ export default function OrderDetail({ initialOrder, brokers: _brokers, cardStaff
               <div key={log.id} className="relative space-y-1">
                 {/* 时间轴圆点 */}
                 <span className="absolute -left-6 top-1.5 w-2.5 h-2.5 rounded-full bg-blue-500 ring-4 ring-white dark:ring-ink-800" />
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-semibold text-blue-600 dark:text-blue-400">
-                    {log.action}
-                  </span>
-                  <span className="text-[10px] text-ink-400">
-                    {log.occurredAt.replace('T', ' ').slice(0, 16)}
-                  </span>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold text-blue-600 dark:text-blue-400">
+                      {log.action}
+                    </span>
+                    <span className="text-[10px] text-ink-400">
+                      {log.occurredAt.replace('T', ' ').slice(0, 16)}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteLog(log.id, log.action)}
+                    className="text-[11px] text-ink-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 px-1.5 py-0.5 rounded transition"
+                    title="删除流水记录"
+                  >
+                    删除
+                  </button>
                 </div>
                 <div className="text-xs text-ink-700 dark:text-ink-300 leading-relaxed bg-ink-50/70 dark:bg-ink-900/40 p-2.5 rounded-xl">
                   {log.content}
@@ -736,83 +712,7 @@ export default function OrderDetail({ initialOrder, brokers: _brokers, cardStaff
         </div>
       )}
 
-      {/* 弹窗：拟定方案 */}
-      {schemeModalOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-          onClick={() => setSchemeModalOpen(false)}
-        >
-          <div
-            className="w-full max-w-sm bg-white dark:bg-ink-900 rounded-3xl p-5 space-y-4"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h4 className="font-semibold text-base">制定贷款方案</h4>
-            <form onSubmit={submitScheme} className="space-y-3">
-              <div>
-                <label className="block text-xs text-ink-500 mb-1">申请机构 / 承贷支行</label>
-                <input
-                  type="text"
-                  value={bankName}
-                  onChange={(e) => setBankName(e.target.value)}
-                  placeholder="如: 本行高新支行"
-                  className="w-full px-3 py-2 rounded-xl border border-ink-300 dark:border-ink-600 bg-transparent text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-ink-500 mb-1">方案金额 (万元)</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={planAmountWan}
-                  onChange={(e) => setPlanAmountWan(e.target.value)}
-                  placeholder="如: 120"
-                  className="w-full px-3 py-2 rounded-xl border border-ink-300 dark:border-ink-600 bg-transparent text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-ink-500 mb-1">预估年化利率 (%)</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={planRate}
-                  onChange={(e) => setPlanRate(e.target.value)}
-                  placeholder="如: 3.25"
-                  className="w-full px-3 py-2 rounded-xl border border-ink-300 dark:border-ink-600 bg-transparent text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-ink-500 mb-1">还款方式</label>
-                <select
-                  value={repaymentMethod}
-                  onChange={(e) => setRepaymentMethod(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-ink-300 dark:border-ink-600 bg-transparent text-sm"
-                >
-                  <option value="等额本息">等额本息</option>
-                  <option value="等额本金">等额本金</option>
-                  <option value="先息后本">先息后本</option>
-                </select>
-              </div>
 
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setSchemeModalOpen(false)}
-                  className="px-3 py-1.5 text-xs text-ink-500"
-                >
-                  取消
-                </button>
-                <button
-                  type="submit"
-                  disabled={busy}
-                  className="px-4 py-1.5 rounded-xl bg-blue-600 text-white text-xs font-medium hover:bg-blue-700"
-                >
-                  {busy ? '保存中...' : '确定方案并推进'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* 弹窗：录入审批结果 */}
       {approvalModalOpen && (
@@ -917,7 +817,7 @@ export default function OrderDetail({ initialOrder, brokers: _brokers, cardStaff
                   step="0.1"
                   required
                   value={actualWan}
-                  onChange={(e) => setActualWan(e.target.value)}
+                  onChange={(e) => handleActualWanChange(e.target.value)}
                   placeholder="如: 120"
                   className="w-full px-3 py-2 rounded-xl border border-ink-300 dark:border-ink-600 bg-transparent text-sm font-mono font-bold"
                 />
@@ -947,33 +847,35 @@ export default function OrderDetail({ initialOrder, brokers: _brokers, cardStaff
 
               <div className="pt-2 border-t border-ink-100 dark:border-ink-700">
                 <div className="text-xs font-semibold text-ink-600 dark:text-ink-300 mb-2">
-                  提成收益核算
+                  提成收益核算 (公式联动可修改)
                 </div>
 
-                <div className="space-y-2">
+                <div className="space-y-2.5">
                   <div>
-                    <label className="block text-[11px] text-ink-500 mb-0.5">业务服务费/总提成 (元)</label>
+                    <label className="block text-[11px] text-ink-600 dark:text-ink-300 mb-0.5">
+                      个人提成 (元) <span className="text-[10px] text-ink-400 font-normal">（按放款×0.04%自动计算，支持手工微调）</span>
+                    </label>
                     <input
                       type="number"
                       step="0.01"
                       value={serviceFeeYuan}
                       onChange={(e) => setServiceFeeYuan(e.target.value)}
-                      placeholder="如: 12000"
-                      className="w-full px-2.5 py-1.5 rounded-xl border border-ink-300 dark:border-ink-600 bg-transparent text-xs"
+                      placeholder="如: 400.00"
+                      className="w-full px-2.5 py-1.5 rounded-xl border border-ink-300 dark:border-ink-600 bg-transparent text-xs font-mono font-semibold text-emerald-600 dark:text-emerald-400"
                     />
                   </div>
 
                   <div>
                     <label className="block text-[11px] text-amber-600 dark:text-amber-400 mb-0.5">
-                      应付经纪人返佣 (元)
+                      应付经纪人返佣 (元) <span className="text-[10px] text-amber-500/80 font-normal">（按放款×0.2%自动计算，支持手工微调）</span>
                     </label>
                     <input
                       type="number"
                       step="0.01"
                       value={brokerCommissionYuan}
                       onChange={(e) => setBrokerCommissionYuan(e.target.value)}
-                      placeholder="如: 3000"
-                      className="w-full px-2.5 py-1.5 rounded-xl border border-amber-300 dark:border-amber-700 bg-transparent text-xs"
+                      placeholder="如: 2000.00"
+                      className="w-full px-2.5 py-1.5 rounded-xl border border-amber-300 dark:border-amber-700 bg-transparent text-xs font-mono font-semibold"
                     />
                   </div>
 
@@ -986,10 +888,29 @@ export default function OrderDetail({ initialOrder, brokers: _brokers, cardStaff
                       step="0.01"
                       value={cardCommissionYuan}
                       onChange={(e) => setCardCommissionYuan(e.target.value)}
-                      placeholder="如: 500"
-                      className="w-full px-2.5 py-1.5 rounded-xl border border-blue-300 dark:border-blue-700 bg-transparent text-xs"
+                      placeholder="如: 0"
+                      className="w-full px-2.5 py-1.5 rounded-xl border border-blue-300 dark:border-blue-700 bg-transparent text-xs font-mono"
                     />
                   </div>
+                </div>
+
+                <div className="pt-3 mt-3 border-t border-ink-100 dark:border-ink-700/60">
+                  <label className="flex items-start gap-2.5 text-xs text-ink-700 dark:text-ink-200 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={recordWorkExpense}
+                      onChange={(e) => setRecordWorkExpense(e.target.checked)}
+                      className="w-4 h-4 mt-0.5 rounded text-emerald-600 focus:ring-emerald-500 border-ink-300 dark:border-ink-600"
+                    />
+                    <div>
+                      <span className="font-semibold text-emerald-700 dark:text-emerald-300">
+                        是否记录工作账本垫款？
+                      </span>
+                      <p className="text-[11px] text-ink-400 mt-0.5">
+                        默认勾选。放款登记成功后将同步在工作账本记一笔【房贷垫款】出项（金额为应付经纪人返佣，备注借款人与经纪人）。
+                      </p>
+                    </div>
+                  </label>
                 </div>
               </div>
 
