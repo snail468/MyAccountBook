@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { requireUser } from '@/lib/session';
 import Prefetcher from '@/components/ui/Prefetcher';
 import { resolveOwnLedgerId } from '@/lib/ownership';
+import { currentBeijingYearMonth } from '@/lib/datetime';
 import WorkMonthsSection from './_views/WorkMonthsSection';
 
 export const dynamic = 'force-dynamic';
@@ -13,8 +14,7 @@ export default async function WorkPage() {
   if (!user) redirect('/login');
 
   const ledgerId = await resolveOwnLedgerId(user.id, 'work');
-  const now = new Date();
-  const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const currentMonth = currentBeijingYearMonth();
 
   return (
     <>

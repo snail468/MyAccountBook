@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { requireUser } from '@/lib/session';
 import { prisma } from '@/lib/db';
+import { currentBeijingYearMonth, getBeijingMonthRange } from '@/lib/datetime';
 import LoanStatsView from './LoanStatsView';
 
 export const dynamic = 'force-dynamic';
@@ -15,15 +16,8 @@ export default async function LoanStatsPage({
   if (!user) redirect('/login');
 
   const { month } = await searchParams;
-  const now = new Date();
-  const currentMonth = month || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-
-  const [yearStr, monthStr] = currentMonth.split('-');
-  const y = parseInt(yearStr, 10);
-  const m = parseInt(monthStr, 10);
-
-  const startOfMonth = new Date(y, m - 1, 1);
-  const endOfMonth = new Date(y, m, 1);
+  const currentMonth = month || currentBeijingYearMonth();
+  const { start: startOfMonth, end: endOfMonth } = getBeijingMonthRange(currentMonth);
 
   const allOrders = await prisma.loanOrder.findMany({
     where: { userId: user.id, deletedAt: null },

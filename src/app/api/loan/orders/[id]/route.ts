@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { requireSessionUser, resolveOwnLedgerId } from '@/lib/ownership';
 import { badRequest, notFound } from '@/lib/apiError';
+import { formatYearMonthBeijing } from '@/lib/datetime';
 
 export async function GET(
   _req: Request,
@@ -130,11 +131,13 @@ export async function PATCH(
 
   // 是否随推进生成日志流水
   if (body.logAction && body.logContent) {
+    const logOccurredAt = updateData.loanDate ?? new Date();
     await prisma.loanOrderLog.create({
       data: {
         orderId: id,
         action: String(body.logAction).trim(),
         content: String(body.logContent).trim(),
+        occurredAt: logOccurredAt,
       },
     });
   }
@@ -148,9 +151,10 @@ export async function PATCH(
     if (brokerCommission > 0) {
       try {
         const workLedgerId = await resolveOwnLedgerId(user.id, 'work');
+        // 工作账本垫款同步的操作时间与放款成功登记时间严格一致（精确到分钟）
         const loanDateVal = updateData.loanDate ?? existing.loanDate ?? new Date();
         const d = new Date(loanDateVal);
-        const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        const ym = formatYearMonthBeijing(d);
 
         const borrowerText = existing.borrowerName + (existing.phone ? `(${existing.phone})` : '');
         const brokerText =
@@ -158,7 +162,10 @@ export async function PATCH(
           existing.brokerNameSnapshot ||
           (existing.brokerId ? (await prisma.broker.findUnique({ where: { id: existing.brokerId } }))?.name : null) ||
           '未指定经纪人';
-        const note = `借款人: ${borrowerText}，经纪人: ${brokerText}`;
+        const actualAmountCents = updateData.actualAmountCents ?? existing.actualAmountCents ?? 0;
+        const loanAmountWan = (actualAmountCents / 1000000).toFixed(2);
+        // 垫款备注：借款人信息、经纪人信息、放款金额
+        const note = `借款人: ${borrowerText}，经纪人: ${brokerText}，放款金额: ${loanAmountWan}万元`;
 
         await prisma.entry.create({
           data: {
@@ -178,6 +185,7 @@ export async function PATCH(
             orderId: id,
             action: '工作账本垫款同步',
             content: `已同步在工作账本记一笔出项【房贷垫款】¥${(brokerCommission / 100).toFixed(2)}，备注：${note}`,
+            occurredAt: d,
           },
         });
       } catch (e) {

@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { requireUser } from '@/lib/session';
 import { prisma } from '@/lib/db';
 import { parsePrefs, getLoanBusinessName } from '@/lib/userPrefs';
+import { currentBeijingYearMonth, getBeijingMonthRange } from '@/lib/datetime';
 import Prefetcher from '@/components/ui/Prefetcher';
 import LoanDashboard from './LoanDashboard';
 
@@ -31,10 +32,9 @@ export default async function LoanPage() {
   const prefs = parsePrefs(userRow?.preferences);
   const businessName = getLoanBusinessName(prefs);
 
-  // 算当前月份快速指标
-  const now = new Date();
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-  const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  // 算当前北京时间月份快速指标
+  const currentMonth = currentBeijingYearMonth();
+  const { start: startOfMonth, end: endOfMonth } = getBeijingMonthRange(currentMonth);
 
   const loanedThisMonth = orders.filter((o) => {
     if (!o.loanDate) return false;

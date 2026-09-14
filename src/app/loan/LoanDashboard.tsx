@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { formatDateShortBeijing } from '@/lib/datetime';
 import { LOAN_TYPES } from './new/NewOrderForm';
 
 export type OrderListItem = {
@@ -254,8 +255,8 @@ export default function LoanDashboard({ orders, businessName: _businessName, sta
 
                   <div className="shrink-0 flex flex-col items-end gap-1">
                     {getStageBadge(order.stage)}
-                    <span className="text-[10px] text-ink-400">
-                      {order.createdAt.slice(5, 10)}
+                    <span className="text-[10px] text-ink-400 font-mono">
+                      {formatDateShortBeijing(order.createdAt)}
                     </span>
                   </div>
                 </div>

@@ -12,6 +12,7 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useConfirm } from '@/components/ui/Dialog';
+import { formatDateBeijing } from '@/lib/datetime';
 
 type Member = { userId: string; username: string; role: string; createdAt: string };
 type Invite = {
@@ -260,7 +261,7 @@ export default function CollaboratorsPanel({
                     <span className="text-ink-500">邀请为 {roleLabel(inv.role)} ·</span>{' '}
                     <span className="text-ink-400">
                       {inv.expiresAt
-                        ? `${new Date(inv.expiresAt).toLocaleDateString()} 过期`
+                        ? `${formatDateBeijing(inv.expiresAt)} 过期`
                         : '永久'}
                     </span>
                   </span>

@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useToast, useConfirm } from '@/components/ui/Dialog';
+import { formatShort, localInputToISO, toLocalInput } from '@/lib/datetime';
 import { LOAN_TYPES } from '../new/NewOrderForm';
 
 type OrderData = {
@@ -99,8 +100,8 @@ export default function OrderDetail({ initialOrder, brokers: _brokers, cardStaff
 
   const [lendModalOpen, setLendModalOpen] = useState(false);
   const [actualWan, setActualWan] = useState(initialWan);
-  const [loanDateStr, setLoanDateStr] = useState(
-    new Date().toISOString().slice(0, 10)
+  const [loanDateStr, setLoanDateStr] = useState(() =>
+    order.loanDate ? toLocalInput(order.loanDate) : toLocalInput(new Date())
   );
   const [monthlyPaymentYuan, setMonthlyPaymentYuan] = useState(
     order.monthlyPaymentCents ? (order.monthlyPaymentCents / 100).toString() : ''
@@ -233,6 +234,7 @@ export default function OrderDetail({ initialOrder, brokers: _brokers, cardStaff
     const brokerCents = brokerCommissionYuan ? Math.round(parseFloat(brokerCommissionYuan) * 100) : 0;
     const cardCents = cardCommissionYuan ? Math.round(parseFloat(cardCommissionYuan) * 100) : 0;
 
+    const loanDateISO = localInputToISO(loanDateStr) ?? new Date().toISOString();
     try {
       const res = await fetch(`/api/loan/orders/${order.id}`, {
         method: 'PATCH',
@@ -241,7 +243,7 @@ export default function OrderDetail({ initialOrder, brokers: _brokers, cardStaff
           stage: 'lending',
           status: 'loaned',
           actualAmountCents: actualCents,
-          loanDate: loanDateStr ? new Date(loanDateStr).toISOString() : new Date().toISOString(),
+          loanDate: loanDateISO,
           monthlyPaymentCents: monthlyCents,
           serviceFeeCents: feeCents,
           brokerCommissionCents: brokerCents,
@@ -249,7 +251,7 @@ export default function OrderDetail({ initialOrder, brokers: _brokers, cardStaff
           netIncomeCents: feeCents,
           recordWorkExpense,
           logAction: '放款成功登记',
-          logContent: `实际放款金额: ${actualWan}万元，放款日期: ${loanDateStr}，个人提成: ¥${serviceFeeYuan || '0'}，应付经纪人返佣: ¥${brokerCommissionYuan || '0'}${recordWorkExpense && brokerCents > 0 ? '（已同步记录工作账本房贷垫款）' : ''}`,
+          logContent: `实际放款金额: ${actualWan}万元，放款时间: ${formatShort(loanDateISO)}，个人提成: ¥${serviceFeeYuan || '0'}，应付经纪人返佣: ¥${brokerCommissionYuan || '0'}${recordWorkExpense && brokerCents > 0 ? '（已同步记录工作账本房贷垫款）' : ''}`,
         }),
       });
       const data = await res.json();
@@ -526,6 +528,14 @@ export default function OrderDetail({ initialOrder, brokers: _brokers, cardStaff
               </span>
             </div>
           ) : null}
+          {order.loanDate ? (
+            <div className="flex items-center justify-between pt-2">
+              <span className="text-ink-500">放款时间</span>
+              <span className="font-semibold font-mono text-emerald-600 dark:text-emerald-400">
+                {formatShort(order.loanDate)}
+              </span>
+            </div>
+          ) : null}
           {order.monthlyPaymentCents ? (
             <div className="flex items-center justify-between pt-2">
               <span className="text-ink-500">每月还款月供</span>
@@ -627,8 +637,8 @@ export default function OrderDetail({ initialOrder, brokers: _brokers, cardStaff
                     <span className="text-xs font-semibold text-blue-600 dark:text-blue-400">
                       {log.action}
                     </span>
-                    <span className="text-[10px] text-ink-400">
-                      {log.occurredAt.replace('T', ' ').slice(0, 16)}
+                    <span className="text-[10px] text-ink-400 font-mono">
+                      {formatShort(log.occurredAt)}
                     </span>
                   </div>
                   <button
@@ -824,12 +834,13 @@ export default function OrderDetail({ initialOrder, brokers: _brokers, cardStaff
               </div>
 
               <div>
-                <label className="block text-xs text-ink-500 mb-1">放款日期</label>
+                <label className="block text-xs text-ink-500 mb-1">放款时间 (精确到分钟)</label>
                 <input
-                  type="date"
+                  type="datetime-local"
+                  required
                   value={loanDateStr}
                   onChange={(e) => setLoanDateStr(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-ink-300 dark:border-ink-600 bg-transparent text-sm"
+                  className="w-full px-3 py-2 rounded-xl border border-ink-300 dark:border-ink-600 bg-transparent text-sm font-mono"
                 />
               </div>
 

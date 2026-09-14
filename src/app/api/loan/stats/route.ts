@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { requireSessionUser } from '@/lib/ownership';
+import { currentBeijingYearMonth, getBeijingMonthRange } from '@/lib/datetime';
 
 export async function GET(req: Request) {
   const user = await requireSessionUser();
@@ -8,15 +9,8 @@ export async function GET(req: Request) {
 
   const url = new URL(req.url);
   const month = url.searchParams.get('month'); // YYYY-MM
-  const now = new Date();
-  const currentMonth = month || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-  
-  const [yearStr, monthStr] = currentMonth.split('-');
-  const y = parseInt(yearStr, 10);
-  const m = parseInt(monthStr, 10);
-
-  const startOfMonth = new Date(y, m - 1, 1);
-  const endOfMonth = new Date(y, m, 1);
+  const currentMonth = month || currentBeijingYearMonth();
+  const { start: startOfMonth, end: endOfMonth } = getBeijingMonthRange(currentMonth);
 
   // 查询本月创建的单据或本月放款的单据
   const allOrders = await prisma.loanOrder.findMany({

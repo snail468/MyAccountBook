@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { prisma } from '@/lib/db';
 import { NOT_DELETED } from '@/lib/softDelete';
 import Money from '@/components/ui/Money';
+import { currentBeijingYearMonth, getBeijingParts } from '@/lib/datetime';
 
 // 工作账本"月份列表"section。
 //
@@ -15,9 +16,9 @@ import Money from '@/components/ui/Money';
 // monthHrefPrefix：单月页链接前缀，比如 '/work' 或 '/l/<id>/month'
 
 function makeMonthList(earliest: string | null): string[] {
-  const now = new Date();
-  const curY = now.getFullYear();
-  const curM = now.getMonth() + 1;
+  const p = getBeijingParts(new Date())!;
+  const curY = p.year;
+  const curM = p.month;
 
   let startY = curY;
   let startM = curM - 11;
@@ -77,8 +78,7 @@ export default async function WorkMonthsSection({
   }
 
   const months = makeMonthList(earliest);
-  const now = new Date();
-  const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const currentMonth = currentBeijingYearMonth();
 
   return (
     <div className="px-6 pt-14">

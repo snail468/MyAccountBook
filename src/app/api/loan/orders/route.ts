@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { requireSessionUser } from '@/lib/ownership';
 import { badRequest } from '@/lib/apiError';
+import { getBeijingParts } from '@/lib/datetime';
 
 const createOrderSchema = z.object({
   borrowerName: z.string().trim().min(1, '客户姓名必填').max(50),
@@ -30,10 +31,10 @@ const createOrderSchema = z.object({
 });
 
 function generateOrderNo(): string {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
+  const p = getBeijingParts(new Date())!;
+  const y = p.year;
+  const m = String(p.month).padStart(2, '0');
+  const day = String(p.day).padStart(2, '0');
   const rand = Math.floor(1000 + Math.random() * 9000);
   return `LO${y}${m}${day}${rand}`;
 }
