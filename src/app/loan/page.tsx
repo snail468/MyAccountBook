@@ -20,6 +20,11 @@ export default async function LoanPage() {
       include: {
         broker: { select: { id: true, name: true, company: true } },
         cardStaff: { select: { id: true, name: true, workNo: true } },
+        logs: {
+          orderBy: [{ occurredAt: 'desc' }, { id: 'desc' }],
+          take: 1,
+          select: { occurredAt: true },
+        },
         _count: { select: { logs: true, attachments: true } },
       },
     }),
@@ -72,6 +77,7 @@ export default async function LoanPage() {
     cardStaffNameSnapshot: o.cardStaffNameSnapshot,
     cardStaffWorkNoSnapshot: o.cardStaffWorkNoSnapshot,
     createdAt: o.createdAt.toISOString(),
+    latestLogAt: (o.logs[0]?.occurredAt ?? o.createdAt).toISOString(),
     broker: o.broker,
     cardStaff: o.cardStaff,
     _count: o._count,

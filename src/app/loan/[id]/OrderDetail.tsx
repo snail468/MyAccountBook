@@ -198,14 +198,14 @@ export default function OrderDetail({ initialOrder, brokers: _brokers, cardStaff
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          stage: isApproved ? 'approval' : 'intention',
+          stage: isApproved ? 'approval' : 'rejected',
           status: isApproved ? 'approved' : 'rejected',
-          approvedAmountCents: amountCents,
-          approvedRate: rate,
-          logAction: isApproved ? '行内审批通过' : '行内审批退件',
+          approvedAmountCents: isApproved ? amountCents : null,
+          approvedRate: isApproved ? rate : null,
+          logAction: isApproved ? '行内审批通过' : '行内审批拒绝',
           logContent: isApproved
             ? `审批通过(已批贷)，批复金额: ${approvedWan}万元，批复年化利率: ${approvedRate}%`
-            : `行内审批拒绝/退件，客户转回意向池调整方案`,
+            : `行内审批拒绝/退件，单据已归入审批拒绝`,
         }),
       });
       const data = await res.json();
@@ -324,6 +324,7 @@ export default function OrderDetail({ initialOrder, brokers: _brokers, cardStaff
     approval: 1,
     lending: 2,
     settled: 2,
+    rejected: -1,
   };
   const currentStageIdx = stageRank[order.stage] ?? 0;
 
@@ -355,36 +356,46 @@ export default function OrderDetail({ initialOrder, brokers: _brokers, cardStaff
 
         {/* 阶段进度条 */}
         <div className="pt-2">
-          <div className="flex items-center justify-between gap-1 overflow-x-auto no-scrollbar">
-            {STAGE_STEPS.map((step, idx) => {
-              const isPassed = currentStageIdx >= idx;
-              const isCurrent = currentStageIdx === idx;
-              return (
-                <div key={step.key} className="flex-1 min-w-[60px] text-center">
-                  <div
-                    className={`h-2 rounded-full mb-1.5 transition ${
-                      isCurrent
-                        ? 'bg-blue-600'
-                        : isPassed
-                        ? 'bg-blue-300 dark:bg-blue-700'
-                        : 'bg-ink-100 dark:bg-ink-700'
-                    }`}
-                  />
-                  <span
-                    className={`text-[11px] block truncate ${
-                      isCurrent
-                        ? 'font-bold text-blue-600 dark:text-blue-400'
-                        : isPassed
-                        ? 'text-ink-700 dark:text-ink-300 font-medium'
-                        : 'text-ink-400'
-                    }`}
-                  >
-                    {step.label}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
+          {order.stage === 'rejected' ? (
+            <div className="p-3 rounded-2xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/60 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-base">🚫</span>
+                <span className="text-xs font-semibold text-red-600 dark:text-red-400">当前阶段：行内审批拒绝</span>
+              </div>
+              <span className="text-[11px] text-red-500/80">已退件</span>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between gap-1 overflow-x-auto no-scrollbar">
+              {STAGE_STEPS.map((step, idx) => {
+                const isPassed = currentStageIdx >= idx;
+                const isCurrent = currentStageIdx === idx;
+                return (
+                  <div key={step.key} className="flex-1 min-w-[60px] text-center">
+                    <div
+                      className={`h-2 rounded-full mb-1.5 transition ${
+                        isCurrent
+                          ? 'bg-blue-600'
+                          : isPassed
+                          ? 'bg-blue-300 dark:bg-blue-700'
+                          : 'bg-ink-100 dark:bg-ink-700'
+                      }`}
+                    />
+                    <span
+                      className={`text-[11px] block truncate ${
+                        isCurrent
+                          ? 'font-bold text-blue-600 dark:text-blue-400'
+                          : isPassed
+                          ? 'text-ink-700 dark:text-ink-300 font-medium'
+                          : 'text-ink-400'
+                      }`}
+                    >
+                      {step.label}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
 

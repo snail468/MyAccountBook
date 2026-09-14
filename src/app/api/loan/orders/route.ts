@@ -82,11 +82,24 @@ export async function GET(req: Request) {
     include: {
       broker: { select: { id: true, name: true, company: true } },
       cardStaff: { select: { id: true, name: true, workNo: true } },
+      logs: {
+        orderBy: [{ occurredAt: 'desc' }, { id: 'desc' }],
+        take: 1,
+        select: { occurredAt: true },
+      },
       _count: { select: { logs: true, attachments: true } },
     },
   });
 
-  return NextResponse.json({ ok: true, list });
+  const withLatest = list.map((o) => ({
+    ...o,
+    latestLogAt: (o.logs[0]?.occurredAt ?? o.createdAt).toISOString(),
+  }));
+
+  // 按最新流水动态时间倒序排序（时间最新的排在最前）
+  withLatest.sort((a, b) => new Date(b.latestLogAt).getTime() - new Date(a.latestLogAt).getTime());
+
+  return NextResponse.json({ ok: true, list: withLatest });
 }
 
 export async function POST(req: Request) {

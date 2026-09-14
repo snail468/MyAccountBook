@@ -21,6 +21,7 @@ export type OrderListItem = {
   cardStaffNameSnapshot: string | null;
   cardStaffWorkNoSnapshot: string | null;
   createdAt: string;
+  latestLogAt?: string;
   broker?: { id: string; name: string; company: string | null } | null;
   cardStaff?: { id: string; name: string; workNo: string | null } | null;
   _count?: { logs: number; attachments: number };
@@ -42,6 +43,7 @@ const STAGES = [
   { key: 'intention', label: '意向单' },
   { key: 'approval', label: '审批中' },
   { key: 'lending', label: '已放款' },
+  { key: 'rejected', label: '审批拒绝' },
 ];
 
 export default function LoanDashboard({ orders, businessName: _businessName, stats }: Props) {
@@ -77,6 +79,35 @@ export default function LoanDashboard({ orders, businessName: _businessName, sta
     return true;
   });
 
+  // 每个阶段的单据按照对应的最新办件动态流水的时间进行排序，时间最新的放在最上边
+  const sorted = [...filtered].sort((a, b) => {
+    const timeA = new Date(a.latestLogAt || a.createdAt).getTime();
+    const timeB = new Date(b.latestLogAt || b.createdAt).getTime();
+    return timeB - timeA;
+  });
+
+  // 计算各阶段单据数量（联动当前选中的业务类型，若未选中类型则为全部类型的各阶段单据数）
+  const typeFilteredOrders = selectedType === 'all'
+    ? orders
+    : orders.filter((o) => o.loanType === selectedType);
+
+  const getStageCount = (stageKey: string) => {
+    switch (stageKey) {
+      case 'all':
+        return typeFilteredOrders.length;
+      case 'intention':
+        return typeFilteredOrders.filter((o) => o.stage === 'intention' || o.stage === 'draft').length;
+      case 'approval':
+        return typeFilteredOrders.filter((o) => o.stage === 'approval').length;
+      case 'lending':
+        return typeFilteredOrders.filter((o) => o.stage === 'lending').length;
+      case 'rejected':
+        return typeFilteredOrders.filter((o) => o.stage === 'rejected').length;
+      default:
+        return typeFilteredOrders.filter((o) => o.stage === stageKey).length;
+    }
+  };
+
   function getLoanTypeMeta(key: string) {
     return LOAN_TYPES.find((t) => t.key === key) || { label: key, icon: '📄' };
   }
@@ -97,6 +128,8 @@ export default function LoanDashboard({ orders, businessName: _businessName, sta
         return <span className="px-2 py-0.5 rounded-full text-[11px] bg-gray-100 dark:bg-gray-800 text-gray-500 font-medium">已结清</span>;
       case 'overdue':
         return <span className="px-2 py-0.5 rounded-full text-[11px] bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 font-medium">已逾期</span>;
+      case 'rejected':
+        return <span className="px-2 py-0.5 rounded-full text-[11px] bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 font-medium">审批拒绝</span>;
       default:
         return <span className="px-2 py-0.5 rounded-full text-[11px] bg-ink-100 dark:bg-ink-700 text-ink-600 dark:text-ink-300">{stage}</span>;
     }
@@ -172,19 +205,32 @@ export default function LoanDashboard({ orders, businessName: _businessName, sta
 
       {/* 阶段筛选 Tab */}
       <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
-        {STAGES.map((s) => (
-          <button
-            key={s.key}
-            onClick={() => setSelectedStage(s.key)}
-            className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-medium transition active:scale-95 ${
-              selectedStage === s.key
-                ? 'bg-blue-600 text-white shadow-sm'
-                : 'bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 text-ink-600 dark:text-ink-300'
-            }`}
-          >
-            {s.label}
-          </button>
-        ))}
+        {STAGES.map((s) => {
+          const isSelected = selectedStage === s.key;
+          const count = getStageCount(s.key);
+          return (
+            <button
+              key={s.key}
+              onClick={() => setSelectedStage(s.key)}
+              className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition active:scale-95 flex items-center gap-1.5 ${
+                isSelected
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 text-ink-600 dark:text-ink-300'
+              }`}
+            >
+              <span>{s.label}</span>
+              <span
+                className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full leading-tight ${
+                  isSelected
+                    ? 'bg-white/25 text-white'
+                    : 'bg-ink-100 dark:bg-ink-700 text-ink-500 dark:text-ink-400'
+                }`}
+              >
+                {count}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
       {/* 业务类型二级单选（房按揭首位） */}
@@ -216,13 +262,13 @@ export default function LoanDashboard({ orders, businessName: _businessName, sta
       </div>
 
       {/* 单据列表 */}
-      {filtered.length === 0 ? (
+      {sorted.length === 0 ? (
         <div className="text-center py-12 rounded-3xl bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 text-ink-400 text-sm">
           暂无匹配的个贷业务单据
         </div>
       ) : (
         <div className="space-y-3">
-          {filtered.map((order) => {
+          {sorted.map((order) => {
             const typeMeta = getLoanTypeMeta(order.loanType);
             const isMortgage = order.loanType === 'mortgage';
 
@@ -255,8 +301,11 @@ export default function LoanDashboard({ orders, businessName: _businessName, sta
 
                   <div className="shrink-0 flex flex-col items-end gap-1">
                     {getStageBadge(order.stage)}
-                    <span className="text-[10px] text-ink-400 font-mono">
-                      {formatDateShortBeijing(order.createdAt)}
+                    <span
+                      className="text-[10px] text-ink-400 font-mono"
+                      title={order.latestLogAt ? `最新动态: ${formatDateShortBeijing(order.latestLogAt)}` : undefined}
+                    >
+                      {formatDateShortBeijing(order.latestLogAt || order.createdAt)}
                     </span>
                   </div>
                 </div>
