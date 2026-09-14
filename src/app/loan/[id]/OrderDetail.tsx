@@ -417,14 +417,17 @@ export default function OrderDetail({ initialOrder, brokers: _brokers, cardStaff
             <div className="text-xs text-blue-800 dark:text-blue-300 font-medium">
               卡部挂工号
             </div>
-            <div className="text-base font-bold text-blue-950 dark:text-blue-100 font-mono">
-              {order.cardStaffWorkNoSnapshot || '未挂工号'}
-            </div>
-            <div className="text-xs text-ink-600 dark:text-ink-300 truncate">
+            <div className="text-base font-bold text-blue-950 dark:text-blue-100">
               {order.cardStaff?.name || order.cardStaffNameSnapshot || '无卡部协同'}
+            </div>
+            <div className="text-xs text-ink-600 dark:text-ink-300 font-mono truncate">
+              {order.cardStaffWorkNoSnapshot ? `工号: ${order.cardStaffWorkNoSnapshot}` : '未挂工号'}
             </div>
             {order.cardStaff?.branch && (
               <div className="text-[11px] text-ink-400 truncate">{order.cardStaff.branch}</div>
+            )}
+            {order.cardStaff?.phone && (
+              <div className="text-xs text-ink-500">📞 {order.cardStaff.phone}</div>
             )}
           </div>
         </div>

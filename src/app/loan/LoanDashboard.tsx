@@ -299,11 +299,12 @@ export default function LoanDashboard({ orders, businessName: _businessName, sta
                     </span>
                   </div>
                   <div className="flex items-center gap-1 text-ink-500 truncate">
-                    <span>💳 卡部工号:</span>
-                    <span className="font-medium font-mono text-blue-600 dark:text-blue-400 truncate">
-                      {order.cardStaffWorkNoSnapshot
-                        ? `${order.cardStaffNameSnapshot || ''} (${order.cardStaffWorkNoSnapshot})`
-                        : '未挂工号'}
+                    <span>💳 卡部人员:</span>
+                    <span
+                      className="font-medium text-blue-600 dark:text-blue-400 truncate"
+                      title={order.cardStaffWorkNoSnapshot ? `工号: ${order.cardStaffWorkNoSnapshot}` : undefined}
+                    >
+                      {order.cardStaff?.name || order.cardStaffNameSnapshot || (order.cardStaffWorkNoSnapshot ? `工号 ${order.cardStaffWorkNoSnapshot}` : '无')}
                     </span>
                   </div>
                 </div>
