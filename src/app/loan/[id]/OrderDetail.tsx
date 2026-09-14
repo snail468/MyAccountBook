@@ -295,6 +295,115 @@ export default function OrderDetail({ initialOrder, brokers: _brokers, cardStaff
     }
   }
 
+  // 打开确认放款弹窗（放款时间默认为操作当时的时间）
+  function handleOpenLendModal() {
+    setLoanDateStr(toLocalInput(new Date()));
+    if (!actualWan && order.approvedAmountCents) {
+      handleActualWanChange((order.approvedAmountCents / 1000000).toString());
+    }
+    setLendModalOpen(true);
+  }
+
+  function getStageName(stage: string) {
+    switch (stage) {
+      case 'intention':
+      case 'draft':
+        return '意向初筛';
+      case 'approval':
+        return '行内审批';
+      case 'lending':
+        return '已放款';
+      case 'rejected':
+        return '审批拒绝';
+      default:
+        return stage;
+    }
+  }
+
+  // 阶段回退到上一阶段
+  async function handleRollbackStage(explicitTarget?: string) {
+    const current = order.stage;
+    const target = explicitTarget || (current === 'lending' ? 'approval' : current === 'approval' ? 'intention' : 'approval');
+
+    let targetLabel = '上一阶段';
+    let bodyText = '';
+
+    if (target === 'approval') {
+      targetLabel = '行内审批';
+      if (current === 'lending') {
+        bodyText = '确定要将业务阶段从【已放款】回退到【行内审批】吗？\n\n回退后将重置实际放款金额与相关提成收益数据。若曾同步记录工作账本垫款，请前往工作账本核对或删除该笔垫款。';
+      } else if (current === 'rejected') {
+        bodyText = '确定要解除【审批拒绝】状态，回退到【行内审批】重新推进批贷吗？';
+      }
+    } else if (target === 'intention') {
+      targetLabel = '意向初筛';
+      if (current === 'approval') {
+        bodyText = '确定要将业务阶段从【行内审批】回退到【意向初筛】吗？\n\n回退后将重置已录入的行内批贷额度与执行利率。';
+      } else if (current === 'rejected') {
+        bodyText = '确定要将此单据从【审批拒绝】状态回退到【意向初筛】重新制定方案吗？';
+      }
+    }
+
+    const ok = await confirm({
+      title: `确认回退到【${targetLabel}】阶段？`,
+      body: bodyText || `确定要将业务阶段回退至【${targetLabel}】吗？`,
+      confirmText: '确认回退',
+      cancelText: '取消',
+      danger: true,
+    });
+    if (!ok) return;
+
+    setBusy(true);
+    try {
+      const updatePayload: any = {
+        stage: target,
+        status: target === 'approval' ? 'approved' : 'intention',
+        logAction: '阶段回退',
+        logContent: `个贷经理将业务阶段从【${getStageName(current)}】回退至【${targetLabel}】`,
+      };
+
+      if (current === 'lending') {
+        updatePayload.actualAmountCents = null;
+        updatePayload.loanDate = null;
+        updatePayload.firstRepayDate = null;
+        updatePayload.dueDate = null;
+        updatePayload.monthlyPaymentCents = null;
+        updatePayload.serviceFeeCents = null;
+        updatePayload.brokerCommissionCents = null;
+        updatePayload.cardCommissionCents = null;
+        updatePayload.netIncomeCents = null;
+      } else if (target === 'intention') {
+        updatePayload.approvedAmountCents = null;
+        updatePayload.approvedRate = null;
+      }
+
+      const res = await fetch(`/api/loan/orders/${order.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatePayload),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '回退阶段失败');
+      setOrder(data.order);
+
+      // 同步重置前端表单局部状态
+      if (current === 'lending') {
+        setActualWan(data.order.approvedAmountCents ? (data.order.approvedAmountCents / 1000000).toString() : '');
+        setMonthlyPaymentYuan('');
+      } else if (target === 'intention') {
+        setApprovedWan('');
+        setApprovedRate('3.25');
+        setApprovalResult('approved');
+      }
+
+      toast({ message: `已成功回退到【${targetLabel}】阶段`, kind: 'success' });
+    } catch (err: any) {
+      toast({ message: err.message || '回退操作失败', kind: 'error' });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   // 删除单据
   async function handleDeleteOrder() {
     const ok = await confirm({
@@ -327,6 +436,8 @@ export default function OrderDetail({ initialOrder, brokers: _brokers, cardStaff
     rejected: -1,
   };
   const currentStageIdx = stageRank[order.stage] ?? 0;
+  const canRollback = order.stage !== 'intention' && order.stage !== 'draft';
+  const prevStageLabel = order.stage === 'lending' ? '行内审批' : order.stage === 'approval' ? '意向初筛' : '上一阶段';
 
   return (
     <div className="space-y-6">
@@ -357,12 +468,32 @@ export default function OrderDetail({ initialOrder, brokers: _brokers, cardStaff
         {/* 阶段进度条 */}
         <div className="pt-2">
           {order.stage === 'rejected' ? (
-            <div className="p-3 rounded-2xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/60 flex items-center justify-between">
+            <div className="p-3.5 rounded-2xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/60 flex items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <span className="text-base">🚫</span>
-                <span className="text-xs font-semibold text-red-600 dark:text-red-400">当前阶段：行内审批拒绝</span>
+                <div>
+                  <span className="text-xs font-semibold text-red-600 dark:text-red-400 block">当前阶段：行内审批拒绝</span>
+                  <span className="text-[10px] text-red-500/70">已退件</span>
+                </div>
               </div>
-              <span className="text-[11px] text-red-500/80">已退件</span>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => handleRollbackStage('approval')}
+                  disabled={busy}
+                  className="text-xs text-red-700 dark:text-red-300 px-2.5 py-1 rounded-xl bg-white dark:bg-ink-800 border border-red-200 dark:border-red-800 hover:bg-red-50 dark:hover:bg-red-950/40 active:scale-95 transition font-medium disabled:opacity-50"
+                >
+                  ↩ 回退至行内审批
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleRollbackStage('intention')}
+                  disabled={busy}
+                  className="text-xs text-ink-600 dark:text-ink-300 px-2.5 py-1 rounded-xl bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 hover:bg-ink-50 dark:hover:bg-ink-900 active:scale-95 transition font-medium disabled:opacity-50"
+                >
+                  ↩ 回退至意向初筛
+                </button>
+              </div>
             </div>
           ) : (
             <div className="flex items-center justify-between gap-1 overflow-x-auto no-scrollbar">
@@ -563,10 +694,23 @@ export default function OrderDetail({ initialOrder, brokers: _brokers, cardStaff
 
       {/* 5. 阶段流转操作推进面板 */}
       <div className="rounded-3xl bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 p-5 shadow-sm space-y-3">
-        <h3 className="text-sm font-semibold flex items-center gap-2">
-          <span>⚡</span>
-          <span>业务阶段推进操作</span>
-        </h3>
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold flex items-center gap-2">
+            <span>⚡</span>
+            <span>业务阶段推进操作</span>
+          </h3>
+          {canRollback && (
+            <button
+              type="button"
+              onClick={() => handleRollbackStage()}
+              disabled={busy}
+              className="text-xs text-amber-700 dark:text-amber-300 hover:text-amber-800 font-medium flex items-center gap-1 px-3 py-1.5 rounded-xl bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 active:scale-95 transition disabled:opacity-50"
+            >
+              <span>↩</span>
+              <span>回退至{prevStageLabel}</span>
+            </button>
+          )}
+        </div>
 
         <div className="grid grid-cols-2 gap-2.5">
           <button
@@ -580,7 +724,7 @@ export default function OrderDetail({ initialOrder, brokers: _brokers, cardStaff
 
           <button
             type="button"
-            onClick={() => setLendModalOpen(true)}
+            onClick={handleOpenLendModal}
             className="p-3.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 text-xs font-semibold active:scale-95 transition flex items-center justify-center gap-1.5"
           >
             <span>💰</span>
