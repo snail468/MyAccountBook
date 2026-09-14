@@ -48,6 +48,15 @@ export type UserPrefs = {
    * 缺省 undefined / false 视为不需要。
    */
   needsOnboarding?: boolean;
+  /**
+   * 功能中心应用开关：个贷业务管理（房按揭、抵押贷、渠道、卡部工号等）
+   */
+  features?: {
+    loanBusiness?: {
+      enabled?: boolean;
+      customName?: string; // 用户自定义名称，默认"个贷业务"
+    };
+  };
 };
 
 const DEFAULT_PREFS: UserPrefs = {};
@@ -80,6 +89,31 @@ export function isIncomeComponentEnabled(
   return m[key] !== false;
 }
 
+export function setIncomeComponentEnabled(
+  prefs: UserPrefs,
+  key: IncomeComponentKey,
+  enabled: boolean,
+): UserPrefs {
+  return {
+    ...prefs,
+    incomeComponents: {
+      ...(prefs.incomeComponents ?? {}),
+      [key]: enabled,
+    },
+  };
+}
+
+/** 判个贷业务功能是否启用（默认未开启，需用户自行添加）。 */
+export function isLoanBusinessEnabled(prefs: UserPrefs): boolean {
+  return prefs.features?.loanBusiness?.enabled === true;
+}
+
+/** 获取个贷业务自定义显示名称，若未设或为空则回退默认"个贷业务"。 */
+export function getLoanBusinessName(prefs: UserPrefs): string {
+  const name = prefs.features?.loanBusiness?.customName?.trim();
+  return name && name.length > 0 ? name : '个贷业务';
+}
+
 /**
  * 合并局部更新到现有 prefs。PATCH 语义 —— 传入的字段覆盖，未传的保留。
  * incomeComponents 内部也是浅合并，不是替换整个 map。
@@ -90,6 +124,18 @@ export function mergePrefs(current: UserPrefs, patch: Partial<UserPrefs>): UserP
     next.incomeComponents = {
       ...(current.incomeComponents ?? {}),
       ...patch.incomeComponents,
+    };
+  }
+  if (patch.features) {
+    next.features = {
+      ...(current.features ?? {}),
+      ...patch.features,
+      loanBusiness: patch.features.loanBusiness !== undefined
+        ? {
+            ...(current.features?.loanBusiness ?? { enabled: false }),
+            ...patch.features.loanBusiness,
+          }
+        : current.features?.loanBusiness,
     };
   }
   return next;

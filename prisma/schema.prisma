@@ -45,6 +45,11 @@ model User {
   ledgerMemberships LedgerMember[]
   createdInvites    LedgerInvite[] @relation("InviteCreator")
   acceptedInvites   LedgerInvite[] @relation("InviteAcceptor")
+
+  // 个贷经理专属业务台账
+  brokers           Broker[]
+  cardStaffs        CardStaff[]
+  loanOrders        LoanOrder[]
 }
 
 // ============ 工作账本 (kind="work") ============
@@ -433,3 +438,146 @@ model RecurringRule {
 
   @@index([userId, active])
 }
+
+// ============ 经纪人 / 渠道档案 ============
+model Broker {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String    // 经纪人姓名
+  phone       String?   // 联系电话
+  company     String?   // 所属中介/渠道公司（如链家、中原、德佑等）
+  rateNote    String?   // 佣金/返点约定（如：1.5%，或固定每单2000）
+  accountInfo String?   // 结算打款账户信息
+  note        String?   // 备注说明
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime? // 软删除
+
+  orders      LoanOrder[]
+
+  @@index([userId, deletedAt])
+  @@index([userId, name])
+}
+
+// ============ 卡部人员与工号档案 ============
+model CardStaff {
+  id             String    @id @default(cuid())
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name           String    // 姓名
+  workNo         String    // 卡部工号（核心唯一业务标识）
+  phone          String?   // 联系电话
+  branch         String?   // 所属支行/卡部团队
+  commissionNote String?   // 协同提成/分润约定
+  note           String?   // 备注说明
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime? // 软删除
+
+  orders         LoanOrder[]
+
+  @@index([userId, deletedAt])
+  @@index([userId, workNo])
+}
+
+// ============ 个贷业务单据 ============
+model LoanOrder {
+  id                      String    @id @default(cuid())
+  userId                  String
+  user                    User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orderNo                 String    // 系统自增/时间单号，如 LO202609140001
+  
+  // 业务类型：'mortgage' 房按揭(首位) | 'house_pledge' 房产抵押 | 'credit' 个人信用贷 | 'consumer' 消费贷 | 'business' 经营贷 | 'car' 车贷 | 'card_staging' 卡部专项分期 | 'bridge' 过桥垫资
+  loanType                String    @default("mortgage")
+  
+  // 阶段与状态
+  // stage: 'intention' 意向 | 'scheme' 方案 | 'approval' 审批 | 'lending' 放款 | 'settled' 结清 | 'overdue' 逾期
+  stage                   String    @default("intention")
+  status                  String    @default("intention") // draft / intention / scheme / approving / approved / rejected / lending / loaned / settled / overdue
+  
+  // 借款人信息
+  borrowerName            String    // 客户姓名
+  phone                   String?   // 手机号
+  idCard                  String?   // 身份证号
+  
+  // 人员关联（方案 B 字典关联 + 快照冗余）
+  brokerId                String?
+  broker                  Broker?   @relation(fields: [brokerId], references: [id], onDelete: SetNull)
+  brokerNameSnapshot      String?   // 经纪人姓名快照
+  
+  cardStaffId             String?
+  cardStaff               CardStaff? @relation(fields: [cardStaffId], references: [id], onDelete: SetNull)
+  cardStaffNameSnapshot   String?   // 卡部人员姓名快照
+  cardStaffWorkNoSnapshot String?   // 卡部工号快照
+  
+  // 房产要素（房按揭首位重点字段）
+  propertyAddress         String?   // 房产坐落/小区名称
+  propertyArea            Float?    // 建筑面积（平方米）
+  propertyPriceCents      Int?      // 房产总价/评估价（分）
+  downPaymentCents        Int?      // 首付款（分）
+  
+  // 贷款方案与审批要素
+  demandAmountCents       Int?      // 申请金额/需求金额（分）
+  demandTermMonths        Int?      // 申请期限（月）
+  bankName                String?   // 申请/承贷银行支行
+  approvedAmountCents     Int?      // 批贷金额（分）
+  approvedRate            Float?    // 批复年化利率（如 3.25 表示 3.25%）
+  repaymentMethod         String?   // 还款方式：等额本息 / 先息后本 / 等额本金
+  
+  // 放款与履约计划
+  actualAmountCents       Int?      // 实际放款金额（分）
+  loanDate                DateTime? // 放款日期
+  firstRepayDate          DateTime? // 首期还款日
+  monthlyPaymentCents     Int?      // 每月月供（分）
+  dueDate                 DateTime? // 到期日
+  
+  // 收益与成本提成核算（分）
+  serviceFeeCents         Int?      // 业务总收入/服务费
+  brokerCommissionCents   Int?      // 应付经纪人返佣
+  cardCommissionCents     Int?      // 卡部协同支出/收益
+  netIncomeCents          Int?      // 个人净收益
+  
+  // 双重描述之一：贯穿全生命周期的初始静态全局情况描述
+  initialDescription      String?
+  
+  // 软删除
+  deletedAt               DateTime?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+
+  logs                    LoanOrderLog[]
+  attachments             LoanOrderAttachment[]
+
+  @@index([userId, stage])
+  @@index([userId, loanType])
+  @@index([userId, deletedAt])
+  @@index([orderNo])
+}
+
+// ============ 单据阶段跟进动态流水日志 ============
+model LoanOrderLog {
+  id         String    @id @default(cuid())
+  orderId    String
+  order      LoanOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  action     String    // 动作类型/阶段标签（如：新建意向单、方案拟定、行内批贷、确认放款、追加进展等）
+  content    String    // 跟进日志详细内容
+  occurredAt DateTime  @default(now())
+  createdAt  DateTime  @default(now())
+
+  @@index([orderId, occurredAt])
+}
+
+// ============ 单据凭证附件 ============
+model LoanOrderAttachment {
+  id         String    @id @default(cuid())
+  orderId    String
+  order      LoanOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  category   String    // 附件类别：id_card | property | approval_doc | loan_voucher | other
+  fileName   String
+  fileUrl    String
+  createdAt  DateTime  @default(now())
+
+  @@index([orderId])
+}
+

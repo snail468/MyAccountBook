@@ -23,6 +23,16 @@ export async function GET() {
 
 const bodySchema = z.object({
   incomeComponents: z.record(z.string().min(1).max(200), z.boolean()).optional(),
+  features: z
+    .object({
+      loanBusiness: z
+        .object({
+          enabled: z.boolean().optional(),
+          customName: z.string().trim().max(30).optional(),
+        })
+        .optional(),
+    })
+    .optional(),
 });
 
 export async function PATCH(req: Request) {

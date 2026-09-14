@@ -1,0 +1,1018 @@
+'use client';
+
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useToast, useConfirm } from '@/components/ui/Dialog';
+import { LOAN_TYPES } from '../new/NewOrderForm';
+
+type OrderData = {
+  id: string;
+  orderNo: string;
+  loanType: string;
+  stage: string;
+  status: string;
+  borrowerName: string;
+  phone: string | null;
+  idCard: string | null;
+  brokerId: string | null;
+  brokerNameSnapshot: string | null;
+  cardStaffId: string | null;
+  cardStaffNameSnapshot: string | null;
+  cardStaffWorkNoSnapshot: string | null;
+  propertyAddress: string | null;
+  propertyArea: number | null;
+  propertyPriceCents: number | null;
+  downPaymentCents: number | null;
+  demandAmountCents: number | null;
+  demandTermMonths: number | null;
+  bankName: string | null;
+  approvedAmountCents: number | null;
+  approvedRate: number | null;
+  repaymentMethod: string | null;
+  actualAmountCents: number | null;
+  loanDate: string | null;
+  firstRepayDate: string | null;
+  monthlyPaymentCents: number | null;
+  dueDate: string | null;
+  serviceFeeCents: number | null;
+  brokerCommissionCents: number | null;
+  cardCommissionCents: number | null;
+  netIncomeCents: number | null;
+  initialDescription: string | null;
+  createdAt: string;
+  updatedAt: string;
+  broker?: { id: string; name: string; phone: string | null; company: string | null; rateNote: string | null } | null;
+  cardStaff?: { id: string; name: string; workNo: string; phone: string | null; branch: string | null; commissionNote: string | null } | null;
+  logs: Array<{ id: string; action: string; content: string; occurredAt: string }>;
+};
+
+type Props = {
+  initialOrder: OrderData;
+  brokers: Array<{ id: string; name: string; company: string | null }>;
+  cardStaffs: Array<{ id: string; name: string; workNo: string }>;
+};
+
+const STAGE_STEPS = [
+  { key: 'intention', label: '1. 意向初筛' },
+  { key: 'scheme', label: '2. 方案匹配' },
+  { key: 'approval', label: '3. 行内审批' },
+  { key: 'lending', label: '4. 放款履约' },
+  { key: 'settled', label: '5. 结清完结' },
+];
+
+export default function OrderDetail({ initialOrder, brokers: _brokers, cardStaffs: _cardStaffs }: Props) {
+  const router = useRouter();
+  const toast = useToast();
+  const confirm = useConfirm();
+
+  const [order, setOrder] = useState<OrderData>(initialOrder);
+
+  // 1. 全局初始情况描述编辑状态
+  const [descEditing, setDescEditing] = useState(false);
+  const [descText, setDescText] = useState(order.initialDescription || '');
+  const [descSaving, setDescSaving] = useState(false);
+
+  // 2. 追加跟进流水状态
+  const [logModalOpen, setLogModalOpen] = useState(false);
+  const [logAction, setLogAction] = useState('跟进记录');
+  const [logContent, setLogContent] = useState('');
+  const [logSaving, setLogSaving] = useState(false);
+
+  // 3. 推进方案弹窗
+  const [schemeModalOpen, setSchemeModalOpen] = useState(false);
+  const [bankName, setBankName] = useState(order.bankName || '');
+  const [repaymentMethod, setRepaymentMethod] = useState(order.repaymentMethod || '等额本息');
+  const [planAmountWan, setPlanAmountWan] = useState(
+    order.demandAmountCents ? (order.demandAmountCents / 1000000).toString() : ''
+  );
+  const [planRate, setPlanRate] = useState(order.approvedRate ? order.approvedRate.toString() : '3.25');
+
+  // 4. 推进批复弹窗
+  const [approvalModalOpen, setApprovalModalOpen] = useState(false);
+  const [approvedWan, setApprovedWan] = useState(
+    order.approvedAmountCents ? (order.approvedAmountCents / 1000000).toString() : ''
+  );
+  const [approvedRate, setApprovedRate] = useState(order.approvedRate ? order.approvedRate.toString() : '3.25');
+  const [approvalResult, setApprovalResult] = useState<'approved' | 'rejected'>('approved');
+
+  // 5. 登记放款弹窗
+  const [lendModalOpen, setLendModalOpen] = useState(false);
+  const [actualWan, setActualWan] = useState(
+    order.approvedAmountCents ? (order.approvedAmountCents / 1000000).toString() : ''
+  );
+  const [loanDateStr, setLoanDateStr] = useState(
+    new Date().toISOString().slice(0, 10)
+  );
+  const [monthlyPaymentYuan, setMonthlyPaymentYuan] = useState(
+    order.monthlyPaymentCents ? (order.monthlyPaymentCents / 100).toString() : ''
+  );
+  const [serviceFeeYuan, setServiceFeeYuan] = useState(
+    order.serviceFeeCents ? (order.serviceFeeCents / 100).toString() : ''
+  );
+  const [brokerCommissionYuan, setBrokerCommissionYuan] = useState(
+    order.brokerCommissionCents ? (order.brokerCommissionCents / 100).toString() : ''
+  );
+  const [cardCommissionYuan, setCardCommissionYuan] = useState(
+    order.cardCommissionCents ? (order.cardCommissionCents / 100).toString() : ''
+  );
+
+  const [busy, setBusy] = useState(false);
+
+  // 保存初始情况描述
+  async function saveDescription() {
+    setDescSaving(true);
+    try {
+      const res = await fetch(`/api/loan/orders/${order.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          initialDescription: descText.trim() || null,
+          logAction: '更新情况描述',
+          logContent: '个贷经理修改了单子全景情况描述',
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '保存失败');
+      setOrder(data.order);
+      setDescEditing(false);
+      toast({ message: '情况描述已保存', kind: 'success' });
+    } catch (err: any) {
+      toast({ message: err.message || '保存失败', kind: 'error' });
+    } finally {
+      setDescSaving(false);
+    }
+  }
+
+  // 追加跟进流水
+  async function handleAddLog(e: React.FormEvent) {
+    e.preventDefault();
+    if (!logContent.trim()) {
+      toast({ message: '请输入跟进内容' });
+      return;
+    }
+    setLogSaving(true);
+    try {
+      const res = await fetch(`/api/loan/orders/${order.id}/logs`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: logAction.trim(),
+          content: logContent.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '添加日志失败');
+      setOrder((prev) => ({
+        ...prev,
+        logs: [data.log, ...prev.logs],
+      }));
+      setLogContent('');
+      setLogModalOpen(false);
+      toast({ message: '跟进动态已追加', kind: 'success' });
+    } catch (err: any) {
+      toast({ message: err.message || '操作失败', kind: 'error' });
+    } finally {
+      setLogSaving(false);
+    }
+  }
+
+  // 提交方案
+  async function submitScheme(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    const amountCents = planAmountWan ? Math.round(parseFloat(planAmountWan) * 10000 * 100) : null;
+    const rate = planRate ? parseFloat(planRate) : null;
+    try {
+      const res = await fetch(`/api/loan/orders/${order.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          stage: 'scheme',
+          status: 'scheme',
+          bankName: bankName.trim() || null,
+          demandAmountCents: amountCents,
+          approvedRate: rate,
+          repaymentMethod,
+          logAction: '制定贷款方案',
+          logContent: `拟申请机构: ${bankName || '本行'}，方案金额: ${planAmountWan}万元，预估年化利率: ${planRate}%，还款方式: ${repaymentMethod}`,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '方案保存失败');
+      setOrder(data.order);
+      setSchemeModalOpen(false);
+      toast({ message: '方案已确定，进入审批阶段', kind: 'success' });
+    } catch (err: any) {
+      toast({ message: err.message || '操作失败', kind: 'error' });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // 录入审批结果
+  async function submitApproval(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    const isApproved = approvalResult === 'approved';
+    const amountCents = approvedWan ? Math.round(parseFloat(approvedWan) * 10000 * 100) : null;
+    const rate = approvedRate ? parseFloat(approvedRate) : null;
+    try {
+      const res = await fetch(`/api/loan/orders/${order.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          stage: isApproved ? 'approval' : 'intention',
+          status: isApproved ? 'approved' : 'rejected',
+          approvedAmountCents: amountCents,
+          approvedRate: rate,
+          logAction: isApproved ? '行内审批通过' : '行内审批退件',
+          logContent: isApproved
+            ? `审批通过(已批贷)，批复金额: ${approvedWan}万元，批复年化利率: ${approvedRate}%`
+            : `行内审批拒绝/退件，客户转回意向池调整方案`,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '录入审批结果失败');
+      setOrder(data.order);
+      setApprovalModalOpen(false);
+      toast({ message: isApproved ? '审批通过结果已录入' : '已标记为审批拒绝', kind: 'success' });
+    } catch (err: any) {
+      toast({ message: err.message || '操作失败', kind: 'error' });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // 确认放款
+  async function submitLending(e: React.FormEvent) {
+    e.preventDefault();
+    if (!actualWan) {
+      toast({ message: '请输入实际放款金额' });
+      return;
+    }
+    setBusy(true);
+    const actualCents = Math.round(parseFloat(actualWan) * 10000 * 100);
+    const monthlyCents = monthlyPaymentYuan ? Math.round(parseFloat(monthlyPaymentYuan) * 100) : null;
+    const feeCents = serviceFeeYuan ? Math.round(parseFloat(serviceFeeYuan) * 100) : 0;
+    const brokerCents = brokerCommissionYuan ? Math.round(parseFloat(brokerCommissionYuan) * 100) : 0;
+    const cardCents = cardCommissionYuan ? Math.round(parseFloat(cardCommissionYuan) * 100) : 0;
+
+    try {
+      const res = await fetch(`/api/loan/orders/${order.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          stage: 'lending',
+          status: 'loaned',
+          actualAmountCents: actualCents,
+          loanDate: loanDateStr ? new Date(loanDateStr).toISOString() : new Date().toISOString(),
+          monthlyPaymentCents: monthlyCents,
+          serviceFeeCents: feeCents,
+          brokerCommissionCents: brokerCents,
+          cardCommissionCents: cardCents,
+          netIncomeCents: feeCents - brokerCents - cardCents,
+          logAction: '放款成功登记',
+          logContent: `实际放款金额: ${actualWan}万元，放款日期: ${loanDateStr}，月供: ${monthlyPaymentYuan || '未计'}元`,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '放款登记失败');
+      setOrder(data.order);
+      setLendModalOpen(false);
+      toast({ message: '放款登记成功，进入正常履约期', kind: 'success' });
+    } catch (err: any) {
+      toast({ message: err.message || '操作失败', kind: 'error' });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // 结清或逾期操作
+  async function handleSettle(status: 'settled' | 'overdue') {
+    const isSettled = status === 'settled';
+    const ok = await confirm({
+      title: isSettled ? '确认本单已全部结清？' : '标记单据为逾期？',
+      body: isSettled
+        ? '确认客户已按期全额偿还贷款本息并办理结清解押手续。'
+        : '标记后单据将置为逾期状态并在列表中重点预警提醒。',
+      confirmText: isSettled ? '确认结清' : '确认标记逾期',
+      cancelText: '取消',
+      danger: !isSettled,
+    });
+    if (!ok) return;
+
+    try {
+      const res = await fetch(`/api/loan/orders/${order.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          stage: status,
+          status,
+          logAction: isSettled ? '业务正常结清' : '业务标记逾期',
+          logContent: isSettled ? '个贷经理确认客户贷款本息结清归档' : '客户发生逾期，进入风险催收',
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '状态更新失败');
+      setOrder(data.order);
+      toast({ message: isSettled ? '单据已成功结清' : '已标记为逾期', kind: 'success' });
+    } catch (err: any) {
+      toast({ message: err.message || '操作失败', kind: 'error' });
+    }
+  }
+
+  // 删除单据
+  async function handleDeleteOrder() {
+    const ok = await confirm({
+      title: '删除此个贷单据？',
+      body: '确定要删除此单据吗？删除后进入软删除状态。',
+      confirmText: '删除',
+      cancelText: '取消',
+      danger: true,
+    });
+    if (!ok) return;
+
+    try {
+      const res = await fetch(`/api/loan/orders/${order.id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('删除失败');
+      toast({ message: '单据已删除', kind: 'success' });
+      router.push('/loan');
+    } catch {
+      toast({ message: '删除失败，请重试', kind: 'error' });
+    }
+  }
+
+  const typeMeta = LOAN_TYPES.find((t) => t.key === order.loanType) || { label: order.loanType, icon: '📄' };
+  const currentStageIdx = STAGE_STEPS.findIndex((s) => s.key === order.stage);
+
+  return (
+    <div className="space-y-6">
+      {/* 1. 顶部全景业务状态与全周期 Timeline */}
+      <div className="rounded-3xl bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 p-5 shadow-sm space-y-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-xl font-bold">{order.borrowerName}</span>
+              <span className="text-xs px-2 py-0.5 rounded-lg bg-blue-50 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 font-semibold flex items-center gap-1">
+                <span>{typeMeta.icon}</span>
+                <span>{typeMeta.label}</span>
+              </span>
+            </div>
+            <div className="text-xs text-ink-400 font-mono mt-1">
+              单号: {order.orderNo} · 电话: {order.phone || '未填'}
+            </div>
+          </div>
+
+          <button
+            onClick={handleDeleteOrder}
+            className="text-xs text-red-500 hover:text-red-600 px-2 py-1 rounded-lg border border-red-200 dark:border-red-900"
+          >
+            删除
+          </button>
+        </div>
+
+        {/* 阶段进度条 */}
+        <div className="pt-2">
+          <div className="flex items-center justify-between gap-1 overflow-x-auto no-scrollbar">
+            {STAGE_STEPS.map((step, idx) => {
+              const isPassed = currentStageIdx >= idx;
+              const isCurrent = currentStageIdx === idx;
+              return (
+                <div key={step.key} className="flex-1 min-w-[60px] text-center">
+                  <div
+                    className={`h-2 rounded-full mb-1.5 transition ${
+                      isCurrent
+                        ? 'bg-blue-600'
+                        : isPassed
+                        ? 'bg-blue-300 dark:bg-blue-700'
+                        : 'bg-ink-100 dark:bg-ink-700'
+                    }`}
+                  />
+                  <span
+                    className={`text-[11px] block truncate ${
+                      isCurrent
+                        ? 'font-bold text-blue-600 dark:text-blue-400'
+                        : isPassed
+                        ? 'text-ink-700 dark:text-ink-300 font-medium'
+                        : 'text-ink-400'
+                    }`}
+                  >
+                    {step.label}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* 2. 核心要求 1：展示经纪人是谁 & 给卡部的谁挂了工号 */}
+      <div className="rounded-3xl bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 p-5 shadow-sm space-y-3">
+        <h3 className="text-sm font-semibold flex items-center gap-2">
+          <span>🤝</span>
+          <span>渠道经纪人 & 卡部工号挂号</span>
+        </h3>
+
+        <div className="grid grid-cols-2 gap-3">
+          {/* 经纪人信息卡 */}
+          <div className="p-3.5 rounded-2xl bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200/60 dark:border-amber-800/60 space-y-1">
+            <div className="text-xs text-amber-800 dark:text-amber-300 font-medium">
+              推单经纪人
+            </div>
+            <div className="text-base font-bold text-amber-950 dark:text-amber-100">
+              {order.broker?.name || order.brokerNameSnapshot || '无 / 客户自来访'}
+            </div>
+            {order.broker?.company && (
+              <div className="text-xs text-ink-500 truncate">{order.broker.company}</div>
+            )}
+            {order.broker?.phone && (
+              <div className="text-xs text-ink-500">📞 {order.broker.phone}</div>
+            )}
+          </div>
+
+          {/* 卡部工号信息卡 */}
+          <div className="p-3.5 rounded-2xl bg-blue-50/60 dark:bg-blue-950/20 border border-blue-200/60 dark:border-blue-800/60 space-y-1">
+            <div className="text-xs text-blue-800 dark:text-blue-300 font-medium">
+              卡部挂工号
+            </div>
+            <div className="text-base font-bold text-blue-950 dark:text-blue-100 font-mono">
+              {order.cardStaffWorkNoSnapshot || '未挂工号'}
+            </div>
+            <div className="text-xs text-ink-600 dark:text-ink-300 truncate">
+              {order.cardStaff?.name || order.cardStaffNameSnapshot || '无卡部协同'}
+            </div>
+            {order.cardStaff?.branch && (
+              <div className="text-[11px] text-ink-400 truncate">{order.cardStaff.branch}</div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* 3. 核心要求 2：双重描述之一 —— 贯穿全流程的初始静态全局情况描述 */}
+      <div className="rounded-3xl bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 p-5 shadow-sm space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold flex items-center gap-2">
+            <span>📝</span>
+            <span>单子基本情况描述 (静态全景说明)</span>
+          </h3>
+          {!descEditing && (
+            <button
+              onClick={() => setDescEditing(true)}
+              className="text-xs text-blue-600 dark:text-blue-400 font-medium hover:underline"
+            >
+              编辑修改
+            </button>
+          )}
+        </div>
+
+        {descEditing ? (
+          <div className="space-y-2.5">
+            <textarea
+              rows={5}
+              value={descText}
+              onChange={(e) => setDescText(e.target.value)}
+              placeholder="详细编辑单子全貌、客户资产、资金需求、首付及征信情况..."
+              className="w-full px-3.5 py-2.5 rounded-2xl border border-ink-300 dark:border-ink-600 bg-transparent text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 leading-relaxed"
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setDescText(order.initialDescription || '');
+                  setDescEditing(false);
+                }}
+                className="px-3 py-1.5 text-xs text-ink-500"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={saveDescription}
+                disabled={descSaving}
+                className="px-4 py-1.5 rounded-xl bg-blue-600 text-white text-xs font-medium hover:bg-blue-700 disabled:opacity-50"
+              >
+                {descSaving ? '保存中...' : '保存修改'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="p-3.5 rounded-2xl bg-ink-50/70 dark:bg-ink-900/40 text-sm leading-relaxed text-ink-700 dark:text-ink-200 whitespace-pre-wrap">
+            {order.initialDescription || (
+              <span className="text-ink-400 italic">暂无文字情况描述，点击右上角补充</span>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* 4. 房产要素与方案数据卡片 */}
+      <div className="rounded-3xl bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 p-5 shadow-sm space-y-3 text-sm">
+        <h3 className="font-semibold flex items-center gap-2">
+          <span>📊</span>
+          <span>进件要素与放款履约</span>
+        </h3>
+
+        <div className="space-y-2 divide-y divide-ink-100 dark:divide-ink-700/60">
+          {order.propertyAddress && (
+            <div className="flex items-center justify-between pt-1">
+              <span className="text-ink-500">房屋坐落小区</span>
+              <span className="font-medium text-right max-w-[200px] truncate">{order.propertyAddress}</span>
+            </div>
+          )}
+          {order.propertyArea && (
+            <div className="flex items-center justify-between pt-2">
+              <span className="text-ink-500">建筑面积</span>
+              <span className="font-medium">{order.propertyArea} ㎡</span>
+            </div>
+          )}
+          <div className="flex items-center justify-between pt-2">
+            <span className="text-ink-500">拟申请资金</span>
+            <span className="font-semibold font-mono">
+              {order.demandAmountCents ? `${(order.demandAmountCents / 1000000).toFixed(2)} 万元` : '未定'}
+            </span>
+          </div>
+          {order.approvedAmountCents ? (
+            <div className="flex items-center justify-between pt-2">
+              <span className="text-ink-500">批贷额度 / 利率</span>
+              <span className="font-semibold font-mono text-blue-600 dark:text-blue-400">
+                {(order.approvedAmountCents / 1000000).toFixed(2)} 万元 · {order.approvedRate || '-'}%
+              </span>
+            </div>
+          ) : null}
+          {order.actualAmountCents ? (
+            <div className="flex items-center justify-between pt-2">
+              <span className="text-ink-500">实际放款金额</span>
+              <span className="font-bold font-mono text-emerald-600 dark:text-emerald-400">
+                {(order.actualAmountCents / 1000000).toFixed(2)} 万元
+              </span>
+            </div>
+          ) : null}
+          {order.monthlyPaymentCents ? (
+            <div className="flex items-center justify-between pt-2">
+              <span className="text-ink-500">每月还款月供</span>
+              <span className="font-semibold font-mono text-ink-800 dark:text-ink-200">
+                ¥{(order.monthlyPaymentCents / 100).toFixed(2)} 元
+              </span>
+            </div>
+          ) : null}
+        </div>
+      </div>
+
+      {/* 5. 阶段流转操作推进面板 */}
+      <div className="rounded-3xl bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 p-5 shadow-sm space-y-3">
+        <h3 className="text-sm font-semibold flex items-center gap-2">
+          <span>⚡</span>
+          <span>业务阶段推进操作</span>
+        </h3>
+
+        <div className="grid grid-cols-2 gap-2.5">
+          <button
+            type="button"
+            onClick={() => setSchemeModalOpen(true)}
+            className="p-3 rounded-2xl bg-indigo-50 dark:bg-indigo-950/30 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 text-xs font-semibold active:scale-95 transition"
+          >
+            📋 制定/调整方案
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setApprovalModalOpen(true)}
+            className="p-3 rounded-2xl bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 text-xs font-semibold active:scale-95 transition"
+          >
+            🏛️ 录入行内批贷
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setLendModalOpen(true)}
+            className="p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 text-xs font-semibold active:scale-95 transition"
+          >
+            💰 确认登记放款
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleSettle('settled')}
+            className="p-3 rounded-2xl bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700 text-xs font-semibold active:scale-95 transition"
+          >
+            ✅ 结清归档
+          </button>
+        </div>
+      </div>
+
+      {/* 6. 提成收益核算卡片（放款后展示） */}
+      {order.actualAmountCents ? (
+        <div className="rounded-3xl bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-emerald-950/30 dark:to-teal-950/30 border border-emerald-200 dark:border-emerald-800 p-5 shadow-sm space-y-3">
+          <h3 className="text-sm font-semibold text-emerald-950 dark:text-emerald-200 flex items-center gap-2">
+            <span>📈</span>
+            <span>提成收益对账 (个贷专属)</span>
+          </h3>
+
+          <div className="grid grid-cols-2 gap-3 text-xs">
+            <div className="p-3 rounded-2xl bg-white/70 dark:bg-ink-800/70 border border-emerald-200/60 dark:border-emerald-800/60">
+              <span className="text-ink-400">应付经纪人佣金</span>
+              <div className="text-base font-bold font-mono text-amber-600 mt-1">
+                ¥{((order.brokerCommissionCents || 0) / 100).toFixed(2)}
+              </div>
+            </div>
+            <div className="p-3 rounded-2xl bg-white/70 dark:bg-ink-800/70 border border-emerald-200/60 dark:border-emerald-800/60">
+              <span className="text-ink-400">卡部协同提成</span>
+              <div className="text-base font-bold font-mono text-blue-600 mt-1">
+                ¥{((order.cardCommissionCents || 0) / 100).toFixed(2)}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between pt-2 border-t border-emerald-200/70 dark:border-emerald-800/70 text-sm">
+            <span className="font-medium text-emerald-950 dark:text-emerald-100">
+              个人净提成收益
+            </span>
+            <span className="font-bold font-mono text-lg text-emerald-700 dark:text-emerald-300">
+              ¥{((order.netIncomeCents || 0) / 100).toFixed(2)} 元
+            </span>
+          </div>
+        </div>
+      ) : null}
+
+      {/* 7. 核心要求 2：双重描述之二 —— 阶段跟进动态流水日志（时间轴） */}
+      <div className="rounded-3xl bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 p-5 shadow-sm space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold flex items-center gap-2">
+            <span>⏱️</span>
+            <span>办件动态流水 (时间轴追加)</span>
+          </h3>
+          <button
+            onClick={() => setLogModalOpen(true)}
+            className="text-xs px-3 py-1.5 rounded-xl bg-blue-600 text-white font-medium hover:bg-blue-700 active:scale-95 transition shadow-sm"
+          >
+            ＋ 追加跟进记录
+          </button>
+        </div>
+
+        {order.logs.length === 0 ? (
+          <div className="text-center py-6 text-xs text-ink-400">暂无动态记录</div>
+        ) : (
+          <div className="relative pl-6 space-y-4 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-ink-200 dark:before:bg-ink-700">
+            {order.logs.map((log) => (
+              <div key={log.id} className="relative space-y-1">
+                {/* 时间轴圆点 */}
+                <span className="absolute -left-6 top-1.5 w-2.5 h-2.5 rounded-full bg-blue-500 ring-4 ring-white dark:ring-ink-800" />
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold text-blue-600 dark:text-blue-400">
+                    {log.action}
+                  </span>
+                  <span className="text-[10px] text-ink-400">
+                    {log.occurredAt.replace('T', ' ').slice(0, 16)}
+                  </span>
+                </div>
+                <div className="text-xs text-ink-700 dark:text-ink-300 leading-relaxed bg-ink-50/70 dark:bg-ink-900/40 p-2.5 rounded-xl">
+                  {log.content}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* 弹窗：追加跟进动态 */}
+      {logModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={() => setLogModalOpen(false)}
+        >
+          <div
+            className="w-full max-w-sm bg-white dark:bg-ink-900 rounded-3xl p-5 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h4 className="font-semibold text-base">追加办件跟进记录</h4>
+            <form onSubmit={handleAddLog} className="space-y-3">
+              <div>
+                <label className="block text-xs text-ink-500 mb-1">阶段动作标签</label>
+                <select
+                  value={logAction}
+                  onChange={(e) => setLogAction(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-ink-300 dark:border-ink-600 bg-transparent text-sm focus:outline-none"
+                >
+                  <option value="电话跟进">电话跟进</option>
+                  <option value="补充征信流水">补充征信/流水材料</option>
+                  <option value="房产下户勘验">房产下户勘验</option>
+                  <option value="客户签约面签">客户签约面签</option>
+                  <option value="卡部核身协同">卡部核身协同</option>
+                  <option value="抵押出件登记">抵押出件登记</option>
+                  <option value="催收提醒">到期催收提醒</option>
+                  <option value="其它跟进">其它特别事项</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs text-ink-500 mb-1">跟进内容详细记录 *</label>
+                <textarea
+                  rows={3}
+                  required
+                  value={logContent}
+                  onChange={(e) => setLogContent(e.target.value)}
+                  placeholder="如：已收取买卖双方身份证及产证复印件，评估公司预计周二下户..."
+                  className="w-full px-3 py-2 rounded-xl border border-ink-300 dark:border-ink-600 bg-transparent text-sm focus:outline-none resize-none"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setLogModalOpen(false)}
+                  className="px-3 py-1.5 text-xs text-ink-500"
+                >
+                  取消
+                </button>
+                <button
+                  type="submit"
+                  disabled={logSaving}
+                  className="px-4 py-1.5 rounded-xl bg-blue-600 text-white text-xs font-medium hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {logSaving ? '提交中...' : '确认追加'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 弹窗：拟定方案 */}
+      {schemeModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={() => setSchemeModalOpen(false)}
+        >
+          <div
+            className="w-full max-w-sm bg-white dark:bg-ink-900 rounded-3xl p-5 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h4 className="font-semibold text-base">制定贷款方案</h4>
+            <form onSubmit={submitScheme} className="space-y-3">
+              <div>
+                <label className="block text-xs text-ink-500 mb-1">申请机构 / 承贷支行</label>
+                <input
+                  type="text"
+                  value={bankName}
+                  onChange={(e) => setBankName(e.target.value)}
+                  placeholder="如: 本行高新支行"
+                  className="w-full px-3 py-2 rounded-xl border border-ink-300 dark:border-ink-600 bg-transparent text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-ink-500 mb-1">方案金额 (万元)</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={planAmountWan}
+                  onChange={(e) => setPlanAmountWan(e.target.value)}
+                  placeholder="如: 120"
+                  className="w-full px-3 py-2 rounded-xl border border-ink-300 dark:border-ink-600 bg-transparent text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-ink-500 mb-1">预估年化利率 (%)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={planRate}
+                  onChange={(e) => setPlanRate(e.target.value)}
+                  placeholder="如: 3.25"
+                  className="w-full px-3 py-2 rounded-xl border border-ink-300 dark:border-ink-600 bg-transparent text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-ink-500 mb-1">还款方式</label>
+                <select
+                  value={repaymentMethod}
+                  onChange={(e) => setRepaymentMethod(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-ink-300 dark:border-ink-600 bg-transparent text-sm"
+                >
+                  <option value="等额本息">等额本息</option>
+                  <option value="等额本金">等额本金</option>
+                  <option value="先息后本">先息后本</option>
+                </select>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setSchemeModalOpen(false)}
+                  className="px-3 py-1.5 text-xs text-ink-500"
+                >
+                  取消
+                </button>
+                <button
+                  type="submit"
+                  disabled={busy}
+                  className="px-4 py-1.5 rounded-xl bg-blue-600 text-white text-xs font-medium hover:bg-blue-700"
+                >
+                  {busy ? '保存中...' : '确定方案并推进'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 弹窗：录入审批结果 */}
+      {approvalModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={() => setApprovalModalOpen(false)}
+        >
+          <div
+            className="w-full max-w-sm bg-white dark:bg-ink-900 rounded-3xl p-5 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h4 className="font-semibold text-base">录入行内审批结果</h4>
+            <form onSubmit={submitApproval} className="space-y-3">
+              <div>
+                <label className="block text-xs text-ink-500 mb-1">审批结果</label>
+                <div className="flex items-center gap-3">
+                  <label className="flex items-center gap-1.5 text-sm">
+                    <input
+                      type="radio"
+                      name="appr"
+                      checked={approvalResult === 'approved'}
+                      onChange={() => setApprovalResult('approved')}
+                    />
+                    <span>审批通过 (已批贷)</span>
+                  </label>
+                  <label className="flex items-center gap-1.5 text-sm">
+                    <input
+                      type="radio"
+                      name="appr"
+                      checked={approvalResult === 'rejected'}
+                      onChange={() => setApprovalResult('rejected')}
+                    />
+                    <span>审批退件 / 拒绝</span>
+                  </label>
+                </div>
+              </div>
+
+              {approvalResult === 'approved' && (
+                <>
+                  <div>
+                    <label className="block text-xs text-ink-500 mb-1">批复金额 (万元)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={approvedWan}
+                      onChange={(e) => setApprovedWan(e.target.value)}
+                      placeholder="批贷金额"
+                      className="w-full px-3 py-2 rounded-xl border border-ink-300 dark:border-ink-600 bg-transparent text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-ink-500 mb-1">批复年化利率 (%)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={approvedRate}
+                      onChange={(e) => setApprovedRate(e.target.value)}
+                      placeholder="执行利率"
+                      className="w-full px-3 py-2 rounded-xl border border-ink-300 dark:border-ink-600 bg-transparent text-sm"
+                    />
+                  </div>
+                </>
+              )}
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setApprovalModalOpen(false)}
+                  className="px-3 py-1.5 text-xs text-ink-500"
+                >
+                  取消
+                </button>
+                <button
+                  type="submit"
+                  disabled={busy}
+                  className="px-4 py-1.5 rounded-xl bg-blue-600 text-white text-xs font-medium hover:bg-blue-700"
+                >
+                  {busy ? '提交中...' : '确认录入'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 弹窗：登记放款 */}
+      {lendModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={() => setLendModalOpen(false)}
+        >
+          <div
+            className="w-full max-w-sm bg-white dark:bg-ink-900 rounded-3xl p-5 space-y-4 max-h-[90dvh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h4 className="font-semibold text-base">确认放款与提成核算</h4>
+            <form onSubmit={submitLending} className="space-y-3">
+              <div>
+                <label className="block text-xs text-ink-500 mb-1">实际放款金额 (万元) *</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  required
+                  value={actualWan}
+                  onChange={(e) => setActualWan(e.target.value)}
+                  placeholder="如: 120"
+                  className="w-full px-3 py-2 rounded-xl border border-ink-300 dark:border-ink-600 bg-transparent text-sm font-mono font-bold"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs text-ink-500 mb-1">放款日期</label>
+                <input
+                  type="date"
+                  value={loanDateStr}
+                  onChange={(e) => setLoanDateStr(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-ink-300 dark:border-ink-600 bg-transparent text-sm"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs text-ink-500 mb-1">每月月供金额 (元)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={monthlyPaymentYuan}
+                  onChange={(e) => setMonthlyPaymentYuan(e.target.value)}
+                  placeholder="如: 6810.50"
+                  className="w-full px-3 py-2 rounded-xl border border-ink-300 dark:border-ink-600 bg-transparent text-sm"
+                />
+              </div>
+
+              <div className="pt-2 border-t border-ink-100 dark:border-ink-700">
+                <div className="text-xs font-semibold text-ink-600 dark:text-ink-300 mb-2">
+                  提成收益核算
+                </div>
+
+                <div className="space-y-2">
+                  <div>
+                    <label className="block text-[11px] text-ink-500 mb-0.5">业务服务费/总提成 (元)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={serviceFeeYuan}
+                      onChange={(e) => setServiceFeeYuan(e.target.value)}
+                      placeholder="如: 12000"
+                      className="w-full px-2.5 py-1.5 rounded-xl border border-ink-300 dark:border-ink-600 bg-transparent text-xs"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] text-amber-600 dark:text-amber-400 mb-0.5">
+                      应付经纪人返佣 (元)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={brokerCommissionYuan}
+                      onChange={(e) => setBrokerCommissionYuan(e.target.value)}
+                      placeholder="如: 3000"
+                      className="w-full px-2.5 py-1.5 rounded-xl border border-amber-300 dark:border-amber-700 bg-transparent text-xs"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] text-blue-600 dark:text-blue-400 mb-0.5">
+                      卡部协同激励支出 (元)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={cardCommissionYuan}
+                      onChange={(e) => setCardCommissionYuan(e.target.value)}
+                      placeholder="如: 500"
+                      className="w-full px-2.5 py-1.5 rounded-xl border border-blue-300 dark:border-blue-700 bg-transparent text-xs"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3">
+                <button
+                  type="button"
+                  onClick={() => setLendModalOpen(false)}
+                  className="px-3 py-1.5 text-xs text-ink-500"
+                >
+                  取消
+                </button>
+                <button
+                  type="submit"
+                  disabled={busy}
+                  className="px-4 py-1.5 rounded-xl bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700"
+                >
+                  {busy ? '登记中...' : '确认放款'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

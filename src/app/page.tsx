@@ -12,6 +12,8 @@ import {
   isIncomeComponentEnabled,
   letterFor,
   parsePrefs,
+  isLoanBusinessEnabled,
+  getLoanBusinessName,
   type IncomeComponentKey,
 } from '@/lib/userPrefs';
 import { displaySharedLedgerName } from '@/lib/ledgerRole';
@@ -456,6 +458,8 @@ async function loadDashboard(userId: string) {
     textReward: [...textReward.entries()],
     ledgerCards,
     overLedgers,
+    hasLoanBusiness: isLoanBusinessEnabled(prefs),
+    loanBusinessName: getLoanBusinessName(prefs),
   };
 }
 
@@ -466,7 +470,8 @@ export default async function HomePage() {
   const s = await loadDashboard(user.id);
 
   // 预取所有可能的目标路由
-  const prefetchRoutes: string[] = ['/ledgers', '/trash'];
+  const prefetchRoutes: string[] = ['/features', '/trash'];
+  if (s.hasLoanBusiness) prefetchRoutes.push('/loan');
   if (s.hasWork) prefetchRoutes.push('/work', '/work/expenses');
   if (s.hasTaoyuan) prefetchRoutes.push('/taoyuan');
   if (user.role === 'admin') prefetchRoutes.push('/admin');
@@ -483,6 +488,7 @@ export default async function HomePage() {
       icon: c.icon,
     }));
   const warmExtraUrls: string[] = [];
+  if (s.hasLoanBusiness) warmExtraUrls.push('/loan');
   if (s.hasWork) warmExtraUrls.push('/work');
   if (s.hasTaoyuan) warmExtraUrls.push('/taoyuan');
 
@@ -492,7 +498,17 @@ export default async function HomePage() {
       <OfflineWarmer ledgers={warmableLedgers} extraUrls={warmExtraUrls} />
       <div className="flex items-center justify-between mb-2">
         <div className="text-sm text-ink-500">{user.username} · 心愿便利贴</div>
-        <LogoutButton />
+        <div className="flex items-center gap-2">
+          {s.hasLoanBusiness && (
+            <Link
+              href="/loan"
+              className="text-xs px-2.5 py-1 rounded-full bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 font-medium border border-blue-200/60 dark:border-blue-700/60 active:scale-95 transition"
+            >
+              🏠 {s.loanBusinessName} ›
+            </Link>
+          )}
+          <LogoutButton />
+        </div>
       </div>
 
       {s.overLedgers.length > 0 && (
@@ -528,6 +544,27 @@ export default async function HomePage() {
       )}
 
       <div className="mt-8 space-y-3">
+        {s.hasLoanBusiness && (
+          <Link
+            href="/loan"
+            className="flex items-center justify-between p-5 rounded-2xl bg-gradient-to-r from-blue-50/70 to-indigo-50/70 dark:from-blue-950/20 dark:to-indigo-950/20 border border-blue-200/80 dark:border-blue-800/80 active:scale-[0.98] transition shadow-sm"
+          >
+            <div className="flex items-center gap-3.5 min-w-0">
+              <span className="text-2xl">🏠</span>
+              <div className="min-w-0">
+                <div className="text-lg font-semibold text-blue-950 dark:text-blue-100 flex items-center gap-2">
+                  <span>{s.loanBusinessName}</span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-600 text-white font-normal">个贷专属</span>
+                </div>
+                <div className="text-xs text-blue-700/80 dark:text-blue-300/80 mt-0.5 truncate">
+                  房按揭首位 · 抵押 · 批贷 · 履约与提成
+                </div>
+              </div>
+            </div>
+            <span className="text-blue-500">›</span>
+          </Link>
+        )}
+
         {s.hasWork && (
           <>
             <Link
@@ -666,14 +703,14 @@ export default async function HomePage() {
         </Link>
 
         <Link
-          href="/ledgers"
+          href="/features"
           className="flex items-center justify-between p-5 rounded-2xl border-2 border-dashed border-ink-300 dark:border-ink-600 text-ink-500 active:scale-[0.98] transition"
         >
           <div className="flex items-center gap-3">
             <span className="text-xl">＋</span>
             <div>
-              <div className="text-lg font-medium">添加 / 删除账本</div>
-              <div className="text-xs mt-0.5">新增账本 · 恢复回收站 · 管理已有</div>
+              <div className="text-lg font-medium">添加 / 删除功能</div>
+              <div className="text-xs mt-0.5">个贷业务 · 账本管理 · 功能自定义</div>
             </div>
           </div>
           <span>›</span>
