@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { requireSessionUser } from '@/lib/ownership';
@@ -169,5 +170,6 @@ export async function POST(req: Request) {
     },
   });
 
+  revalidatePath('/loan');
   return NextResponse.json({ ok: true, order });
 }

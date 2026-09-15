@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { formatDateShortBeijing } from '@/lib/datetime';
 import { LOAN_TYPES } from './new/NewOrderForm';
 
@@ -48,9 +49,26 @@ const STAGES = [
 ];
 
 export default function LoanDashboard({ orders, businessName: _businessName, stats }: Props) {
+  const router = useRouter();
   const [selectedStage, setSelectedStage] = useState('all');
   const [selectedType, setSelectedType] = useState('all');
   const [search, setSearch] = useState('');
+
+  // 1. 每次挂载时轻量请求最新状态，避免命中陈旧预取缓存
+  useEffect(() => {
+    router.refresh();
+  }, [router]);
+
+  // 2. 监听浏览器前进/后退缓存（BFCache）唤醒，自动刷新数据
+  useEffect(() => {
+    const onPageShow = (e: PageTransitionEvent) => {
+      if (e.persisted) {
+        router.refresh();
+      }
+    };
+    window.addEventListener('pageshow', onPageShow);
+    return () => window.removeEventListener('pageshow', onPageShow);
+  }, [router]);
 
   const filtered = orders.filter((o) => {
     // 阶段过滤
@@ -277,6 +295,7 @@ export default function LoanDashboard({ orders, businessName: _businessName, sta
               <Link
                 key={order.id}
                 href={`/loan/${order.id}`}
+                prefetch={false}
                 className="block p-4 rounded-3xl bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 shadow-sm hover:border-blue-400 active:scale-[0.99] transition space-y-3"
               >
                 {/* 头部：客户名 + 业务类型 + 阶段状态 */}

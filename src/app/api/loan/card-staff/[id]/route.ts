@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { requireSessionUser } from '@/lib/ownership';
@@ -44,6 +45,9 @@ export async function PUT(
     },
   });
 
+  revalidatePath('/loan/card-staff');
+  revalidatePath('/loan/new');
+  revalidatePath('/loan');
   return NextResponse.json({ ok: true, staff: updated });
 }
 
@@ -65,5 +69,8 @@ export async function DELETE(
     data: { deletedAt: new Date() },
   });
 
+  revalidatePath('/loan/card-staff');
+  revalidatePath('/loan/new');
+  revalidatePath('/loan');
   return NextResponse.json({ ok: true });
 }

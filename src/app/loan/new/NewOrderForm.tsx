@@ -150,6 +150,7 @@ export default function NewOrderForm({ brokers: initialBrokers, cardStaffs: init
       if (!res.ok) throw new Error(data.error || '创建失败');
 
       toast({ message: status === 'draft' ? '草稿已保存' : '意向单已成功建档', kind: 'success' });
+      router.refresh();
       router.push(`/loan/${data.order.id}`);
     } catch (err: any) {
       toast({ message: err.message || '提交失败，请重试', kind: 'error' });

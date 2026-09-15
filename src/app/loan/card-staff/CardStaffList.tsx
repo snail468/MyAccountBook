@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
 import { useToast, useConfirm } from '@/components/ui/Dialog';
 
 export type CardStaffItem = {
@@ -18,6 +19,8 @@ export type CardStaffItem = {
 };
 
 export default function CardStaffList({ initialList }: { initialList: CardStaffItem[] }) {
+  const router = useRouter();
+  const [, startTransition] = useTransition();
   const [list, setList] = useState<CardStaffItem[]>(initialList);
   const [search, setSearch] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
@@ -105,6 +108,7 @@ export default function CardStaffList({ initialList }: { initialList: CardStaffI
         toast({ message: '卡部人员已添加', kind: 'success' });
       }
       setModalOpen(false);
+      startTransition(() => router.refresh());
     } catch (err: any) {
       toast({ message: err.message || '操作失败', kind: 'error' });
     } finally {
@@ -126,6 +130,7 @@ export default function CardStaffList({ initialList }: { initialList: CardStaffI
       const res = await fetch(`/api/loan/card-staff/${item.id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('删除失败');
       setList((prev) => prev.filter((i) => i.id !== item.id));
+      startTransition(() => router.refresh());
       toast({ message: '已删除', kind: 'success' });
     } catch {
       toast({ message: '删除失败，请重试', kind: 'error' });

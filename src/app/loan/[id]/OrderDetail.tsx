@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useToast, useConfirm } from '@/components/ui/Dialog';
 import { formatShort, localInputToISO, toLocalInput } from '@/lib/datetime';
@@ -63,8 +63,13 @@ export default function OrderDetail({ initialOrder, brokers: _brokers, cardStaff
   const router = useRouter();
   const toast = useToast();
   const confirm = useConfirm();
+  const [, startTransition] = useTransition();
 
   const [order, setOrder] = useState<OrderData>(initialOrder);
+
+  useEffect(() => {
+    setOrder(initialOrder);
+  }, [initialOrder]);
 
   // 1. 全局初始情况描述编辑状态
   const [descEditing, setDescEditing] = useState(false);
@@ -132,6 +137,7 @@ export default function OrderDetail({ initialOrder, brokers: _brokers, cardStaff
       if (!res.ok) throw new Error(data.error || '保存失败');
       setOrder(data.order);
       setDescEditing(false);
+      startTransition(() => router.refresh());
       toast({ message: '情况描述已保存', kind: 'success' });
     } catch (err: any) {
       toast({ message: err.message || '保存失败', kind: 'error' });
@@ -165,6 +171,7 @@ export default function OrderDetail({ initialOrder, brokers: _brokers, cardStaff
       }));
       setLogContent('');
       setLogModalOpen(false);
+      startTransition(() => router.refresh());
       toast({ message: '跟进动态已追加', kind: 'success' });
     } catch (err: any) {
       toast({ message: err.message || '操作失败', kind: 'error' });
@@ -211,6 +218,7 @@ export default function OrderDetail({ initialOrder, brokers: _brokers, cardStaff
       if (!res.ok) throw new Error(data.error || '录入审批结果失败');
       setOrder(data.order);
       setApprovalModalOpen(false);
+      startTransition(() => router.refresh());
       toast({ message: isApproved ? '审批通过结果已录入' : '已标记为审批拒绝', kind: 'success' });
     } catch (err: any) {
       toast({ message: err.message || '操作失败', kind: 'error' });
@@ -256,6 +264,7 @@ export default function OrderDetail({ initialOrder, brokers: _brokers, cardStaff
       if (!res.ok) throw new Error(data.error || '放款登记失败');
       setOrder(data.order);
       setLendModalOpen(false);
+      startTransition(() => router.refresh());
       toast({ message: '放款登记成功，进入已放款状态', kind: 'success' });
     } catch (err: any) {
       toast({ message: err.message || '操作失败', kind: 'error' });
@@ -287,6 +296,7 @@ export default function OrderDetail({ initialOrder, brokers: _brokers, cardStaff
         ...prev,
         logs: prev.logs.filter((l) => l.id !== logId),
       }));
+      startTransition(() => router.refresh());
       toast({ message: '跟进流水记录已删除', kind: 'success' });
     } catch (err: any) {
       toast({ message: err.message || '删除失败', kind: 'error' });
@@ -391,6 +401,7 @@ export default function OrderDetail({ initialOrder, brokers: _brokers, cardStaff
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || '回退阶段失败');
       setOrder(data.order);
+      startTransition(() => router.refresh());
 
       // 同步重置前端表单局部状态
       if (current === 'lending') {
@@ -423,6 +434,7 @@ export default function OrderDetail({ initialOrder, brokers: _brokers, cardStaff
       const res = await fetch(`/api/loan/orders/${order.id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('删除失败');
       toast({ message: '单据已删除', kind: 'success' });
+      router.refresh();
       router.push('/loan');
     } catch {
       toast({ message: '删除失败，请重试', kind: 'error' });

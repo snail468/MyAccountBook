@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
 import { useToast, useConfirm } from '@/components/ui/Dialog';
 
 export type BrokerItem = {
@@ -18,6 +19,8 @@ export type BrokerItem = {
 };
 
 export default function BrokerList({ initialList }: { initialList: BrokerItem[] }) {
+  const router = useRouter();
+  const [, startTransition] = useTransition();
   const [list, setList] = useState<BrokerItem[]>(initialList);
   const [search, setSearch] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
@@ -105,6 +108,7 @@ export default function BrokerList({ initialList }: { initialList: BrokerItem[] 
         toast({ message: '经纪人已添加', kind: 'success' });
       }
       setModalOpen(false);
+      startTransition(() => router.refresh());
     } catch (err: any) {
       toast({ message: err.message || '操作失败', kind: 'error' });
     } finally {
@@ -126,6 +130,7 @@ export default function BrokerList({ initialList }: { initialList: BrokerItem[] 
       const res = await fetch(`/api/loan/brokers/${b.id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('删除失败');
       setList((prev) => prev.filter((item) => item.id !== b.id));
+      startTransition(() => router.refresh());
       toast({ message: '已删除', kind: 'success' });
     } catch {
       toast({ message: '删除失败，请重试', kind: 'error' });

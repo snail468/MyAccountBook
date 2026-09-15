@@ -581,3 +581,10 @@ model LoanOrderAttachment {
   @@index([orderId])
 }
 
+// ============ 系统管理与全局配置 ============
+model SystemSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+

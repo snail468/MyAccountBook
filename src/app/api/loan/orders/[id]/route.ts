@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { revalidatePath } from 'next/cache';
 import { prisma } from '@/lib/db';
 import { requireSessionUser, resolveOwnLedgerId } from '@/lib/ownership';
 import { badRequest, notFound } from '@/lib/apiError';
@@ -204,6 +205,8 @@ export async function PATCH(
     },
   });
 
+  revalidatePath('/loan');
+  revalidatePath(`/loan/${id}`);
   return NextResponse.json({ ok: true, order: updated });
 }
 
@@ -225,5 +228,7 @@ export async function DELETE(
     data: { deletedAt: new Date() },
   });
 
+  revalidatePath('/loan');
+  revalidatePath(`/loan/${id}`);
   return NextResponse.json({ ok: true });
 }

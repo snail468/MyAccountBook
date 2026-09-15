@@ -3,14 +3,21 @@ import { redirect } from 'next/navigation';
 import { prisma } from '@/lib/db';
 import { requireUserWithRole } from '@/lib/session';
 import Prefetcher from '@/components/ui/Prefetcher';
-import AdminUserList from './AdminUserList';
+import AdminDashboard from './AdminDashboard';
 
 export const dynamic = 'force-dynamic';
 
-export default async function AdminPage() {
+export default async function AdminPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ tab?: string }>;
+}) {
   const current = await requireUserWithRole();
   if (!current) redirect('/login');
   if (current.role !== 'admin') redirect('/');
+
+  const resolvedSearchParams = searchParams ? await searchParams : undefined;
+  const initialTab = resolvedSearchParams?.tab === 'webdav' ? 'webdav' : 'users';
 
   const users = await prisma.user.findMany({
     orderBy: [{ role: 'desc' }, { createdAt: 'asc' }],
@@ -28,11 +35,12 @@ export default async function AdminPage() {
       <Prefetcher routes={['/']} />
       <div className="flex items-center gap-3 mb-6">
         <Link href="/" className="text-ink-500 text-sm">‹ 返回</Link>
-        <h1 className="text-2xl font-semibold flex-1">用户管理</h1>
+        <h1 className="text-2xl font-semibold flex-1">系统管理</h1>
       </div>
 
-      <AdminUserList
+      <AdminDashboard
         currentUserId={current.id}
+        initialTab={initialTab}
         users={users.map((u) => ({
           id: u.id,
           username: u.username,

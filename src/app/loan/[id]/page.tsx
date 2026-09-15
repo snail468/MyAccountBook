@@ -88,7 +88,7 @@ export default async function LoanOrderDetailPage({
   return (
     <div className="px-6 pt-14 pb-20">
       <div className="flex items-center gap-3 mb-6">
-        <Link href="/loan" className="text-ink-500 text-sm">‹ 返回业务台账</Link>
+        <Link href="/loan" prefetch={false} className="text-ink-500 text-sm">‹ 返回业务台账</Link>
         <h1 className="text-2xl font-semibold flex-1">业务单据详情</h1>
       </div>
 
