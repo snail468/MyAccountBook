@@ -26,21 +26,15 @@ export default function NewOrderForm({ brokers: initialBrokers, cardStaffs: init
 
   // 表单状态
   const [borrowerName, setBorrowerName] = useState('');
-  const [phone, setPhone] = useState('');
-  const [idCard, setIdCard] = useState('');
   const [loanType, setLoanType] = useState('mortgage'); // 房按揭默认置顶
   const [brokerId, setBrokerId] = useState('');
   const [cardStaffId, setCardStaffId] = useState('');
 
-  // 房产要素（房按揭/抵押）
+  // 房产标的（房按揭/抵押）
   const [propertyAddress, setPropertyAddress] = useState('');
-  const [propertyArea, setPropertyArea] = useState('');
-  const [propertyPriceWan, setPropertyPriceWan] = useState('');
-  const [downPaymentWan, setDownPaymentWan] = useState('');
 
   // 需求要素
   const [demandAmountWan, setDemandAmountWan] = useState('');
-  const [demandTermMonths, setDemandTermMonths] = useState('240'); // 默认20年
 
   // 关键字段：从新建意向单开始编辑一段文字描述这个单子的情况
   const [initialDescription, setInitialDescription] = useState('');
@@ -135,10 +129,6 @@ export default function NewOrderForm({ brokers: initialBrokers, cardStaffs: init
     setBusy(true);
 
     const demandCents = demandAmountWan ? Math.round(parseFloat(demandAmountWan) * 10000 * 100) : null;
-    const priceCents = propertyPriceWan ? Math.round(parseFloat(propertyPriceWan) * 10000 * 100) : null;
-    const downCents = downPaymentWan ? Math.round(parseFloat(downPaymentWan) * 10000 * 100) : null;
-    const termMonths = demandTermMonths ? parseInt(demandTermMonths, 10) : null;
-    const area = propertyArea ? parseFloat(propertyArea) : null;
 
     try {
       const res = await fetch('/api/loan/orders', {
@@ -146,18 +136,12 @@ export default function NewOrderForm({ brokers: initialBrokers, cardStaffs: init
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           borrowerName: borrowerName.trim(),
-          phone: phone.trim() || null,
-          idCard: idCard.trim() || null,
           loanType,
           status,
           brokerId: brokerId || null,
           cardStaffId: cardStaffId || null,
           propertyAddress: propertyAddress.trim() || null,
-          propertyArea: area,
-          propertyPriceCents: priceCents,
-          downPaymentCents: downCents,
           demandAmountCents: demandCents,
-          demandTermMonths: termMonths,
           initialDescription: initialDescription.trim() || null,
         }),
       });
@@ -232,64 +216,29 @@ export default function NewOrderForm({ brokers: initialBrokers, cardStaffs: init
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-ink-500 mb-1">联系电话</label>
-              <input
-                type="tel"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder="手机号"
-                className="w-full px-3 py-2 rounded-xl border border-ink-300 dark:border-ink-600 bg-transparent text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-ink-500 mb-1">身份证号</label>
-              <input
-                type="text"
-                value={idCard}
-                onChange={(e) => setIdCard(e.target.value)}
-                placeholder="身份证号"
-                className="w-full px-3 py-2 rounded-xl border border-ink-300 dark:border-ink-600 bg-transparent text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-ink-500 mb-1">
-                拟申请金额 (万元)
-              </label>
-              <input
-                type="number"
-                step="0.1"
-                value={demandAmountWan}
-                onChange={(e) => setDemandAmountWan(e.target.value)}
-                placeholder="如: 120"
-                className="w-full px-3 py-2 rounded-xl border border-ink-300 dark:border-ink-600 bg-transparent text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-ink-500 mb-1">拟申请期限 (月)</label>
-              <input
-                type="number"
-                value={demandTermMonths}
-                onChange={(e) => setDemandTermMonths(e.target.value)}
-                placeholder="如: 240 (20年) / 360"
-                className="w-full px-3 py-2 rounded-xl border border-ink-300 dark:border-ink-600 bg-transparent text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
+          <div>
+            <label className="block text-xs font-medium text-ink-500 mb-1">
+              拟申请金额 (万元)
+            </label>
+            <input
+              type="number"
+              step="0.1"
+              value={demandAmountWan}
+              onChange={(e) => setDemandAmountWan(e.target.value)}
+              placeholder="如: 120"
+              className="w-full px-3.5 py-2.5 rounded-xl border border-ink-300 dark:border-ink-600 bg-transparent text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+            />
           </div>
         </div>
       </div>
 
-      {/* 3. 房产要素（房按揭首位专属） */}
+      {/* 3. 房产标的（房按揭首位专属） */}
       {isPropertyType && (
         <div className="rounded-3xl bg-blue-50/40 dark:bg-blue-950/20 border border-blue-200/70 dark:border-blue-800/70 p-5 shadow-sm space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold text-blue-950 dark:text-blue-200 flex items-center gap-2">
               <span>🏠</span>
-              <span>房产标的与按揭要素</span>
+              <span>房产标的</span>
             </h3>
             <span className="text-[11px] text-blue-600 dark:text-blue-400">房按揭/抵押关键凭证</span>
           </div>
@@ -304,42 +253,6 @@ export default function NewOrderForm({ brokers: initialBrokers, cardStaffs: init
                 placeholder="如: 翠微花园 3栋 2单元 801"
                 className="w-full px-3 py-2 rounded-xl border border-blue-200 dark:border-blue-800 bg-white/70 dark:bg-ink-800/70 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
-            </div>
-
-            <div className="grid grid-cols-3 gap-2.5">
-              <div>
-                <label className="block text-[11px] font-medium text-ink-500 mb-1">建筑面积 (㎡)</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={propertyArea}
-                  onChange={(e) => setPropertyArea(e.target.value)}
-                  placeholder="如: 89.5"
-                  className="w-full px-2.5 py-1.5 rounded-xl border border-blue-200 dark:border-blue-800 bg-white/70 dark:bg-ink-800/70 text-xs focus:outline-none"
-                />
-              </div>
-              <div>
-                <label className="block text-[11px] font-medium text-ink-500 mb-1">成交总价 (万元)</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={propertyPriceWan}
-                  onChange={(e) => setPropertyPriceWan(e.target.value)}
-                  placeholder="如: 240"
-                  className="w-full px-2.5 py-1.5 rounded-xl border border-blue-200 dark:border-blue-800 bg-white/70 dark:bg-ink-800/70 text-xs focus:outline-none"
-                />
-              </div>
-              <div>
-                <label className="block text-[11px] font-medium text-ink-500 mb-1">首付款 (万元)</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={downPaymentWan}
-                  onChange={(e) => setDownPaymentWan(e.target.value)}
-                  placeholder="如: 80"
-                  className="w-full px-2.5 py-1.5 rounded-xl border border-blue-200 dark:border-blue-800 bg-white/70 dark:bg-ink-800/70 text-xs focus:outline-none"
-                />
-              </div>
             </div>
           </div>
         </div>

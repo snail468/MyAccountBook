@@ -15,6 +15,7 @@ export type OrderListItem = {
   phone: string | null;
   propertyAddress: string | null;
   demandAmountCents: number | null;
+  approvedAmountCents: number | null;
   actualAmountCents: number | null;
   initialDescription: string | null;
   brokerNameSnapshot: string | null;
@@ -318,22 +319,44 @@ export default function LoanDashboard({ orders, businessName: _businessName, sta
                   </div>
                 )}
 
-                {/* 金额要素 */}
+                {/* 金额要素：根据单子进度动态显示（已放款 / 已批复 / 拟申请） */}
                 <div className="flex items-center justify-between text-xs pt-1">
                   <div>
-                    <span className="text-ink-400">拟申请：</span>
-                    <span className="font-semibold font-mono text-ink-800 dark:text-ink-200">
-                      {order.demandAmountCents
-                        ? `${(order.demandAmountCents / 1000000).toFixed(2)} 万元`
-                        : '待拟定'}
-                    </span>
+                    {order.stage === 'lending' || order.actualAmountCents ? (
+                      <>
+                        <span className="text-ink-400">已放款：</span>
+                        <span className="font-bold font-mono text-emerald-600 dark:text-emerald-400">
+                          {order.actualAmountCents
+                            ? `${(order.actualAmountCents / 1000000).toFixed(2)} 万元`
+                            : order.approvedAmountCents
+                            ? `${(order.approvedAmountCents / 1000000).toFixed(2)} 万元`
+                            : '已放款'}
+                        </span>
+                      </>
+                    ) : order.approvedAmountCents ? (
+                      <>
+                        <span className="text-ink-400">已批复：</span>
+                        <span className="font-semibold font-mono text-blue-600 dark:text-blue-400">
+                          {(order.approvedAmountCents / 1000000).toFixed(2)} 万元
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-ink-400">拟申请：</span>
+                        <span className="font-semibold font-mono text-ink-800 dark:text-ink-200">
+                          {order.demandAmountCents
+                            ? `${(order.demandAmountCents / 1000000).toFixed(2)} 万元`
+                            : '待拟定'}
+                        </span>
+                      </>
+                    )}
                   </div>
 
-                  {order.actualAmountCents ? (
+                  {(order.stage === 'lending' || order.actualAmountCents || order.approvedAmountCents) && order.demandAmountCents ? (
                     <div>
-                      <span className="text-ink-400">实际放款：</span>
-                      <span className="font-bold font-mono text-emerald-600 dark:text-emerald-400">
-                        {(order.actualAmountCents / 1000000).toFixed(2)} 万元
+                      <span className="text-ink-400">拟申请：</span>
+                      <span className="font-mono text-ink-500">
+                        {(order.demandAmountCents / 1000000).toFixed(2)} 万元
                       </span>
                     </div>
                   ) : null}

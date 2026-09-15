@@ -71,6 +71,7 @@ export default async function LoanPage() {
     phone: o.phone,
     propertyAddress: o.propertyAddress,
     demandAmountCents: o.demandAmountCents,
+    approvedAmountCents: o.approvedAmountCents,
     actualAmountCents: o.actualAmountCents,
     initialDescription: o.initialDescription,
     brokerNameSnapshot: o.brokerNameSnapshot,

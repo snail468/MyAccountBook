@@ -80,9 +80,12 @@ export default function OrderDetail({ initialOrder, brokers: _brokers, cardStaff
   // 3. 推进批复弹窗
   const [approvalModalOpen, setApprovalModalOpen] = useState(false);
   const [approvedWan, setApprovedWan] = useState(
-    order.approvedAmountCents ? (order.approvedAmountCents / 1000000).toString() : ''
+    order.approvedAmountCents
+      ? (order.approvedAmountCents / 1000000).toString()
+      : order.demandAmountCents
+      ? (order.demandAmountCents / 1000000).toString()
+      : ''
   );
-  const [approvedRate, setApprovedRate] = useState(order.approvedRate ? order.approvedRate.toString() : '3.25');
   const [approvalResult, setApprovalResult] = useState<'approved' | 'rejected'>('approved');
 
   // 4. 登记放款弹窗
@@ -102,9 +105,6 @@ export default function OrderDetail({ initialOrder, brokers: _brokers, cardStaff
   const [actualWan, setActualWan] = useState(initialWan);
   const [loanDateStr, setLoanDateStr] = useState(() =>
     order.loanDate ? toLocalInput(order.loanDate) : toLocalInput(new Date())
-  );
-  const [monthlyPaymentYuan, setMonthlyPaymentYuan] = useState(
-    order.monthlyPaymentCents ? (order.monthlyPaymentCents / 100).toString() : ''
   );
   const [serviceFeeYuan, setServiceFeeYuan] = useState(initialFeeYuan);
   const [brokerCommissionYuan, setBrokerCommissionYuan] = useState(initialBrokerYuan);
@@ -192,7 +192,6 @@ export default function OrderDetail({ initialOrder, brokers: _brokers, cardStaff
     setBusy(true);
     const isApproved = approvalResult === 'approved';
     const amountCents = approvedWan ? Math.round(parseFloat(approvedWan) * 10000 * 100) : null;
-    const rate = approvedRate ? parseFloat(approvedRate) : null;
     try {
       const res = await fetch(`/api/loan/orders/${order.id}`, {
         method: 'PATCH',
@@ -201,10 +200,10 @@ export default function OrderDetail({ initialOrder, brokers: _brokers, cardStaff
           stage: isApproved ? 'approval' : 'rejected',
           status: isApproved ? 'approved' : 'rejected',
           approvedAmountCents: isApproved ? amountCents : null,
-          approvedRate: isApproved ? rate : null,
+          approvedRate: null,
           logAction: isApproved ? '行内审批通过' : '行内审批拒绝',
           logContent: isApproved
-            ? `审批通过(已批贷)，批复金额: ${approvedWan}万元，批复年化利率: ${approvedRate}%`
+            ? `审批通过(已批贷)，批复金额: ${approvedWan}万元`
             : `行内审批拒绝/退件，单据已归入审批拒绝`,
         }),
       });
@@ -229,7 +228,6 @@ export default function OrderDetail({ initialOrder, brokers: _brokers, cardStaff
     }
     setBusy(true);
     const actualCents = Math.round(parseFloat(actualWan) * 10000 * 100);
-    const monthlyCents = monthlyPaymentYuan ? Math.round(parseFloat(monthlyPaymentYuan) * 100) : null;
     const feeCents = serviceFeeYuan ? Math.round(parseFloat(serviceFeeYuan) * 100) : 0;
     const brokerCents = brokerCommissionYuan ? Math.round(parseFloat(brokerCommissionYuan) * 100) : 0;
     const cardCents = cardCommissionYuan ? Math.round(parseFloat(cardCommissionYuan) * 100) : 0;
@@ -244,7 +242,7 @@ export default function OrderDetail({ initialOrder, brokers: _brokers, cardStaff
           status: 'loaned',
           actualAmountCents: actualCents,
           loanDate: loanDateISO,
-          monthlyPaymentCents: monthlyCents,
+          monthlyPaymentCents: null,
           serviceFeeCents: feeCents,
           brokerCommissionCents: brokerCents,
           cardCommissionCents: cardCents,
@@ -293,6 +291,14 @@ export default function OrderDetail({ initialOrder, brokers: _brokers, cardStaff
     } catch (err: any) {
       toast({ message: err.message || '删除失败', kind: 'error' });
     }
+  }
+
+  // 打开录入审批结果弹窗（默认带入拟申请金额，支持手动修改）
+  function handleOpenApprovalModal() {
+    if (!approvedWan && order.demandAmountCents) {
+      setApprovedWan((order.demandAmountCents / 1000000).toString());
+    }
+    setApprovalModalOpen(true);
   }
 
   // 打开确认放款弹窗（放款时间默认为操作当时的时间）
@@ -389,10 +395,8 @@ export default function OrderDetail({ initialOrder, brokers: _brokers, cardStaff
       // 同步重置前端表单局部状态
       if (current === 'lending') {
         setActualWan(data.order.approvedAmountCents ? (data.order.approvedAmountCents / 1000000).toString() : '');
-        setMonthlyPaymentYuan('');
       } else if (target === 'intention') {
         setApprovedWan('');
-        setApprovedRate('3.25');
         setApprovalResult('approved');
       }
 
@@ -659,9 +663,9 @@ export default function OrderDetail({ initialOrder, brokers: _brokers, cardStaff
           </div>
           {order.approvedAmountCents ? (
             <div className="flex items-center justify-between pt-2">
-              <span className="text-ink-500">批贷额度 / 利率</span>
+              <span className="text-ink-500">批贷额度</span>
               <span className="font-semibold font-mono text-blue-600 dark:text-blue-400">
-                {(order.approvedAmountCents / 1000000).toFixed(2)} 万元 · {order.approvedRate || '-'}%
+                {(order.approvedAmountCents / 1000000).toFixed(2)} 万元
               </span>
             </div>
           ) : null}
@@ -715,7 +719,7 @@ export default function OrderDetail({ initialOrder, brokers: _brokers, cardStaff
         <div className="grid grid-cols-2 gap-2.5">
           <button
             type="button"
-            onClick={() => setApprovalModalOpen(true)}
+            onClick={handleOpenApprovalModal}
             className="p-3.5 rounded-2xl bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 text-xs font-semibold active:scale-95 transition flex items-center justify-center gap-1.5"
           >
             <span>🏛️</span>
@@ -919,30 +923,17 @@ export default function OrderDetail({ initialOrder, brokers: _brokers, cardStaff
               </div>
 
               {approvalResult === 'approved' && (
-                <>
-                  <div>
-                    <label className="block text-xs text-ink-500 mb-1">批复金额 (万元)</label>
-                    <input
-                      type="number"
-                      step="0.1"
-                      value={approvedWan}
-                      onChange={(e) => setApprovedWan(e.target.value)}
-                      placeholder="批贷金额"
-                      className="w-full px-3 py-2 rounded-xl border border-ink-300 dark:border-ink-600 bg-transparent text-sm"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-ink-500 mb-1">批复年化利率 (%)</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={approvedRate}
-                      onChange={(e) => setApprovedRate(e.target.value)}
-                      placeholder="执行利率"
-                      className="w-full px-3 py-2 rounded-xl border border-ink-300 dark:border-ink-600 bg-transparent text-sm"
-                    />
-                  </div>
-                </>
+                <div>
+                  <label className="block text-xs text-ink-500 mb-1">批复金额 (万元)</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={approvedWan}
+                    onChange={(e) => setApprovedWan(e.target.value)}
+                    placeholder="批贷金额"
+                    className="w-full px-3 py-2 rounded-xl border border-ink-300 dark:border-ink-600 bg-transparent text-sm"
+                  />
+                </div>
               )}
 
               <div className="flex justify-end gap-2 pt-2">
@@ -999,18 +990,6 @@ export default function OrderDetail({ initialOrder, brokers: _brokers, cardStaff
                   value={loanDateStr}
                   onChange={(e) => setLoanDateStr(e.target.value)}
                   className="w-full px-3 py-2 rounded-xl border border-ink-300 dark:border-ink-600 bg-transparent text-sm font-mono"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs text-ink-500 mb-1">每月月供金额 (元)</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={monthlyPaymentYuan}
-                  onChange={(e) => setMonthlyPaymentYuan(e.target.value)}
-                  placeholder="如: 6810.50"
-                  className="w-full px-3 py-2 rounded-xl border border-ink-300 dark:border-ink-600 bg-transparent text-sm"
                 />
               </div>
 
