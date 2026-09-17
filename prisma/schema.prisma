@@ -96,6 +96,7 @@ model Event {
   user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   ledgerId       String
   ledger         Ledger        @relation(fields: [ledgerId], references: [id], onDelete: Cascade)
+  eventNo        Int?
   title          String
   startAt        DateTime?
   content        String?
@@ -129,6 +130,7 @@ model Event {
   @@index([ledgerId, status])
   @@index([parentId])
   @@index([ledgerId, deletedAt])
+  @@index([ledgerId, eventNo])
   @@unique([ledgerId, clientId])
 }
 

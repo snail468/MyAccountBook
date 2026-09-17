@@ -61,6 +61,7 @@ export type BackupEventAmount = {
 
 export type BackupEvent = {
   id: string;
+  eventNo: number | null;
   // Phase 2 之后 Event 也挂 Ledger；同 BackupEntry 的兼容策略
   ledgerId: string | null;
   title: string;
@@ -241,6 +242,7 @@ export async function collectUserData(userId: string): Promise<UserBackup> {
     })),
     events: events.map((ev) => ({
       id: ev.id,
+      eventNo: ev.eventNo,
       ledgerId: ev.ledgerId,
       title: ev.title,
       startAt: iso(ev.startAt),

@@ -9,13 +9,13 @@ import { stringifyRewardMethods } from '@/lib/rewardMethod';
 const rewardMethodStr = z.string().trim().min(1).max(64);
 
 const bodySchema = z.object({
-  title: z.string().trim().min(1).max(200),
+  title: z.string().trim().min(1, '请输入活动名').max(200),
   participate: z.boolean().default(true),
-  startAt: z.string().datetime().optional().nullable(),
-  deadline: z.string().datetime().optional().nullable(),
+  startAt: z.string().datetime({ message: '请提供有效的开始时间' }),
+  deadline: z.string().datetime({ message: '请提供有效的截止时间' }),
   content: z.string().max(2000).optional().nullable(),
   reward: z.string().max(200).optional().nullable(),
-  rewardMethods: z.array(rewardMethodStr).max(20).optional(),
+  rewardMethods: z.array(rewardMethodStr).min(1, '请至少选择一种奖励发放方式').max(20),
   contentImages: z.array(z.string().max(500)).max(9).optional(),
   topicTag: z.string().max(200).optional().nullable(),
   note: z.string().max(500).optional().nullable(),
@@ -55,6 +55,7 @@ export async function GET(req: Request) {
     incremental: true,
     events: events.map((e) => ({
       id: e.id,
+      eventNo: e.eventNo,
       ledgerId: e.ledgerId,
       title: e.title,
       startAt: iso(e.startAt),
@@ -88,8 +89,12 @@ export async function POST(req: Request) {
 
   const body = await req.json().catch(() => null);
   const parsed = bodySchema.safeParse(body);
-  if (!parsed.success) return badRequest();
+  if (!parsed.success) return badRequest(parsed.error.issues[0]?.message);
   const p = parsed.data;
+
+  if (new Date(p.startAt).getTime() > new Date(p.deadline).getTime()) {
+    return badRequest('活动开始时间不能晚于截止时间');
+  }
 
   const ledgerId = await resolveTaoyuanLedger(user.id, p.ledgerId ?? null);
   if (ledgerId instanceof Response) return ledgerId;
@@ -97,23 +102,30 @@ export async function POST(req: Request) {
   if (p.clientId) {
     const existing = await prisma.event.findUnique({
       where: { ledgerId_clientId: { ledgerId, clientId: p.clientId } },
-      select: { id: true },
+      select: { id: true, eventNo: true },
     });
-    if (existing) return NextResponse.json({ ok: true, id: existing.id, deduped: true });
+    if (existing) return NextResponse.json({ ok: true, id: existing.id, eventNo: existing.eventNo, deduped: true });
   }
 
   try {
+    const maxAgg = await prisma.event.aggregate({
+      where: { ledgerId },
+      _max: { eventNo: true },
+    });
+    const nextEventNo = (maxAgg._max.eventNo ?? 0) + 1;
+
     const event = await prisma.event.create({
       data: {
         userId: user.id,
         ledgerId,
+        eventNo: nextEventNo,
         title: p.title,
         participate: p.participate,
-        startAt: p.startAt ? new Date(p.startAt) : null,
-        deadline: p.deadline ? new Date(p.deadline) : null,
+        startAt: new Date(p.startAt),
+        deadline: new Date(p.deadline),
         content: p.content?.trim() || null,
         reward: p.reward?.trim() || null,
-        rewardMethods: stringifyRewardMethods(p.rewardMethods ?? []),
+        rewardMethods: stringifyRewardMethods(p.rewardMethods),
         contentImages: p.contentImages && p.contentImages.length > 0
           ? JSON.stringify(p.contentImages)
           : null,
@@ -123,7 +135,7 @@ export async function POST(req: Request) {
         clientId: p.clientId ?? null,
       },
     });
-    return NextResponse.json({ ok: true, id: event.id });
+    return NextResponse.json({ ok: true, id: event.id, eventNo: event.eventNo });
   } catch (err) {
     if (
       p.clientId &&

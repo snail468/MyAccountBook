@@ -59,6 +59,7 @@ function sectionTaoyuan(b: UserBackup, lines: string[]) {
   lines.push('# 桃源账本 · 活动总览');
   lines.push(
     row([
+      '编号',
       '活动',
       '状态',
       '合并至',
@@ -112,6 +113,7 @@ function sectionTaoyuan(b: UserBackup, lines: string[]) {
 
     lines.push(
       row([
+        ev.eventNo ? `#${ev.eventNo}` : '',
         ev.title,
         ev.status,
         ev.parentId ? titleById.get(ev.parentId) ?? ev.parentId : '',

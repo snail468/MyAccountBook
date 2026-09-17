@@ -65,6 +65,22 @@ export default function NewEventButton({ ledgerId }: { ledgerId?: string } = {})
       setError('请输入活动名');
       return;
     }
+    if (!startAt) {
+      setError('请选择活动开始时间');
+      return;
+    }
+    if (!deadline) {
+      setError('请选择活动截止时间');
+      return;
+    }
+    if (new Date(startAt).getTime() > new Date(deadline).getTime()) {
+      setError('活动开始时间不能晚于截止时间');
+      return;
+    }
+    if (rewardMethods.length === 0) {
+      setError('请至少选择一种奖励发放方式（如现金、京东卡或自定义方式）');
+      return;
+    }
     setSaving(true);
     const clientId = crypto.randomUUID();
     // 离线时先剥掉图片：ImageUploader 只在联网时能拿到 imageUrls（网络失败它自己就报错），
@@ -159,10 +175,10 @@ export default function NewEventButton({ ledgerId }: { ledgerId?: string } = {})
           />
         </Field>
 
-        <Field label="活动时间">
+        <Field label="活动时间 *">
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <div className="text-[10px] text-ink-500 mb-1">开始</div>
+              <div className="text-[10px] text-ink-500 mb-1">开始 *</div>
               <input
                 type="datetime-local"
                 value={startAt}
@@ -171,7 +187,7 @@ export default function NewEventButton({ ledgerId }: { ledgerId?: string } = {})
               />
             </div>
             <div>
-              <div className="text-[10px] text-ink-500 mb-1">截止</div>
+              <div className="text-[10px] text-ink-500 mb-1">截止 *</div>
               <input
                 type="datetime-local"
                 value={deadline}
@@ -210,7 +226,7 @@ export default function NewEventButton({ ledgerId }: { ledgerId?: string } = {})
           />
         </Field>
 
-        <Field label="奖励发放方式（多选）">
+        <Field label="奖励发放方式 *（至少选一项）">
           <div className="grid grid-cols-3 gap-2">
             {REWARD_METHODS.map((m) => (
               <button

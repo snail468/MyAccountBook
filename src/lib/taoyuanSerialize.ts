@@ -8,6 +8,7 @@ import type { ClientEvent } from '@/app/taoyuan/types';
 
 export type RawEventWithAmounts = {
   id: string;
+  eventNo?: number | null;
   title: string;
   status: string;
   participate: boolean;
@@ -22,6 +23,7 @@ export type RawEventWithAmounts = {
   note: string | null;
   parentId: string | null;
   createdAt: Date;
+  publishedAt?: Date | null;
   predictedCents: number | null;
   announcedCents: number | null;
   paidCents: number | null;
@@ -44,6 +46,7 @@ export function serializeEvent(
 ): ClientEvent {
   return {
     id: ev.id,
+    eventNo: ev.eventNo ?? null,
     title: ev.title,
     status: ev.status,
     participate: ev.participate,
@@ -66,6 +69,10 @@ export function serializeEvent(
     note: ev.note,
     parentId: ev.parentId,
     children,
+    publishedAt: ev.publishedAt ? ev.publishedAt.toISOString() : ev.createdAt.toISOString(),
+    predictedAt: ev.predictedAt?.toISOString() ?? null,
+    announcedAt: ev.announcedAt?.toISOString() ?? null,
+    paidAt: ev.paidAt?.toISOString() ?? null,
   };
 }
 

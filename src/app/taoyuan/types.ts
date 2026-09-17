@@ -2,6 +2,7 @@ import { splitTaxable, summarizeNonMoney, type AmountEntry, type NonMoneySummary
 
 export type ClientEvent = {
   id: string;
+  eventNo: number | null;
   title: string;
   status: string;
   participate: boolean;
@@ -16,6 +17,10 @@ export type ClientEvent = {
   note: string | null;
   parentId: string | null;
   children: ClientEvent[];
+  publishedAt: string | null;
+  predictedAt: string | null;
+  announcedAt: string | null;
+  paidAt: string | null;
 };
 
 export const STATUS_LABEL: Record<string, string> = {
@@ -23,6 +28,32 @@ export const STATUS_LABEL: Record<string, string> = {
   predicted: '待公示',
   announced: '待发钱',
   paid: '已到账',
+};
+
+export const STATUS_CONFIG: Record<
+  string,
+  { label: string; titleColor: string; badgeCls: string }
+> = {
+  published: {
+    label: '活动火热进行中',
+    titleColor: 'text-blue-600 dark:text-blue-400',
+    badgeCls: 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-300 border border-blue-200 dark:border-blue-800/60',
+  },
+  predicted: {
+    label: '待公示',
+    titleColor: 'text-indigo-600 dark:text-indigo-400',
+    badgeCls: 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/60',
+  },
+  announced: {
+    label: '待发钱',
+    titleColor: 'text-amber-600 dark:text-amber-400',
+    badgeCls: 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800/60',
+  },
+  paid: {
+    label: '已到账',
+    titleColor: 'text-emerald-600 dark:text-emerald-400',
+    badgeCls: 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60',
+  },
 };
 
 export const STATUS_ORDER = ['published', 'predicted', 'announced', 'paid'] as const;

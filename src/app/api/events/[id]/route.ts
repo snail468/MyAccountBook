@@ -27,6 +27,7 @@ export async function GET(
 
   return NextResponse.json({
     id: event.id,
+    eventNo: event.eventNo,
     ledgerId: event.ledgerId,
     title: event.title,
     startAt: iso(event.startAt),
@@ -65,12 +66,12 @@ export async function GET(
 const patchSchema = z.object({
   action: z.literal('meta'),
   title: z.string().trim().min(1).max(200).optional(),
-  startAt: z.string().datetime().nullable().optional(),
-  deadline: z.string().datetime().nullable().optional(),
+  startAt: z.string().datetime().optional(),
+  deadline: z.string().datetime().optional(),
   participate: z.boolean().optional(),
   content: z.string().max(2000).nullable().optional(),
   reward: z.string().max(200).nullable().optional(),
-  rewardMethods: z.array(z.string().trim().min(1).max(64)).max(20).optional(),
+  rewardMethods: z.array(z.string().trim().min(1).max(64)).min(1, '请至少保留一种奖励发放方式').max(20).optional(),
   contentImages: z.array(z.string().max(500)).max(9).optional(),
   topicTag: z.string().max(200).nullable().optional(),
   note: z.string().max(500).nullable().optional(),
@@ -83,8 +84,20 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
   const body = await req.json().catch(() => null);
   const parsed = patchSchema.safeParse(body);
-  if (!parsed.success) return badRequest();
+  if (!parsed.success) return badRequest(parsed.error.issues[0]?.message);
   const p = parsed.data;
+
+  const existing = await prisma.event.findUnique({
+    where: { id },
+    select: { startAt: true, deadline: true },
+  });
+  if (!existing) return notFound('活动不存在');
+
+  const finalStart = p.startAt !== undefined ? (p.startAt ? new Date(p.startAt) : null) : existing.startAt;
+  const finalDeadline = p.deadline !== undefined ? (p.deadline ? new Date(p.deadline) : null) : existing.deadline;
+  if (finalStart && finalDeadline && finalStart.getTime() > finalDeadline.getTime()) {
+    return badRequest('活动开始时间不能晚于截止时间');
+  }
 
   const data: Record<string, unknown> = {};
   if (p.title !== undefined) data.title = p.title;

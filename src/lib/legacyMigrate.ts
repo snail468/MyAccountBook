@@ -69,12 +69,48 @@ export function ensureLegacyMigrated(): Promise<void> {
           ]);
         }
       }
+
+      // 回填未编号的活动 eventNo：按每个账本内 createdAt ASC, startAt ASC 顺序回填
+      await backfillEventNos();
+
       done = true;
     } catch (err) {
-      log.error('旧金额列迁移失败', err);
+      log.error('旧金额列迁移或eventNo回填失败', err);
       running = null; // 允许重试
       throw err;
     }
   })();
   return running;
 }
+
+async function backfillEventNos() {
+  const unnumbered = await prisma.event.findMany({
+    where: { eventNo: null },
+    select: { id: true, ledgerId: true, createdAt: true, startAt: true },
+    orderBy: [{ createdAt: 'asc' }, { startAt: 'asc' }, { id: 'asc' }],
+  });
+  if (unnumbered.length === 0) return;
+
+  const byLedger = new Map<string, typeof unnumbered>();
+  for (const ev of unnumbered) {
+    const list = byLedger.get(ev.ledgerId) ?? [];
+    list.push(ev);
+    byLedger.set(ev.ledgerId, list);
+  }
+
+  for (const [ledgerId, list] of byLedger.entries()) {
+    const maxAgg = await prisma.event.aggregate({
+      where: { ledgerId, eventNo: { not: null } },
+      _max: { eventNo: true },
+    });
+    let curNo = maxAgg._max.eventNo ?? 0;
+    for (const ev of list) {
+      curNo += 1;
+      await prisma.event.update({
+        where: { id: ev.id },
+        data: { eventNo: curNo },
+      });
+    }
+  }
+}
+

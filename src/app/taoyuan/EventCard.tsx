@@ -22,15 +22,43 @@ const STAGE_LABEL: Record<Stage, string> = {
   paid: '到账金额',
 };
 
-function formatDeadline(iso: string): string {
+function DeadlineBadge({ iso }: { iso: string }) {
   const d = new Date(iso);
   const now = new Date();
   const diffDays = Math.floor((d.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
   const s = `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-  if (diffDays < 0) return `${s} · 已过期`;
-  if (diffDays === 0) return `${s} · 今天`;
-  if (diffDays <= 7) return `${s} · ${diffDays} 天后`;
-  return s;
+
+  if (diffDays < 0) {
+    return (
+      <span className="inline-flex items-center gap-1 text-rose-500 dark:text-rose-400 font-normal">
+        <span>截止 {s}</span>
+        <span className="text-[11px] px-1 py-0.2 rounded bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 font-normal">
+          已过期
+        </span>
+      </span>
+    );
+  }
+  if (diffDays === 0) {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-amber-600 dark:text-amber-400 font-bold">
+        <span>截止 {s}</span>
+        <span className="text-[11px] px-1.5 py-0.5 rounded-md bg-amber-100 dark:bg-amber-900/50 border border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-200 font-extrabold animate-pulse">
+          今天截止
+        </span>
+      </span>
+    );
+  }
+  if (diffDays <= 7) {
+    return (
+      <span className="inline-flex items-center gap-1 text-blue-600 dark:text-blue-400 font-medium">
+        <span>截止 {s}</span>
+        <span className="text-[11px] px-1.5 py-0.2 rounded-md bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 text-blue-600 dark:text-blue-300 font-semibold">
+          {diffDays} 天后
+        </span>
+      </span>
+    );
+  }
+  return <span className="text-ink-500 dark:text-ink-400 font-normal">截止 {s}</span>;
 }
 
 export default function EventCard({
@@ -52,6 +80,7 @@ export default function EventCard({
   const [hidden, setHidden] = useState(false);
   const [openStage, setOpenStage] = useState<Stage | null>(null);
   const [expanded, setExpanded] = useState(false);
+  const [showTimeline, setShowTimeline] = useState(false);
   const [copied, setCopied] = useState(false);
   const [zoomImg, setZoomImg] = useState<{ urls: string[]; index: number } | null>(null);
   const [editing, setEditing] = useState(false);
@@ -144,6 +173,11 @@ export default function EventCard({
         )}
         <div className="flex-1 min-w-0">
           <div className="font-medium flex flex-wrap items-baseline gap-x-2 gap-y-1">
+            {event.eventNo !== null && event.eventNo !== undefined && (
+              <span className="shrink-0 text-[11px] font-mono font-bold px-1.5 py-0.5 rounded bg-ink-100 dark:bg-ink-700 text-ink-700 dark:text-ink-200 border border-ink-200 dark:border-ink-600">
+                #{event.eventNo}
+              </span>
+            )}
             <span className="break-all">{event.title}</span>
             {merged && (
               <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">
@@ -161,7 +195,7 @@ export default function EventCard({
           </div>
           <div className="mt-0.5 text-xs text-ink-500 space-y-0.5">
             {event.startAt && <div>开始 {formatShort(event.startAt)}</div>}
-            {event.deadline && <div>截止 {formatDeadline(event.deadline)}</div>}
+            {event.deadline && <div><DeadlineBadge iso={event.deadline} /></div>}
             {event.reward && <div className="break-all">奖励：{event.reward}</div>}
             {event.content && <div className="break-all">内容：{event.content}</div>}
             {event.note && <div className="break-all">备注：{event.note}</div>}
@@ -257,13 +291,27 @@ export default function EventCard({
         );
       })()}
 
-      {merged && (
+      {/* 展开子活动与时间线 */}
+      <div className="mt-3 flex items-center gap-4 text-xs text-ink-500">
+        {merged && (
+          <button
+            onClick={() => setExpanded(!expanded)}
+            className="underline"
+          >
+            {expanded ? '收起子活动' : `展开 ${event.children.length} 个子活动`}
+          </button>
+        )}
         <button
-          onClick={() => setExpanded(!expanded)}
-          className="mt-3 text-xs text-ink-500 underline"
+          onClick={() => setShowTimeline(!showTimeline)}
+          className="underline inline-flex items-center gap-1 hover:text-ink-700 dark:hover:text-ink-300 transition"
         >
-          {expanded ? '收起子活动' : `展开 ${event.children.length} 个子活动`}
+          <span>⏱</span>
+          <span>{showTimeline ? '收起推进时间线' : '查看推进时间线'}</span>
         </button>
+      </div>
+
+      {showTimeline && (
+        <EventTimeline event={event} sums={sums} />
       )}
 
       {expanded && merged && (
@@ -395,6 +443,94 @@ function ChildRow({
           摘出
         </button>
       )}
+    </div>
+  );
+}
+
+function EventTimeline({
+  event,
+  sums,
+}: {
+  event: ClientEvent;
+  sums: Record<Stage, number>;
+}) {
+  const isPaid = event.status === 'paid';
+  const isAnnounced = isPaid || event.status === 'announced';
+  const isPredicted = isAnnounced || event.status === 'predicted';
+
+  const steps = [
+    {
+      key: 'published',
+      label: '活动发布',
+      active: true,
+      time: event.publishedAt ? formatShort(event.publishedAt) : null,
+      desc: event.participate ? '参与中 · 首页待办提醒' : '已发布',
+      badgeColor: 'bg-blue-500 text-white',
+    },
+    {
+      key: 'predicted',
+      label: '预测收入',
+      active: isPredicted,
+      time: event.predictedAt ? formatShort(event.predictedAt) : null,
+      desc: sums.predicted > 0 ? (
+        <span>预估 <Money cents={sums.predicted} /></span>
+      ) : isPredicted ? '已进入预测阶段' : '待录入预测',
+      badgeColor: isPredicted ? 'bg-indigo-500 text-white' : 'bg-ink-300 dark:bg-ink-600 text-white',
+    },
+    {
+      key: 'announced',
+      label: '公示奖金',
+      active: isAnnounced,
+      time: event.announcedAt ? formatShort(event.announcedAt) : null,
+      desc: sums.announced > 0 ? (
+        <span>公示 <Money cents={sums.announced} /></span>
+      ) : isAnnounced ? '已进入公示阶段' : '待公示',
+      badgeColor: isAnnounced ? 'bg-amber-500 text-white' : 'bg-ink-300 dark:bg-ink-600 text-white',
+    },
+    {
+      key: 'paid',
+      label: '资金到账',
+      active: isPaid,
+      time: event.paidAt ? formatShort(event.paidAt) : null,
+      desc: sums.paid > 0 ? (
+        <span className="text-emerald-600 dark:text-emerald-400 font-semibold">
+          到账 <Money cents={sums.paid} />
+        </span>
+      ) : isPaid ? '已到账' : '待发钱到账',
+      badgeColor: isPaid ? 'bg-emerald-500 text-white' : 'bg-ink-300 dark:bg-ink-600 text-white',
+    },
+  ];
+
+  return (
+    <div className="mt-3 p-3.5 rounded-xl bg-ink-50/80 dark:bg-ink-900/40 border border-ink-200/60 dark:border-ink-700/50">
+      <div className="text-[11px] font-medium text-ink-600 dark:text-ink-300 mb-2.5 flex items-center justify-between">
+        <span>活动推进生命周期</span>
+        <span className="text-[10px] text-ink-400 font-normal">状态根据金额明细自动流转</span>
+      </div>
+      <div className="relative pl-3 space-y-3 before:absolute before:left-[17px] before:top-2 before:bottom-2 before:w-[2px] before:bg-ink-200 dark:before:bg-ink-700">
+        {steps.map((step, idx) => (
+          <div key={step.key} className="relative flex items-start gap-2.5">
+            <div
+              className={`relative z-10 w-3 h-3 rounded-full flex items-center justify-center text-[8px] mt-0.5 ${step.badgeColor}`}
+            >
+              {step.active ? '✓' : ''}
+            </div>
+            <div className="flex-1 min-w-0 text-xs">
+              <div className="flex items-baseline justify-between gap-2">
+                <span className={`font-medium ${step.active ? 'text-ink-900 dark:text-ink-100' : 'text-ink-400 dark:text-ink-500'}`}>
+                  {idx + 1}. {step.label}
+                </span>
+                {step.time && (
+                  <span className="text-[10px] text-ink-400 num">{step.time}</span>
+                )}
+              </div>
+              <div className="text-[11px] text-ink-500 mt-0.5">
+                {step.desc}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
