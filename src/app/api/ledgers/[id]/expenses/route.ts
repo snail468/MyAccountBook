@@ -111,11 +111,27 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     deletedAt: e.deletedAt?.toISOString() ?? null,
   });
 
-  if (all) {
+  const q = url.searchParams.get('q')?.trim();
+  const qNum = q && !Number.isNaN(Number(q)) && Number(q) > 0 ? Number(q) : null;
+  const qCents = qNum !== null ? Math.round(qNum * 100) : null;
+  const qWhere = q
+    ? {
+        OR: [
+          { title: { contains: q } },
+          { category: { contains: q } },
+          { note: { contains: q } },
+          { payer: { displayName: { contains: q } } },
+          ...(qCents !== null ? [{ amountBaseCents: qCents }, { amountForeignCents: qCents }] : []),
+        ],
+      }
+    : {};
+
+  if (all || q) {
     const rows = await prisma.tripExpense.findMany({
-      where: { ledgerId: id, ...NOT_DELETED },
+      where: { ledgerId: id, ...NOT_DELETED, ...(phase ? { phase } : {}), ...qWhere },
       include,
       orderBy: TIME_DESC_ORDER,
+      take: q ? 100 : undefined,
     });
     return NextResponse.json({ incremental: true, expenses: rows.map(serialize), nextCursor: null });
   }

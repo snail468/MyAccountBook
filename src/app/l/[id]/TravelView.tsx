@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
-import { useEffect, useMemo, useState, useTransition } from 'react';
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import Money from '@/components/ui/Money';
 import Lightbox from '@/components/ui/Lightbox';
@@ -199,6 +199,77 @@ export default function TravelView({
     warmTripModalChunks();
   }, []);
 
+  // —— 搜索状态 ——
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [remoteResults, setRemoteResults] = useState<Expense[] | null>(null);
+  const [searching, setSearching] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (showSearch) {
+      searchInputRef.current?.focus();
+    }
+  }, [showSearch]);
+
+  // 服务端防抖检索（查找全量支出）
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (!q) {
+      setRemoteResults(null);
+      setSearching(false);
+      return;
+    }
+    setSearching(true);
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `/api/ledgers/${ledger.id}/expenses?q=${encodeURIComponent(q)}`,
+          { cache: 'no-store' },
+        );
+        if (res.ok) {
+          const j = await res.json();
+          setRemoteResults((j.expenses as Expense[]) || []);
+        }
+      } catch {
+        // 保持本地匹配
+      } finally {
+        setSearching(false);
+      }
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [searchQuery, ledger.id]);
+
+  const allLoadedExpenses = useMemo(() => {
+    return [...preExpenses, ...extra.pre, ...duringExpenses, ...extra.during];
+  }, [preExpenses, extra, duringExpenses]);
+
+  const searchResults = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return [];
+    const matched = new Map<string, Expense>();
+    for (const e of allLoadedExpenses) {
+      const titleMatch = e.title.toLowerCase().includes(q);
+      const catMatch = e.category.toLowerCase().includes(q);
+      const noteMatch = (e.note || '').toLowerCase().includes(q);
+      const payerMatch = (e.payerName || '').toLowerCase().includes(q);
+      const baseStr = (e.amountBaseCents / 100).toFixed(2);
+      const foreignStr = (e.amountForeignCents / 100).toFixed(2);
+      const amtMatch = baseStr.includes(q) || foreignStr.includes(q);
+      if (titleMatch || catMatch || noteMatch || payerMatch || amtMatch) {
+        matched.set(e.id, e);
+      }
+    }
+    if (remoteResults) {
+      for (const e of remoteResults) {
+        matched.set(e.id, e);
+      }
+    }
+    return [...matched.values()].sort(
+      (a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime(),
+    );
+  }, [allLoadedExpenses, searchQuery, remoteResults]);
+
   const phaseList = useMemo(
     () => {
       const base =
@@ -335,6 +406,26 @@ export default function TravelView({
           <span>{ledger.icon ?? '✈️'}</span>
           <span className="truncate">{ledger.name}</span>
         </h1>
+        {/* 搜索按钮 */}
+        <button
+          onClick={() => {
+            setShowSearch((prev) => {
+              const next = !prev;
+              if (!next) setSearchQuery('');
+              return next;
+            });
+          }}
+          className={`text-sm p-1.5 rounded-lg transition ${
+            showSearch || searchQuery
+              ? 'text-ink-900 dark:text-ink-100 bg-ink-100 dark:bg-ink-700'
+              : 'text-ink-400 hover:text-ink-600 dark:hover:text-ink-200'
+          }`}
+          aria-label="搜索"
+          title="搜索支出"
+        >
+          🔍
+        </button>
+
         {readOnly ? (
           <span className="text-[11px] px-2 py-1 rounded-full bg-ink-100 dark:bg-ink-700 text-ink-500 shrink-0">
             只读
@@ -371,6 +462,50 @@ export default function TravelView({
           </>
         )}
       </div>
+
+      {/* 展开式搜索框 */}
+      {showSearch && (
+        <div className="mb-4">
+          <div className="relative">
+            <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-400 text-sm pointer-events-none">
+              🔍
+            </span>
+            <input
+              ref={searchInputRef}
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="搜索支出名称、分类、备注、付款人或金额…"
+              className="w-full pl-9 pr-16 py-2.5 rounded-2xl bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 text-sm focus:outline-none focus:ring-2 focus:ring-ink-400 dark:focus:ring-ink-500 transition shadow-sm"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-12 top-1/2 -translate-y-1/2 text-xs text-ink-400 hover:text-ink-600 dark:hover:text-ink-200 px-1"
+                aria-label="清空搜索"
+              >
+                ✕
+              </button>
+            )}
+            <button
+              onClick={() => {
+                setShowSearch(false);
+                setSearchQuery('');
+              }}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-ink-500 hover:text-ink-700 dark:hover:text-ink-300"
+            >
+              取消
+            </button>
+          </div>
+          {searchQuery && (
+            <div className="mt-1.5 px-1 text-xs text-ink-500 flex items-center justify-between">
+              <span>
+                {searching ? '正在全量搜索…' : `找到 ${searchResults.length} 条相关支出`}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
 
       <PendingBadge kind="travel" ledgerId={ledger.id} />
 
@@ -556,35 +691,63 @@ export default function TravelView({
       )}
 
       <div className="mt-6 space-y-2">
-        {phaseList.length === 0 && (
-          <div className="text-center text-sm text-ink-400 py-10">
-            此阶段还没有记录
-          </div>
-        )}
-        {phaseList.map((e) => (
-          <ExpenseRow
-            key={e.id}
-            expense={e}
-            baseCurrency={ledger.baseCurrency}
-            members={members}
-            // 只读分享页或只读协作者(viewer)：隐藏行内编辑/删除。
-            readOnly={!!readOnly || !canEdit}
-            onEdit={() => setEditing(e)}
-            onDelete={() => del(e)}
-            onZoomImage={(urls, index) => setZoomImg({ urls, index })}
-          />
-        ))}
+        {searchQuery.trim() ? (
+          <>
+            {searchResults.length === 0 && (
+              <div className="text-center text-sm text-ink-400 py-10">
+                未找到与 “{searchQuery}” 相关的支出
+              </div>
+            )}
+            {searchResults.map((e) => (
+              <div key={e.id} className="relative">
+                <div className="absolute right-3 top-3 text-[10px] px-1.5 py-0.5 rounded bg-ink-100 dark:bg-ink-700 text-ink-500 pointer-events-none">
+                  {e.phase === 'pre' ? '行前' : '行中'}
+                </div>
+                <ExpenseRow
+                  expense={e}
+                  baseCurrency={ledger.baseCurrency}
+                  members={members}
+                  readOnly={!!readOnly || !canEdit}
+                  onEdit={() => setEditing(e)}
+                  onDelete={() => del(e)}
+                  onZoomImage={(urls, index) => setZoomImg({ urls, index })}
+                />
+              </div>
+            ))}
+          </>
+        ) : (
+          <>
+            {phaseList.length === 0 && (
+              <div className="text-center text-sm text-ink-400 py-10">
+                此阶段还没有记录
+              </div>
+            )}
+            {phaseList.map((e) => (
+              <ExpenseRow
+                key={e.id}
+                expense={e}
+                baseCurrency={ledger.baseCurrency}
+                members={members}
+                // 只读分享页或只读协作者(viewer)：隐藏行内编辑/删除。
+                readOnly={!!readOnly || !canEdit}
+                onEdit={() => setEditing(e)}
+                onDelete={() => del(e)}
+                onZoomImage={(urls, index) => setZoomImg({ urls, index })}
+              />
+            ))}
 
-        {cursors[phase] && (
-          <button
-            onClick={loadMore}
-            disabled={loadingMore}
-            className="w-full py-3 rounded-2xl bg-ink-50 dark:bg-ink-800 border border-ink-200 dark:border-ink-700 text-sm text-ink-500 active:scale-[0.98] transition disabled:opacity-60"
-          >
-            {loadingMore ? '加载中…' : '加载更早的记录'}
-          </button>
+            {cursors[phase] && (
+              <button
+                onClick={loadMore}
+                disabled={loadingMore}
+                className="w-full py-3 rounded-2xl bg-ink-50 dark:bg-ink-800 border border-ink-200 dark:border-ink-700 text-sm text-ink-500 active:scale-[0.98] transition disabled:opacity-60"
+              >
+                {loadingMore ? '加载中…' : '加载更早的记录'}
+              </button>
+            )}
+            {loadError && <p className="text-red-500 text-xs text-center">{loadError}</p>}
+          </>
         )}
-        {loadError && <p className="text-red-500 text-xs text-center">{loadError}</p>}
       </div>
 
       {settlementError && (

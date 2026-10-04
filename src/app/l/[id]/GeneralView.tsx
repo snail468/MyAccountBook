@@ -125,10 +125,83 @@ export default function GeneralView({
     prevPendingCount.current = pendingForThisLedger.length;
   }, [pendingForThisLedger.length, router, startTransition]);
 
+  // —— 搜索状态 ——
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [remoteResults, setRemoteResults] = useState<Entry[] | null>(null);
+  const [searching, setSearching] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (showSearch) {
+      searchInputRef.current?.focus();
+    }
+  }, [showSearch]);
+
+  // 服务端防抖远程检索（查找未在首屏/本地加载的历史记录）
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (!q) {
+      setRemoteResults(null);
+      setSearching(false);
+      return;
+    }
+    setSearching(true);
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `/api/ledgers/${ledger.id}/entries?q=${encodeURIComponent(q)}`,
+          { cache: 'no-store' },
+        );
+        if (res.ok) {
+          const j = await res.json();
+          setRemoteResults((j.entries as Entry[]) || []);
+        }
+      } catch {
+        // 保持本地匹配
+      } finally {
+        setSearching(false);
+      }
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [searchQuery, ledger.id]);
+
   const entries = useMemo(
     () => [...initialEntries, ...extraEntries],
     [initialEntries, extraEntries],
   );
+
+  // 综合本地与服务端检索结果
+  const displayEntries = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return entries;
+
+    const matchedMap = new Map<string, Entry>();
+
+    // 1. 本地即时匹配
+    for (const e of entries) {
+      const catMatch = e.category.toLowerCase().includes(q);
+      const noteMatch = (e.note || '').toLowerCase().includes(q);
+      const tagMatch = (e.tags || '').toLowerCase().includes(q);
+      const yuanStr = (e.amountCents / 100).toFixed(2);
+      const amtMatch = yuanStr.includes(q) || String(e.amountCents / 100).includes(q);
+      if (catMatch || noteMatch || tagMatch || amtMatch) {
+        matchedMap.set(e.id, e);
+      }
+    }
+
+    // 2. 服务端返回的深层匹配
+    if (remoteResults) {
+      for (const e of remoteResults) {
+        matchedMap.set(e.id, e);
+      }
+    }
+
+    // 按时间倒序排序
+    return [...matchedMap.values()].sort(
+      (a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime(),
+    );
+  }, [entries, searchQuery, remoteResults]);
 
   async function loadMore() {
     if (!cursor || loadingMore) return;
@@ -156,9 +229,9 @@ export default function GeneralView({
   const net = income - expense;
   const topCats: [string, number][] = summary.topCats.map((c) => [c.category, c.cents]);
 
-  // 按天分组（只对已加载的条目分组）
+  // 按天分组（搜索时对过滤后的条目分组，平时对已加载的条目分组）
   const grouped = new Map<string, Entry[]>();
-  for (const e of entries) {
+  for (const e of displayEntries) {
     const d = new Date(e.occurredAt);
     const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     const arr = grouped.get(key) ?? [];
@@ -201,6 +274,25 @@ export default function GeneralView({
           <span>{ledger.icon ?? '📒'}</span>
           <span className="truncate">{ledger.name}</span>
         </h1>
+        {/* 搜索按钮 */}
+        <button
+          onClick={() => {
+            setShowSearch((prev) => {
+              const next = !prev;
+              if (!next) setSearchQuery('');
+              return next;
+            });
+          }}
+          className={`text-sm p-1.5 rounded-lg transition ${
+            showSearch || searchQuery
+              ? 'text-ink-900 dark:text-ink-100 bg-ink-100 dark:bg-ink-700'
+              : 'text-ink-400 hover:text-ink-600 dark:hover:text-ink-200'
+          }`}
+          aria-label="搜索"
+          title="搜索账本内容"
+        >
+          🔍
+        </button>
         <Link
           href={`/l/${ledger.id}/collaborators`}
           className="text-ink-400 text-sm"
@@ -220,6 +312,50 @@ export default function GeneralView({
           </button>
         )}
       </div>
+
+      {/* 展开式搜索框 */}
+      {showSearch && (
+        <div className="mb-4">
+          <div className="relative">
+            <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-400 text-sm pointer-events-none">
+              🔍
+            </span>
+            <input
+              ref={searchInputRef}
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="搜索分类、备注、金额或标签…"
+              className="w-full pl-9 pr-16 py-2.5 rounded-2xl bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 text-sm focus:outline-none focus:ring-2 focus:ring-ink-400 dark:focus:ring-ink-500 transition shadow-sm"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-12 top-1/2 -translate-y-1/2 text-xs text-ink-400 hover:text-ink-600 dark:hover:text-ink-200 px-1"
+                aria-label="清空搜索"
+              >
+                ✕
+              </button>
+            )}
+            <button
+              onClick={() => {
+                setShowSearch(false);
+                setSearchQuery('');
+              }}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-ink-500 hover:text-ink-700 dark:hover:text-ink-300"
+            >
+              取消
+            </button>
+          </div>
+          {searchQuery && (
+            <div className="mt-1.5 px-1 text-xs text-ink-500 flex items-center justify-between">
+              <span>
+                {searching ? '正在全量搜索…' : `找到 ${displayEntries.length} 条相关记账`}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
 
       {pendingForThisLedger.length > 0 && (
         <div className="mb-3 flex items-center justify-between p-3 rounded-2xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-xs">
@@ -423,7 +559,9 @@ export default function GeneralView({
       <div className="mt-6 space-y-4">
         {dayKeys.length === 0 && (
           <div className="text-center text-sm text-ink-400 py-10">
-            还没有记录，点击上方 + 开始
+            {searchQuery.trim()
+              ? `未找到与 “${searchQuery}” 相关的记账内容`
+              : '还没有记录，点击上方 + 开始'}
           </div>
         )}
         {dayKeys.map((day) => {
@@ -460,7 +598,7 @@ export default function GeneralView({
           );
         })}
 
-        {cursor && (
+        {!searchQuery.trim() && cursor && (
           <button
             onClick={loadMore}
             disabled={loadingMore}
@@ -469,7 +607,7 @@ export default function GeneralView({
             {loadingMore ? '加载中…' : '加载更早的记录'}
           </button>
         )}
-        {!cursor && entries.length > 0 && (
+        {!searchQuery.trim() && !cursor && entries.length > 0 && (
           <div className="text-center text-[11px] text-ink-400 py-2">已经到底了</div>
         )}
         {loadError && (

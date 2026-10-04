@@ -45,6 +45,19 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   // 增量同步：?since=<ISO> 只返回水位之后的变更（新建/编辑/软删）。
   const sinceParam = url.searchParams.get('since');
   const since = sinceParam ? new Date(sinceParam) : null;
+  const q = url.searchParams.get('q')?.trim();
+  const qNum = q && !Number.isNaN(Number(q)) && Number(q) > 0 ? Number(q) : null;
+  const qCents = qNum !== null ? Math.round(qNum * 100) : null;
+  const qWhere = q
+    ? {
+        OR: [
+          { category: { contains: q } },
+          { note: { contains: q } },
+          { tags: { contains: q } },
+          ...(qCents !== null ? [{ amountCents: qCents }] : []),
+        ],
+      }
+    : {};
 
   const rows = await prisma.generalEntry.findMany({
     where: {
@@ -52,6 +65,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       ...(since
         ? { OR: [{ updatedAt: { gt: since } }, { deletedAt: { gt: since } }] }
         : NOT_DELETED),
+      ...qWhere,
       ...cursorWhere(since ? null : cursor),
     },
     orderBy: TIME_DESC_ORDER,

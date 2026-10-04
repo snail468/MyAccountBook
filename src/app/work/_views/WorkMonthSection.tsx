@@ -1,10 +1,6 @@
-import Link from 'next/link';
 import { prisma } from '@/lib/db';
-import Money from '@/components/ui/Money';
-import PendingBadge from '@/components/ui/PendingBadge';
-import NewEntryFlow from '../[month]/NewEntryFlow';
-import EntryRow from '../[month]/EntryRow';
 import { NOT_DELETED } from '@/lib/softDelete';
+import WorkMonthClient from './WorkMonthClient';
 
 // 工作账本"单月"section。
 //
@@ -41,46 +37,26 @@ export default async function WorkMonthSection({
     .filter((e) => e.direction === 'expense')
     .reduce((a, e) => a + e.amountCents, 0);
 
+  const initialEntries = entries.map((e) => ({
+    id: e.id,
+    category: e.category,
+    direction: e.direction as 'income' | 'expense',
+    amountCents: e.amountCents,
+    note: e.note,
+    occurredAt: e.occurredAt.toISOString(),
+    refundedAt: e.refundedAt ? e.refundedAt.toISOString() : null,
+  }));
+
   return (
-    <div className="px-6 pt-14">
-      <div className="flex items-center gap-3 mb-6">
-        <Link href={backHref} className="text-ink-500 text-sm">
-          ‹ {ledgerName}
-        </Link>
-      </div>
-      <PendingBadge kind="work" ledgerId={ledgerId} />
-      <div className="rounded-3xl bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 p-5">
-        <div className="text-xs text-ink-500">
-          {month.split('-')[0]} 年 {Number(month.split('-')[1])} 月
-        </div>
-        <div className="num text-3xl font-semibold mt-1">
-          进项 <Money cents={income} />
-        </div>
-        <div className="mt-2 text-xs text-ink-500 num">
-          出项 <Money cents={expense} />
-        </div>
-      </div>
-
-      {canEdit && <NewEntryFlow yearMonth={month} ledgerId={ledgerId} />}
-
-      <div className="mt-6 space-y-2">
-        {entries.length === 0 && (
-          <div className="text-center text-sm text-ink-400 py-8">还没有记录，点击上方 + 开始</div>
-        )}
-        {entries.map((e) => (
-          <EntryRow
-            key={e.id}
-            id={e.id}
-            category={e.category}
-            direction={e.direction as 'income' | 'expense'}
-            amountCents={e.amountCents}
-            note={e.note}
-            occurredAt={e.occurredAt.toISOString()}
-            refundedAt={e.refundedAt ? e.refundedAt.toISOString() : null}
-            canEdit={canEdit}
-          />
-        ))}
-      </div>
-    </div>
+    <WorkMonthClient
+      ledgerId={ledgerId}
+      ledgerName={ledgerName}
+      month={month}
+      backHref={backHref}
+      canEdit={canEdit}
+      income={income}
+      expense={expense}
+      initialEntries={initialEntries}
+    />
   );
 }
