@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   isIncomeComponentEnabled,
+  isRenqingEnabled,
+  getRenqingName,
   letterFor,
   mergePrefs,
   parsePrefs,
@@ -68,6 +70,33 @@ describe('userPrefs', () => {
     it('未传的顶层字段保留', () => {
       const current = { incomeComponents: { work: false } } as const;
       expect(mergePrefs(current, {})).toEqual(current);
+    });
+
+    it('正确合并 features.renqing 状态与自定义名称', () => {
+      const current = {
+        features: {
+          loanBusiness: { enabled: true, customName: '个贷业务' },
+        },
+      };
+      const patched = mergePrefs(current, {
+        features: {
+          renqing: { enabled: true, customName: '亲友人情' },
+        },
+      });
+      expect(patched.features?.loanBusiness?.enabled).toBe(true);
+      expect(patched.features?.renqing?.enabled).toBe(true);
+      expect(patched.features?.renqing?.customName).toBe('亲友人情');
+      expect(isRenqingEnabled(patched)).toBe(true);
+      expect(getRenqingName(patched)).toBe('亲友人情');
+
+      // 停用
+      const disabled = mergePrefs(patched, {
+        features: {
+          renqing: { enabled: false },
+        },
+      });
+      expect(isRenqingEnabled(disabled)).toBe(false);
+      expect(getRenqingName(disabled)).toBe('亲友人情'); // 自定义名称保留
     });
   });
 

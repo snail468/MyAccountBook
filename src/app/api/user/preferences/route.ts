@@ -31,6 +31,12 @@ const bodySchema = z.object({
           customName: z.string().trim().max(30).optional(),
         })
         .optional(),
+      renqing: z
+        .object({
+          enabled: z.boolean().optional(),
+          customName: z.string().trim().max(30).optional(),
+        })
+        .optional(),
     })
     .optional(),
 });
