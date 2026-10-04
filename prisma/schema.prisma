@@ -50,6 +50,11 @@ model User {
   brokers           Broker[]
   cardStaffs        CardStaff[]
   loanOrders        LoanOrder[]
+
+  // 人情往来台账
+  giftPersons       GiftPerson[]
+  giftEvents        GiftEvent[]
+  giftRecords       GiftRecord[]
 }
 
 // ============ 工作账本 (kind="work") ============
@@ -588,5 +593,78 @@ model SystemSetting {
   key       String   @id
   value     String
   updatedAt DateTime @updatedAt
+}
+
+// ============ 人情往来：亲友档案 ============
+model GiftPerson {
+  id           String       @id @default(cuid())
+  userId       String
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name         String       // 亲友姓名
+  relationship String?      // 亲属关系/身份（如：堂弟、大学室友）
+  group        String       @default("other") // relative 亲戚 | friend 朋友 | colleague 同事 | classmate 同学 | other 其他
+  phone        String?      // 联系电话
+  note         String?      // 备注说明
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  deletedAt    DateTime?    // 软删除
+
+  records      GiftRecord[]
+
+  @@index([userId, deletedAt])
+  @@index([userId, name])
+  @@index([userId, group])
+}
+
+// ============ 人情往来：大事件宴席礼簿 ============
+model GiftEvent {
+  id               String       @id @default(cuid())
+  userId           String
+  user             User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title            String       // 事件标题：如“2026年婚礼”、“宝宝满月酒”
+  category         String       // 婚礼 / 生子 / 寿宴 / 乔迁 / 升学 / 白事 / 拜年 / 其他
+  eventDate        DateTime     // 举办日期
+  banquetCostCents Int?         // 宴席开销（分）
+  note             String?      // 备注说明
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  deletedAt        DateTime?    // 软删除
+
+  records          GiftRecord[]
+
+  @@index([userId, deletedAt])
+  @@index([userId, eventDate])
+}
+
+// ============ 人情往来：往来明细记录 ============
+model GiftRecord {
+  id                 String      @id @default(cuid())
+  userId             String
+  user               User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  personId           String
+  person             GiftPerson  @relation(fields: [personId], references: [id], onDelete: Cascade)
+  personNameSnapshot String      // 亲友姓名快照
+  eventId            String?
+  event              GiftEvent?  @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  
+  direction          String      // "out" (送礼/随礼) | "in" (收礼)
+  amountCents        Int         // 金额（分）
+  category           String      // 事由：婚礼 / 生子 / 寿宴 / 乔迁 / 升学 / 白事 / 拜年 / 探病 / 其他
+  itemType           String      @default("money") // "money" 现金 | "gift" 实物 | "both" 礼金+实物
+  giftItemDesc       String?     // 礼品实物描述（如“茅台酒2瓶”）
+  occurredAt         DateTime    @default(now())   // 发生日期
+  
+  isPendingReturn    Boolean     @default(false)   // 待还礼标记（收礼时标记未来需要还礼）
+  returnRemindedAt   DateTime?   // 提醒日期
+  note               String?     // 附言/备注
+  
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+  deletedAt          DateTime?   // 软删除
+
+  @@index([userId, direction])
+  @@index([personId, deletedAt])
+  @@index([eventId, deletedAt])
+  @@index([userId, occurredAt])
 }
 

@@ -33,7 +33,7 @@ export async function listTrash(userId: string): Promise<TrashRecord[]> {
   const now = new Date();
   // Phase 2：五张表统一按 "ledger 上有当前 user 成员身份" 过滤 —— 与写路径口径一致。
   const memberLedger = { members: { some: { userId } } };
-  const [entries, generals, trips, events, amounts] = await Promise.all([
+  const [entries, generals, trips, events, amounts, gifts] = await Promise.all([
     prisma.entry.findMany({
       where: { deletedAt: { not: null }, ledger: memberLedger },
       select: {
@@ -91,6 +91,18 @@ export async function listTrash(userId: string): Promise<TrashRecord[]> {
       },
       orderBy: { deletedAt: 'desc' },
     }),
+    prisma.giftRecord.findMany({
+      where: { deletedAt: { not: null }, userId },
+      select: {
+        id: true,
+        category: true,
+        amountCents: true,
+        deletedAt: true,
+        personNameSnapshot: true,
+        direction: true,
+      },
+      orderBy: { deletedAt: 'desc' },
+    }),
   ]);
 
   const rows: TrashRecord[] = [
@@ -144,6 +156,15 @@ export async function listTrash(userId: string): Promise<TrashRecord[]> {
         context: a.event.title,
       };
     }),
+    ...gifts.map((g) => ({
+      type: 'giftRecord' as const,
+      id: g.id,
+      label: `${g.direction === 'in' ? '收礼' : '随礼'} · ${g.personNameSnapshot}（${g.category}）`,
+      amountCents: g.amountCents,
+      deletedAt: g.deletedAt!.toISOString(),
+      daysLeft: daysLeft(g.deletedAt!, now),
+      context: '人情往来',
+    })),
   ];
 
   rows.sort((a, b) => b.deletedAt.localeCompare(a.deletedAt));
@@ -206,6 +227,13 @@ export async function isOwnedTrash(
       });
       return !!r && r.deletedAt !== null && r.event.ledger.members.length > 0;
     }
+    case 'giftRecord': {
+      const r = await prisma.giftRecord.findUnique({
+        where: { id },
+        select: { deletedAt: true, userId: true },
+      });
+      return !!r && r.deletedAt !== null && r.userId === userId;
+    }
   }
 }
 
@@ -234,6 +262,9 @@ export async function restoreOne(type: TrashType, id: string): Promise<{ eventId
       });
       return { eventId: row.eventId };
     }
+    case 'giftRecord':
+      await prisma.giftRecord.update({ where: { id }, data: { deletedAt: null } });
+      return { eventId: null };
   }
 }
 
@@ -279,6 +310,9 @@ export async function purgeOne(type: TrashType, id: string): Promise<void> {
     case 'eventAmount':
       await prisma.eventAmount.delete({ where: { id } });
       return;
+    case 'giftRecord':
+      await prisma.giftRecord.delete({ where: { id } });
+      return;
   }
 }
 
@@ -318,7 +352,7 @@ export async function purgeExpiredRecords() {
     const cutoff = cutoffFor(new Date(now));
 
     // 先收集要删的记录 —— 图片清理要在硬删之后，且要拿到 imageUrls
-    const [generals, trips, events, entries, amounts] = await Promise.all([
+    const [generals, trips, events, entries, amounts, gifts] = await Promise.all([
       prisma.generalEntry.findMany({
         where: { deletedAt: { lt: cutoff } },
         select: { id: true, imageUrls: true },
@@ -339,6 +373,10 @@ export async function purgeExpiredRecords() {
         where: { deletedAt: { lt: cutoff } },
         select: { id: true },
       }),
+      prisma.giftRecord.findMany({
+        where: { deletedAt: { lt: cutoff } },
+        select: { id: true },
+      }),
     ]);
 
     if (
@@ -346,7 +384,8 @@ export async function purgeExpiredRecords() {
       generals.length === 0 &&
       trips.length === 0 &&
       events.length === 0 &&
-      amounts.length === 0
+      amounts.length === 0 &&
+      gifts.length === 0
     ) return;
 
     // 图片 URL：普通条目 + 旅游支出的 imageUrls，加上活动的 contentImages
@@ -367,6 +406,8 @@ export async function purgeExpiredRecords() {
       await prisma.event.deleteMany({ where: { id: { in: events.map((r) => r.id) } } });
     if (amounts.length > 0)
       await prisma.eventAmount.deleteMany({ where: { id: { in: amounts.map((r) => r.id) } } });
+    if (gifts.length > 0)
+      await prisma.giftRecord.deleteMany({ where: { id: { in: gifts.map((r) => r.id) } } });
 
     // 硬删完再清图。此时引用计数天然把已删记录排除在外（它们已经不在库里了）
     if (urls.size > 0) await cleanupCollectedImages([...urls]);

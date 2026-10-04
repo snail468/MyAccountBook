@@ -23,9 +23,9 @@ describe('softDelete', () => {
   });
 
   describe('TRASH_TYPES', () => {
-    it('刚好覆盖记账类五个模型', () => {
+    it('刚好覆盖记账与往来类模型', () => {
       expect([...TRASH_TYPES].sort()).toEqual(
-        ['entry', 'event', 'eventAmount', 'generalEntry', 'tripExpense'].sort(),
+        ['entry', 'event', 'eventAmount', 'generalEntry', 'tripExpense', 'giftRecord'].sort(),
       );
     });
 

@@ -56,6 +56,10 @@ export type UserPrefs = {
       enabled?: boolean;
       customName?: string; // 用户自定义名称，默认"个贷业务"
     };
+    renqing?: {
+      enabled?: boolean;
+      customName?: string; // 用户自定义名称，默认"人情往来"
+    };
   };
 };
 
@@ -114,6 +118,17 @@ export function getLoanBusinessName(prefs: UserPrefs): string {
   return name && name.length > 0 ? name : '个贷业务';
 }
 
+/** 判人情往来功能是否启用（默认未开启，需用户自行添加）。 */
+export function isRenqingEnabled(prefs: UserPrefs): boolean {
+  return prefs.features?.renqing?.enabled === true;
+}
+
+/** 获取人情往来自定义显示名称，若未设或为空则回退默认"人情往来"。 */
+export function getRenqingName(prefs: UserPrefs): string {
+  const name = prefs.features?.renqing?.customName?.trim();
+  return name && name.length > 0 ? name : '人情往来';
+}
+
 /**
  * 合并局部更新到现有 prefs。PATCH 语义 —— 传入的字段覆盖，未传的保留。
  * incomeComponents 内部也是浅合并，不是替换整个 map。
@@ -136,6 +151,12 @@ export function mergePrefs(current: UserPrefs, patch: Partial<UserPrefs>): UserP
             ...patch.features.loanBusiness,
           }
         : current.features?.loanBusiness,
+      renqing: patch.features.renqing !== undefined
+        ? {
+            ...(current.features?.renqing ?? { enabled: false }),
+            ...patch.features.renqing,
+          }
+        : current.features?.renqing,
     };
   }
   return next;

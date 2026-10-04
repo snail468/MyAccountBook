@@ -3,7 +3,13 @@ import { redirect } from 'next/navigation';
 import { requireUser } from '@/lib/session';
 import { prisma } from '@/lib/db';
 import { displaySharedLedgerName } from '@/lib/ledgerRole';
-import { parsePrefs, isLoanBusinessEnabled, getLoanBusinessName } from '@/lib/userPrefs';
+import {
+  parsePrefs,
+  isLoanBusinessEnabled,
+  getLoanBusinessName,
+  isRenqingEnabled,
+  getRenqingName,
+} from '@/lib/userPrefs';
 import Prefetcher from '@/components/ui/Prefetcher';
 import FeatureManage from './FeatureManage';
 
@@ -28,6 +34,8 @@ export default async function FeaturesPage() {
   const prefs = parsePrefs(userRow?.preferences);
   const loanEnabled = isLoanBusinessEnabled(prefs);
   const loanName = getLoanBusinessName(prefs);
+  const renqingEnabled = isRenqingEnabled(prefs);
+  const renqingName = getRenqingName(prefs);
 
   const viewerId = user.id;
   const withDisplayName = <T extends { name: string; userId: string; user: { username: string } | null }>(l: T) => ({
@@ -63,6 +71,8 @@ export default async function FeaturesPage() {
       <FeatureManage
         initialLoanEnabled={loanEnabled}
         initialLoanName={loanName}
+        initialRenqingEnabled={renqingEnabled}
+        initialRenqingName={renqingName}
         activeLedgers={active}
         trashedLedgers={trashed}
         hasWork={hasWork}

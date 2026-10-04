@@ -14,6 +14,8 @@ import {
   parsePrefs,
   isLoanBusinessEnabled,
   getLoanBusinessName,
+  isRenqingEnabled,
+  getRenqingName,
   type IncomeComponentKey,
 } from '@/lib/userPrefs';
 import { displaySharedLedgerName } from '@/lib/ledgerRole';
@@ -446,6 +448,25 @@ async function loadDashboard(userId: string) {
     .filter((c) => c.enabled)
     .reduce((sum, c) => sum + c.cents * c.sign, 0);
 
+  const hasRenqing = isRenqingEnabled(prefs);
+  const renqingName = getRenqingName(prefs);
+  let renqingStats = { outCents: 0, inCents: 0, pendingReturnCount: 0 };
+  if (hasRenqing) {
+    const [sums, pendingCount] = await Promise.all([
+      prisma.giftRecord.groupBy({
+        by: ['direction'],
+        where: { userId, deletedAt: null },
+        _sum: { amountCents: true },
+      }),
+      prisma.giftRecord.count({
+        where: { userId, deletedAt: null, isPendingReturn: true },
+      }),
+    ]);
+    const outCents = sums.find((s) => s.direction === 'out')?._sum.amountCents ?? 0;
+    const inCents = sums.find((s) => s.direction === 'in')?._sum.amountCents ?? 0;
+    renqingStats = { outCents, inCents, pendingReturnCount: pendingCount };
+  }
+
   return {
     hasWork,
     hasTaoyuan,
@@ -460,6 +481,9 @@ async function loadDashboard(userId: string) {
     overLedgers,
     hasLoanBusiness: isLoanBusinessEnabled(prefs),
     loanBusinessName: getLoanBusinessName(prefs),
+    hasRenqing,
+    renqingName,
+    renqingStats,
   };
 }
 
@@ -472,6 +496,7 @@ export default async function HomePage() {
   // 预取所有可能的目标路由
   const prefetchRoutes: string[] = ['/features', '/trash'];
   if (s.hasLoanBusiness) prefetchRoutes.push('/loan');
+  if (s.hasRenqing) prefetchRoutes.push('/renqing');
   if (s.hasWork) prefetchRoutes.push('/work', '/work/expenses');
   if (s.hasTaoyuan) prefetchRoutes.push('/taoyuan');
   if (user.role === 'admin') prefetchRoutes.push('/admin');
@@ -489,6 +514,7 @@ export default async function HomePage() {
     }));
   const warmExtraUrls: string[] = [];
   if (s.hasLoanBusiness) warmExtraUrls.push('/loan');
+  if (s.hasRenqing) warmExtraUrls.push('/renqing');
   if (s.hasWork) warmExtraUrls.push('/work');
   if (s.hasTaoyuan) warmExtraUrls.push('/taoyuan');
 
@@ -505,6 +531,14 @@ export default async function HomePage() {
               className="text-xs px-2.5 py-1 rounded-full bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 font-medium border border-blue-200/60 dark:border-blue-700/60 active:scale-95 transition"
             >
               🏠 {s.loanBusinessName} ›
+            </Link>
+          )}
+          {s.hasRenqing && (
+            <Link
+              href="/renqing"
+              className="text-xs px-2.5 py-1 rounded-full bg-rose-50 dark:bg-rose-900/30 text-rose-700 dark:text-rose-300 font-medium border border-rose-200/60 dark:border-rose-700/60 active:scale-95 transition"
+            >
+              🧧 {s.renqingName} ›
             </Link>
           )}
           <LogoutButton />
@@ -641,6 +675,31 @@ export default async function HomePage() {
             </Link>
           );
         })}
+
+        {s.hasRenqing && (
+          <Link
+            href="/renqing"
+            className="flex items-center justify-between p-5 rounded-2xl bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 active:scale-[0.98] transition"
+          >
+            <div className="flex items-center gap-3">
+              <span className="text-xl">🧧</span>
+              <div>
+                <div className="text-lg font-medium flex items-center gap-2">
+                  <span>{s.renqingName}</span>
+                  {s.renqingStats.pendingReturnCount > 0 && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-rose-500 text-white font-normal">
+                      {s.renqingStats.pendingReturnCount} 待还
+                    </span>
+                  )}
+                </div>
+                <div className="text-xs text-ink-500 mt-0.5">
+                  礼出 ¥{(s.renqingStats.outCents / 100).toFixed(0)} · 礼入 ¥{(s.renqingStats.inCents / 100).toFixed(0)} · 亲友往来与礼簿
+                </div>
+              </div>
+            </div>
+            <span className="text-ink-400">›</span>
+          </Link>
+        )}
 
         <Link
           href="/recurring"

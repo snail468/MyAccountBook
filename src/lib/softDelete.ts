@@ -26,8 +26,8 @@ export const NOT_DELETED = { deletedAt: null } as const;
 export const RETENTION_DAYS = 60;
 export const RETENTION_MS = RETENTION_DAYS * 24 * 60 * 60 * 1000;
 
-/** 回收站里的五种记录类型。 */
-export const TRASH_TYPES = ['entry', 'generalEntry', 'tripExpense', 'event', 'eventAmount'] as const;
+/** 回收站里的记录类型。 */
+export const TRASH_TYPES = ['entry', 'generalEntry', 'tripExpense', 'event', 'eventAmount', 'giftRecord'] as const;
 export type TrashType = (typeof TRASH_TYPES)[number];
 
 export function isTrashType(v: unknown): v is TrashType {
@@ -40,6 +40,7 @@ export const TRASH_TYPE_LABEL: Record<TrashType, string> = {
   tripExpense: '旅游账本 · 支出',
   event: '桃源账本 · 活动',
   eventAmount: '桃源账本 · 金额',
+  giftRecord: '人情往来 · 记录',
 };
 
 /** 距离硬删还剩几天（向下取整，最少 0）。 */

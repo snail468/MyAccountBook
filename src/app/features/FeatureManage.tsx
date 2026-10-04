@@ -9,6 +9,8 @@ import { useToast, useConfirm } from '@/components/ui/Dialog';
 type Props = {
   initialLoanEnabled: boolean;
   initialLoanName: string;
+  initialRenqingEnabled: boolean;
+  initialRenqingName: string;
   activeLedgers: any[];
   trashedLedgers: any[];
   hasWork: boolean;
@@ -18,6 +20,8 @@ type Props = {
 export default function FeatureManage({
   initialLoanEnabled,
   initialLoanName,
+  initialRenqingEnabled,
+  initialRenqingName,
   activeLedgers,
   trashedLedgers,
   hasWork,
@@ -30,8 +34,11 @@ export default function FeatureManage({
 
   const [loanEnabled, setLoanEnabled] = useState(initialLoanEnabled);
   const [loanName, setLoanName] = useState(initialLoanName);
+  const [renqingEnabled, setRenqingEnabled] = useState(initialRenqingEnabled);
+  const [renqingName, setRenqingName] = useState(initialRenqingName);
   const [saving, setSaving] = useState(false);
   const [nameEditing, setNameEditing] = useState(false);
+  const [renqingNameEditing, setRenqingNameEditing] = useState(false);
 
   async function saveLoanSettings(enabled: boolean, name: string) {
     setSaving(true);
@@ -77,9 +84,53 @@ export default function FeatureManage({
     }
   }
 
+  async function saveRenqingSettings(enabled: boolean, name: string) {
+    setSaving(true);
+    try {
+      const res = await fetch('/api/user/preferences', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          features: {
+            renqing: {
+              enabled,
+              customName: name.trim() || '人情往来',
+            },
+          },
+        }),
+      });
+      if (!res.ok) throw new Error('保存失败');
+      setRenqingEnabled(enabled);
+      setRenqingName(name.trim() || '人情往来');
+      setRenqingNameEditing(false);
+      toast({ message: enabled ? '人情往来功能已开启' : '人情往来功能已停用', kind: 'success' });
+      startTransition(() => router.refresh());
+    } catch (err: any) {
+      toast({ message: err?.message || '保存失败，请重试', kind: 'error' });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleToggleRenqing() {
+    if (renqingEnabled) {
+      const ok = await confirm({
+        title: '停用人情往来？',
+        body: '停用后仅从首页及导航隐藏入口，已有的亲友档案、往来明细与大事件礼簿数据将完好保留。',
+        confirmText: '确认停用',
+        cancelText: '取消',
+        danger: true,
+      });
+      if (!ok) return;
+      await saveRenqingSettings(false, renqingName);
+    } else {
+      await saveRenqingSettings(true, renqingName);
+    }
+  }
+
   return (
     <div className="space-y-8">
-      {/* 功能一：个贷业务管理 */}
+      {/* 功能：个贷业务管理 */}
       <div className="rounded-3xl bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 p-6 shadow-sm">
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
@@ -176,6 +227,109 @@ export default function FeatureManage({
                 className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 text-white text-xs font-medium shadow-sm hover:bg-blue-700 transition"
               >
                 进入{loanName}工作台 ›
+              </Link>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 功能：人情往来记录 */}
+      <div className="rounded-3xl bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 p-6 shadow-sm">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-12 h-12 rounded-2xl bg-rose-50 dark:bg-rose-900/30 text-rose-600 dark:text-rose-300 flex items-center justify-center text-2xl shrink-0">
+              🧧
+            </div>
+            <div className="min-w-0">
+              <div className="text-lg font-semibold flex items-center gap-2">
+                <span>{renqingEnabled ? renqingName : '人情往来'}</span>
+                {renqingEnabled ? (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500 text-white font-normal">
+                    已添加
+                  </span>
+                ) : (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-ink-200 dark:bg-ink-700 text-ink-600 dark:text-ink-300 font-normal">
+                    未添加
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-ink-500 mt-1">
+                记录亲朋好友间的人情礼金、喜事礼簿、双向往来对账与待还提醒。支持批量表格导入。
+              </p>
+            </div>
+          </div>
+
+          <button
+            onClick={handleToggleRenqing}
+            disabled={saving}
+            className={`shrink-0 px-4 py-2 rounded-xl text-sm font-medium transition active:scale-95 ${
+              renqingEnabled
+                ? 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800'
+                : 'bg-ink-900 dark:bg-ink-100 text-white dark:text-ink-900'
+            }`}
+          >
+            {saving ? '保存中...' : renqingEnabled ? '停用' : '＋ 添加功能'}
+          </button>
+        </div>
+
+        {renqingEnabled && (
+          <div className="mt-5 pt-5 border-t border-ink-100 dark:border-ink-700 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-medium">首页与导航显示名称</div>
+                <div className="text-xs text-ink-400 mt-0.5">
+                  自定义人情往来在首页和顶部栏的入口名称
+                </div>
+              </div>
+
+              {renqingNameEditing ? (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={renqingName}
+                    onChange={(e) => setRenqingName(e.target.value)}
+                    placeholder="如: 礼尚往来"
+                    maxLength={20}
+                    className="px-3 py-1.5 rounded-xl border border-ink-300 dark:border-ink-600 bg-transparent text-sm w-36 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                  />
+                  <button
+                    onClick={() => saveRenqingSettings(true, renqingName)}
+                    disabled={saving}
+                    className="px-3 py-1.5 rounded-xl bg-rose-600 text-white text-xs font-medium"
+                  >
+                    保存
+                  </button>
+                  <button
+                    onClick={() => {
+                      setRenqingName(initialRenqingName);
+                      setRenqingNameEditing(false);
+                    }}
+                    className="px-2 py-1.5 text-xs text-ink-400"
+                  >
+                    取消
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-semibold text-rose-600 dark:text-rose-400 px-3 py-1 rounded-xl bg-rose-50 dark:bg-rose-900/30">
+                    {renqingName}
+                  </span>
+                  <button
+                    onClick={() => setRenqingNameEditing(true)}
+                    className="text-xs text-ink-500 hover:text-ink-800 dark:hover:text-ink-200 underline"
+                  >
+                    修改名称
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <Link
+                href="/renqing"
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-600 text-white text-xs font-medium shadow-sm hover:bg-rose-700 transition"
+              >
+                进入{renqingName} ›
               </Link>
             </div>
           </div>
