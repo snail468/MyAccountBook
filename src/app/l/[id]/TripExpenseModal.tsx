@@ -9,6 +9,7 @@ import { friendlyFetchError, isNetworkError } from '@/lib/netError';
 import { enqueue } from '@/lib/offlineQueue';
 import { useToast } from '@/components/ui/Dialog';
 import ImageUploader from '@/app/taoyuan/ImageUploader';
+import AmountCalculatorInput from '@/components/ui/AmountCalculatorInput';
 import {
   allocateByWeight,
   type ShareEntry,
@@ -327,11 +328,11 @@ export default function TripExpenseModal({
         <div className="grid grid-cols-2 gap-2 mt-3">
           <div>
             <label className="block text-xs text-ink-500 mb-1">金额</label>
-            <input
-              inputMode="decimal"
+            <AmountCalculatorInput
               placeholder="0.00"
               value={amount}
-              onChange={(e) => setAmount(e.target.value)}
+              onChange={setAmount}
+              onEnterSubmit={save}
               className={inputCls}
             />
           </div>

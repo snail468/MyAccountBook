@@ -4,6 +4,8 @@ import { useState } from 'react';
 import ModalShell from './general/ModalShell';
 import { inputCls } from './general/styles';
 import { COMMON_CURRENCIES } from '@/lib/currencyList';
+import { yuanToCents } from '@/lib/money';
+import AmountCalculatorInput from '@/components/ui/AmountCalculatorInput';
 
 type TravelLedgerMeta = {
   id: string;
@@ -93,22 +95,22 @@ export default function TravelSettingsModal({
     const totalEmpty = totalBaseYuan.trim() === '';
     let totalBaseCents: number | null = null;
     if (!totalEmpty) {
-      const n = Number(totalBaseYuan);
-      if (!isFinite(n) || n < 0) {
+      const cents = yuanToCents(totalBaseYuan);
+      if (cents === null || cents < 0) {
         setError('总预算需为非负数字');
         return;
       }
-      totalBaseCents = Math.round(n * 100);
+      totalBaseCents = cents;
     }
     const perCurrency: Record<string, number> = {};
     for (const [c, v] of Object.entries(perCur)) {
       if (v.trim() === '') continue;
-      const n = Number(v);
-      if (!isFinite(n) || n < 0) {
+      const cents = yuanToCents(v);
+      if (cents === null || cents < 0) {
         setError(`${c} 预算需为非负数字`);
         return;
       }
-      perCurrency[c] = Math.round(n * 100);
+      perCurrency[c] = cents;
     }
     const hasBudget = !totalEmpty || Object.keys(perCurrency).length > 0;
     const tripBudget = hasBudget ? { totalBaseCents, perCurrency } : null;
@@ -194,13 +196,11 @@ export default function TravelSettingsModal({
       <div className="mt-4 border-t border-ink-200 dark:border-ink-700 pt-3">
         <div className="text-xs text-ink-500 mb-2">预算（多币种）</div>
         <label className="block text-[11px] text-ink-500 mb-1">总预算（{baseCurrency}）</label>
-        <input
-          type="number"
-          min="0"
-          step="0.01"
+        <AmountCalculatorInput
           value={totalBaseYuan}
-          onChange={(e) => setTotalBaseYuan(e.target.value)}
+          onChange={setTotalBaseYuan}
           placeholder="不限制"
+          allowZero
           className={inputCls}
         />
         <div className="mt-3 space-y-2">
@@ -223,16 +223,15 @@ export default function TravelSettingsModal({
                     <span className="text-xs w-14 text-ink-600 dark:text-ink-300 shrink-0">
                       {c}
                     </span>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
+                    <AmountCalculatorInput
                       value={perCur[c] ?? ''}
-                      onChange={(e) =>
-                        setPerCur((p) => ({ ...p, [c]: e.target.value }))
+                      onChange={(val) =>
+                        setPerCur((p) => ({ ...p, [c]: val }))
                       }
                       placeholder="不限制"
-                      className={`${inputCls} flex-1 min-w-0`}
+                      allowZero
+                      containerClassName="flex-1 min-w-0"
+                      className={inputCls}
                     />
                     {spentByCur.has(c) && (
                       <span className="text-[10px] text-ink-400 whitespace-nowrap">

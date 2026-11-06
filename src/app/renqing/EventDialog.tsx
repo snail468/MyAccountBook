@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import { RENQING_CATEGORIES } from '@/lib/renqing';
 import { useToast } from '@/components/ui/Dialog';
+import { yuanToCents } from '@/lib/money';
+import AmountCalculatorInput from '@/components/ui/AmountCalculatorInput';
 
 type Props = {
   open: boolean;
@@ -62,9 +64,9 @@ export default function EventDialog({
 
     let banquetCostCents: number | null = null;
     if (banquetCostYuan.trim()) {
-      const parsed = parseFloat(banquetCostYuan);
-      if (!isNaN(parsed) && parsed >= 0) {
-        banquetCostCents = Math.round(parsed * 100);
+      const cents = yuanToCents(banquetCostYuan);
+      if (cents !== null && cents >= 0) {
+        banquetCostCents = cents;
       }
     }
 
@@ -160,12 +162,11 @@ export default function EventDialog({
             <label className="block text-xs font-medium text-ink-600 dark:text-ink-300 mb-1.5">
               酒席开销总预算/支出 (元，选填)
             </label>
-            <input
-              type="number"
-              step="any"
+            <AmountCalculatorInput
               placeholder="如酒席场地、伴手礼、烟酒开销"
               value={banquetCostYuan}
-              onChange={(e) => setBanquetCostYuan(e.target.value)}
+              onChange={setBanquetCostYuan}
+              allowZero
               className="w-full px-3 py-2 text-sm rounded-xl border border-ink-200 dark:border-ink-700 bg-white dark:bg-ink-800 focus:outline-none focus:ring-2 focus:ring-rose-500"
             />
             <p className="text-[11px] text-ink-400 mt-1">用于系统自动核算本场宴席礼金收支净结余</p>

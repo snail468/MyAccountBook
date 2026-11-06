@@ -7,8 +7,9 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useAlert, useConfirm } from '@/components/ui/Dialog';
-import { formatYuan } from '@/lib/money';
+import { formatYuan, yuanToCents } from '@/lib/money';
 import { describeSchedule, upcomingDate } from '@/lib/recurring';
+import AmountCalculatorInput from '@/components/ui/AmountCalculatorInput';
 
 type Rule = {
   id: string;
@@ -79,8 +80,8 @@ export default function RecurringClient({ ledgers }: { ledgers: Ledger[] }) {
 
   async function submit() {
     setError('');
-    const yuan = Number(form.amountYuan);
-    if (!Number.isFinite(yuan) || yuan <= 0) {
+    const cents = yuanToCents(form.amountYuan);
+    if (cents === null || cents <= 0) {
       setError('金额要是正数');
       return;
     }
@@ -93,7 +94,7 @@ export default function RecurringClient({ ledgers }: { ledgers: Ledger[] }) {
           ledgerId: form.target === 'general' ? form.ledgerId : null,
           direction: form.direction,
           category: form.category,
-          amountCents: Math.round(yuan * 100),
+          amountCents: cents,
           note: form.note || null,
           frequency: form.frequency,
           dayOfMonth: form.frequency === 'monthly' ? Number(form.dayOfMonth) : null,
@@ -278,11 +279,10 @@ export default function RecurringClient({ ledgers }: { ledgers: Ledger[] }) {
             placeholder="类别，如 房租"
             className={inputCls}
           />
-          <input
+          <AmountCalculatorInput
             value={form.amountYuan}
-            onChange={(e) => setForm({ ...form, amountYuan: e.target.value })}
+            onChange={(val) => setForm({ ...form, amountYuan: val })}
             placeholder="金额（元）"
-            inputMode="decimal"
             className={inputCls}
           />
           <input

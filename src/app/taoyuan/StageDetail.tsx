@@ -11,6 +11,7 @@ import type { ClientEvent } from './types';
 import { useConfirm } from '@/components/ui/Dialog';
 import { nonMoneyText } from '@/components/ui/RewardValue';
 import type { AmountEntry } from '@/lib/amounts';
+import AmountCalculatorInput from '@/components/ui/AmountCalculatorInput';
 
 /** 单条奖励的展示：金额走 Money（受隐藏开关控制），个数与文字直接显示 */
 function AmountValue({ a, className }: { a: AmountEntry; className?: string }) {
@@ -353,12 +354,12 @@ function AmountEditor({
       {kind === 'money' && (
         <>
           <label className="block text-xs text-ink-500">金额（元）</label>
-          <input
+          <AmountCalculatorInput
             autoFocus
-            inputMode="decimal"
             placeholder="0.00"
             value={cents}
-            onChange={(e) => setCents(e.target.value)}
+            onChange={setCents}
+            onEnterSubmit={submit}
             className={bigInputCls}
           />
         </>

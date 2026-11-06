@@ -4,6 +4,8 @@ import { useState } from 'react';
 import ModalShell from './ModalShell';
 import type { LedgerMeta } from './types';
 import { inputCls } from './styles';
+import { yuanToCents } from '@/lib/money';
+import AmountCalculatorInput from '@/components/ui/AmountCalculatorInput';
 
 export default function SettingsModal({
   ledger,
@@ -31,8 +33,8 @@ export default function SettingsModal({
     }
     const body: Record<string, unknown> = { name: name.trim() };
     if (budgetYuan.trim()) {
-      const cents = Math.round(Number(budgetYuan) * 100);
-      if (!Number.isFinite(cents) || cents < 0) {
+      const cents = yuanToCents(budgetYuan);
+      if (cents === null || cents < 0) {
         setError('预算格式不正确');
         return;
       }
@@ -70,11 +72,11 @@ export default function SettingsModal({
       />
 
       <label className="block text-xs text-ink-500 mt-3 mb-1">月度预算（元，留空关闭）</label>
-      <input
-        inputMode="decimal"
+      <AmountCalculatorInput
         value={budgetYuan}
-        onChange={(e) => setBudgetYuan(e.target.value)}
+        onChange={setBudgetYuan}
         placeholder="0"
+        allowZero
         className={inputCls}
       />
 

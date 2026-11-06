@@ -8,6 +8,7 @@ import { sortCategoriesByRecency } from '@/lib/categoryOrder';
 import ImageUploader from '@/app/taoyuan/ImageUploader';
 import type { Entry, RecentUse } from './types';
 import { inputCls } from './styles';
+import AmountCalculatorInput from '@/components/ui/AmountCalculatorInput';
 
 export default function EntryForm({
   ledgerName,
@@ -151,11 +152,11 @@ export default function EntryForm({
       </div>
 
       <label className="block text-xs text-ink-500 mt-4 mb-1">金额（元）</label>
-      <input
-        inputMode="decimal"
+      <AmountCalculatorInput
         placeholder="0.00"
         value={amount}
-        onChange={(e) => setAmount(e.target.value)}
+        onChange={setAmount}
+        onEnterSubmit={submit}
         className="w-full px-4 py-4 text-2xl num rounded-2xl bg-ink-50 dark:bg-ink-800 border border-ink-200 dark:border-ink-700 focus:outline-none focus:ring-2 focus:ring-ink-400"
       />
 

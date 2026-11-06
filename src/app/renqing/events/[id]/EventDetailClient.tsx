@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { formatCents, getGroupLabel, PERSON_GROUPS } from '@/lib/renqing';
 import { useToast, useConfirm } from '@/components/ui/Dialog';
+import { yuanToCents } from '@/lib/money';
+import AmountCalculatorInput from '@/components/ui/AmountCalculatorInput';
 import EventDialog from '../../EventDialog';
 
 type EventData = {
@@ -72,8 +74,8 @@ export default function EventDetailClient({
       toast({ message: '请输入宾客姓名', kind: 'error' });
       return;
     }
-    const yuan = parseFloat(amountYuan);
-    if (isNaN(yuan) || yuan < 0) {
+    const cents = yuanToCents(amountYuan);
+    if (cents === null || cents < 0) {
       toast({ message: '请输入有效的礼金金额', kind: 'error' });
       return;
     }
@@ -85,7 +87,7 @@ export default function EventDetailClient({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           guestName: guestName.trim(),
-          amountCents: Math.round(yuan * 100),
+          amountCents: cents,
           relationship: relationship.trim() || null,
           group,
           note: note.trim() || null,
@@ -98,10 +100,10 @@ export default function EventDetailClient({
       }
 
       const newRecord = await res.json();
-      toast({ message: `已记录 ${guestName} 礼金 ¥${yuan}`, kind: 'success' });
+      toast({ message: `已记录 ${guestName} 礼金 ¥${(cents / 100).toFixed(2)}`, kind: 'success' });
 
       // 本地状态更新
-      const newAmountCents = Math.round(yuan * 100);
+      const newAmountCents = cents;
       setRecords([newRecord, ...records]);
       setGuestCount((prev) => prev + 1);
       setTotalGiftCents((prev) => prev + newAmountCents);
@@ -292,14 +294,12 @@ export default function EventDetailClient({
                 礼金金额 (元) <span className="text-rose-500">*</span>
               </label>
               <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-rose-400 font-semibold">¥</span>
-                <input
-                  type="number"
-                  step="any"
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-rose-400 font-semibold z-10">¥</span>
+                <AmountCalculatorInput
                   required
                   placeholder="800"
                   value={amountYuan}
-                  onChange={(e) => setAmountYuan(e.target.value)}
+                  onChange={setAmountYuan}
                   className="w-full pl-7 pr-3 py-2 text-sm rounded-xl border border-rose-300 dark:border-rose-700 bg-white dark:bg-ink-800 focus:outline-none focus:ring-2 focus:ring-rose-500 font-bold"
                 />
               </div>

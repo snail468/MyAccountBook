@@ -5,6 +5,9 @@ import { useRouter } from 'next/navigation';
 import { useToast, useConfirm } from '@/components/ui/Dialog';
 import { formatShort, localInputToISO, toLocalInput } from '@/lib/datetime';
 import { LOAN_TYPES } from '../new/NewOrderForm';
+import { tryEvaluate } from '@/lib/calculator';
+import { yuanToCents } from '@/lib/money';
+import AmountCalculatorInput from '@/components/ui/AmountCalculatorInput';
 
 type OrderData = {
   id: string;
@@ -183,8 +186,8 @@ export default function OrderDetail({ initialOrder, brokers: _brokers, cardStaff
   // 实际放款金额变更时自动按比例计算提成与返佣（支持手工修改）
   function handleActualWanChange(val: string) {
     setActualWan(val);
-    const wan = parseFloat(val);
-    if (!isNaN(wan) && wan > 0) {
+    const wan = tryEvaluate(val);
+    if (wan !== null && wan > 0) {
       const amountYuan = wan * 10000;
       // 个人提成 = 放款金额 * 0.04%
       setServiceFeeYuan((amountYuan * 0.0004).toFixed(2));
@@ -198,7 +201,8 @@ export default function OrderDetail({ initialOrder, brokers: _brokers, cardStaff
     e.preventDefault();
     setBusy(true);
     const isApproved = approvalResult === 'approved';
-    const amountCents = approvedWan ? Math.round(parseFloat(approvedWan) * 10000 * 100) : null;
+    const evaluatedAppr = approvedWan ? tryEvaluate(approvedWan) : null;
+    const amountCents = evaluatedAppr !== null && evaluatedAppr > 0 ? Math.round(evaluatedAppr * 10000 * 100) : null;
     try {
       const res = await fetch(`/api/loan/orders/${order.id}`, {
         method: 'PATCH',
@@ -230,15 +234,16 @@ export default function OrderDetail({ initialOrder, brokers: _brokers, cardStaff
   // 确认放款
   async function submitLending(e: React.FormEvent) {
     e.preventDefault();
-    if (!actualWan) {
-      toast({ message: '请输入实际放款金额' });
+    const evaluatedActual = actualWan ? tryEvaluate(actualWan) : null;
+    if (evaluatedActual === null || evaluatedActual <= 0) {
+      toast({ message: '请输入有效的实际放款金额' });
       return;
     }
     setBusy(true);
-    const actualCents = Math.round(parseFloat(actualWan) * 10000 * 100);
-    const feeCents = serviceFeeYuan ? Math.round(parseFloat(serviceFeeYuan) * 100) : 0;
-    const brokerCents = brokerCommissionYuan ? Math.round(parseFloat(brokerCommissionYuan) * 100) : 0;
-    const cardCents = cardCommissionYuan ? Math.round(parseFloat(cardCommissionYuan) * 100) : 0;
+    const actualCents = Math.round(evaluatedActual * 10000 * 100);
+    const feeCents = serviceFeeYuan ? (yuanToCents(serviceFeeYuan) ?? 0) : 0;
+    const brokerCents = brokerCommissionYuan ? (yuanToCents(brokerCommissionYuan) ?? 0) : 0;
+    const cardCents = cardCommissionYuan ? (yuanToCents(cardCommissionYuan) ?? 0) : 0;
 
     const loanDateISO = localInputToISO(loanDateStr) ?? new Date().toISOString();
     try {
@@ -937,11 +942,9 @@ export default function OrderDetail({ initialOrder, brokers: _brokers, cardStaff
               {approvalResult === 'approved' && (
                 <div>
                   <label className="block text-xs text-ink-500 mb-1">批复金额 (万元)</label>
-                  <input
-                    type="number"
-                    step="0.1"
+                  <AmountCalculatorInput
                     value={approvedWan}
-                    onChange={(e) => setApprovedWan(e.target.value)}
+                    onChange={setApprovedWan}
                     placeholder="批贷金额"
                     className="w-full px-3 py-2 rounded-xl border border-ink-300 dark:border-ink-600 bg-transparent text-sm"
                   />
@@ -983,12 +986,10 @@ export default function OrderDetail({ initialOrder, brokers: _brokers, cardStaff
             <form onSubmit={submitLending} className="space-y-3">
               <div>
                 <label className="block text-xs text-ink-500 mb-1">实际放款金额 (万元) *</label>
-                <input
-                  type="number"
-                  step="0.1"
+                <AmountCalculatorInput
                   required
                   value={actualWan}
-                  onChange={(e) => handleActualWanChange(e.target.value)}
+                  onChange={handleActualWanChange}
                   placeholder="如: 120"
                   className="w-full px-3 py-2 rounded-xl border border-ink-300 dark:border-ink-600 bg-transparent text-sm font-mono font-bold"
                 />
@@ -1015,12 +1016,11 @@ export default function OrderDetail({ initialOrder, brokers: _brokers, cardStaff
                     <label className="block text-[11px] text-ink-600 dark:text-ink-300 mb-0.5">
                       个人提成 (元) <span className="text-[10px] text-ink-400 font-normal">（按放款×0.04%自动计算，支持手工微调）</span>
                     </label>
-                    <input
-                      type="number"
-                      step="0.01"
+                    <AmountCalculatorInput
                       value={serviceFeeYuan}
-                      onChange={(e) => setServiceFeeYuan(e.target.value)}
+                      onChange={setServiceFeeYuan}
                       placeholder="如: 400.00"
+                      allowZero
                       className="w-full px-2.5 py-1.5 rounded-xl border border-ink-300 dark:border-ink-600 bg-transparent text-xs font-mono font-semibold text-emerald-600 dark:text-emerald-400"
                     />
                   </div>
@@ -1029,12 +1029,11 @@ export default function OrderDetail({ initialOrder, brokers: _brokers, cardStaff
                     <label className="block text-[11px] text-amber-600 dark:text-amber-400 mb-0.5">
                       应付经纪人返佣 (元) <span className="text-[10px] text-amber-500/80 font-normal">（按放款×0.2%自动计算，支持手工微调）</span>
                     </label>
-                    <input
-                      type="number"
-                      step="0.01"
+                    <AmountCalculatorInput
                       value={brokerCommissionYuan}
-                      onChange={(e) => setBrokerCommissionYuan(e.target.value)}
+                      onChange={setBrokerCommissionYuan}
                       placeholder="如: 2000.00"
+                      allowZero
                       className="w-full px-2.5 py-1.5 rounded-xl border border-amber-300 dark:border-amber-700 bg-transparent text-xs font-mono font-semibold"
                     />
                   </div>
@@ -1043,12 +1042,11 @@ export default function OrderDetail({ initialOrder, brokers: _brokers, cardStaff
                     <label className="block text-[11px] text-blue-600 dark:text-blue-400 mb-0.5">
                       卡部协同激励支出 (元)
                     </label>
-                    <input
-                      type="number"
-                      step="0.01"
+                    <AmountCalculatorInput
                       value={cardCommissionYuan}
-                      onChange={(e) => setCardCommissionYuan(e.target.value)}
+                      onChange={setCardCommissionYuan}
                       placeholder="如: 0"
+                      allowZero
                       className="w-full px-2.5 py-1.5 rounded-xl border border-blue-300 dark:border-blue-700 bg-transparent text-xs font-mono"
                     />
                   </div>

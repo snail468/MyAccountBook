@@ -8,6 +8,7 @@ import { defaultOccurredAtFor, localInputToISO, toLocalInput, formatYearMonthBei
 import { friendlyFetchError, isNetworkError } from '@/lib/netError';
 import { enqueue } from '@/lib/offlineQueue';
 import { useToast } from '@/components/ui/Dialog';
+import AmountCalculatorInput from '@/components/ui/AmountCalculatorInput';
 
 type Step = 'closed' | 'category' | 'amount';
 
@@ -251,12 +252,12 @@ export default function NewEntryFlow({
               {direction === 'income' ? '进项' : '出项'} · {category}
             </div>
             <h3 className="text-lg font-medium mb-4">金额 (元)</h3>
-            <input
+            <AmountCalculatorInput
               autoFocus
-              inputMode="decimal"
               placeholder="0.00"
               value={amount}
-              onChange={(e) => setAmount(e.target.value)}
+              onChange={setAmount}
+              onEnterSubmit={save}
               className="w-full px-4 py-4 text-3xl num rounded-2xl bg-ink-50 dark:bg-ink-800 border border-ink-200 dark:border-ink-700 focus:outline-none focus:ring-2 focus:ring-ink-400"
             />
             <input

@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import { RENQING_CATEGORIES, PERSON_GROUPS } from '@/lib/renqing';
 import { useToast } from '@/components/ui/Dialog';
+import { yuanToCents } from '@/lib/money';
+import AmountCalculatorInput from '@/components/ui/AmountCalculatorInput';
 
 export type PersonOption = {
   id: string;
@@ -114,8 +116,8 @@ export default function RecordDialog({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const yuan = parseFloat(amountYuan);
-    if (isNaN(yuan) || yuan < 0) {
+    const cents = yuanToCents(amountYuan);
+    if (cents === null || cents < 0) {
       toast({ message: '请输入有效的金额', kind: 'error' });
       return;
     }
@@ -134,7 +136,7 @@ export default function RecordDialog({
     try {
       const payload: any = {
         direction,
-        amountCents: Math.round(yuan * 100),
+        amountCents: cents,
         category: finalCategory,
         itemType,
         giftItemDesc: giftItemDesc.trim() || null,
@@ -297,14 +299,12 @@ export default function RecordDialog({
               礼金金额 (元) <span className="text-rose-500">*</span>
             </label>
             <div className="relative">
-              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-400 font-semibold">¥</span>
-              <input
-                type="number"
-                step="any"
+              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-400 font-semibold z-10">¥</span>
+              <AmountCalculatorInput
                 required
                 placeholder="0.00"
                 value={amountYuan}
-                onChange={(e) => setAmountYuan(e.target.value)}
+                onChange={setAmountYuan}
                 className="w-full pl-8 pr-4 py-2.5 text-lg font-semibold rounded-xl border border-ink-200 dark:border-ink-700 bg-white dark:bg-ink-800 focus:outline-none focus:ring-2 focus:ring-rose-500"
               />
             </div>

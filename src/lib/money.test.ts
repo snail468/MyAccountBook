@@ -31,6 +31,18 @@ describe('yuanToCents', () => {
       expect(yuanToCents(bad)).toBeNull();
     }
   });
+
+  it('支持四则运算表达式解析', () => {
+    expect(yuanToCents('10+20')).toBe(3000);
+    expect(yuanToCents('10 + 20 * 3')).toBe(7000);
+    expect(yuanToCents('(10+20)*3')).toBe(9000);
+    expect(yuanToCents('100 - 20.5')).toBe(7950);
+    expect(yuanToCents('100 / 4')).toBe(2500);
+    expect(yuanToCents('100+')).toBe(10000); // 自动补全挂起符号
+    expect(yuanToCents('10 ＋ 20 × 2')).toBe(5000); // 全角符号
+    expect(yuanToCents('50 - 100')).toBeNull(); // 负数拒绝
+    expect(yuanToCents('10 / 0')).toBeNull(); // 除以0拒绝
+  });
 });
 
 describe('formatYuan', () => {

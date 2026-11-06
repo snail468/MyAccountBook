@@ -3,6 +3,8 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/components/ui/Dialog';
+import { tryEvaluate } from '@/lib/calculator';
+import AmountCalculatorInput from '@/components/ui/AmountCalculatorInput';
 
 export const LOAN_TYPES = [
   { key: 'mortgage', label: '房按揭 (二手房/新房)', icon: '🏠' },
@@ -128,7 +130,8 @@ export default function NewOrderForm({ brokers: initialBrokers, cardStaffs: init
     }
     setBusy(true);
 
-    const demandCents = demandAmountWan ? Math.round(parseFloat(demandAmountWan) * 10000 * 100) : null;
+    const evaluatedDemand = demandAmountWan ? tryEvaluate(demandAmountWan) : null;
+    const demandCents = evaluatedDemand !== null && evaluatedDemand > 0 ? Math.round(evaluatedDemand * 10000 * 100) : null;
 
     try {
       const res = await fetch('/api/loan/orders', {
@@ -221,11 +224,9 @@ export default function NewOrderForm({ brokers: initialBrokers, cardStaffs: init
             <label className="block text-xs font-medium text-ink-500 mb-1">
               拟申请金额 (万元)
             </label>
-            <input
-              type="number"
-              step="0.1"
+            <AmountCalculatorInput
               value={demandAmountWan}
-              onChange={(e) => setDemandAmountWan(e.target.value)}
+              onChange={setDemandAmountWan}
               placeholder="如: 120"
               className="w-full px-3.5 py-2.5 rounded-xl border border-ink-300 dark:border-ink-600 bg-transparent text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
             />

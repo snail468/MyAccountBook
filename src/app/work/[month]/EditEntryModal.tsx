@@ -5,6 +5,7 @@ import { PRESET_CATEGORIES, type Direction } from '@/lib/categories';
 import { yuanToCents } from '@/lib/money';
 import { localInputToISO, toLocalInput, formatYearMonthBeijing } from '@/lib/datetime';
 import { useToast } from '@/components/ui/Dialog';
+import AmountCalculatorInput from '@/components/ui/AmountCalculatorInput';
 
 type Props = {
   entry: {
@@ -188,11 +189,11 @@ export default function EditEntryModal({ entry, onClose, onSaved }: Props) {
         )}
 
         <label className="block text-xs text-ink-500 mt-4 mb-1">金额（元）</label>
-        <input
-          inputMode="decimal"
+        <AmountCalculatorInput
           placeholder="0.00"
           value={amount}
-          onChange={(e) => setAmount(e.target.value)}
+          onChange={setAmount}
+          onEnterSubmit={save}
           className="w-full px-4 py-4 text-2xl num rounded-2xl bg-ink-50 dark:bg-ink-800 border border-ink-200 dark:border-ink-700 focus:outline-none focus:ring-2 focus:ring-ink-400"
         />
 

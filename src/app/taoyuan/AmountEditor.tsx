@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { yuanToCents } from '@/lib/money';
 import { localInputToISO, toLocalInput } from '@/lib/datetime';
 import { friendlyFetchError } from '@/lib/netError';
+import AmountCalculatorInput from '@/components/ui/AmountCalculatorInput';
 
 export default function AmountEditor({
   title,
@@ -54,12 +55,12 @@ export default function AmountEditor({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="text-xs text-ink-500 mb-2">{title}</div>
-        <input
+        <AmountCalculatorInput
           autoFocus
-          inputMode="decimal"
           placeholder="0.00"
           value={amount}
-          onChange={(e) => setAmount(e.target.value)}
+          onChange={setAmount}
+          onEnterSubmit={submit}
           className="w-full px-4 py-4 text-3xl num rounded-2xl bg-ink-50 dark:bg-ink-800 border border-ink-200 dark:border-ink-700 focus:outline-none focus:ring-2 focus:ring-ink-400"
         />
         <label className="block mt-3 text-xs text-ink-500">操作时间</label>

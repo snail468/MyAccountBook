@@ -11,6 +11,8 @@ import {
 } from '@/lib/generalCategories';
 import ModalShell from './ModalShell';
 import AddCategoryModal from './AddCategoryModal';
+import { yuanToCents } from '@/lib/money';
+import AmountCalculatorInput from '@/components/ui/AmountCalculatorInput';
 
 export default function CategoryManagerModal({
   ledgerId,
@@ -51,8 +53,8 @@ export default function CategoryManagerModal({
       if (!trimmed) {
         delete map[name];
       } else {
-        const cents = Math.round(Number(trimmed) * 100);
-        if (Number.isFinite(cents) && cents > 0) map[name] = cents;
+        const cents = yuanToCents(trimmed);
+        if (cents !== null && cents > 0) map[name] = cents;
         else delete map[name];
       }
       return { ...prev, [key]: map };
@@ -273,18 +275,20 @@ export default function CategoryManagerModal({
                     <span className="text-xl leading-none">{c.icon}</span>
                     <span className="text-sm truncate">{c.name}</span>
                   </span>
-                  <input
-                    inputMode="decimal"
+                  <AmountCalculatorInput
                     value={monthYuan}
-                    onChange={(e) => setBudget(c.name, e.target.value, 'month')}
+                    onChange={(val) => setBudget(c.name, val, 'month')}
                     placeholder="—"
+                    allowZero={false}
+                    showOperatorBar={false}
                     className="w-full px-2 py-1.5 rounded-lg text-right num text-sm bg-white dark:bg-ink-900 border border-ink-200 dark:border-ink-700 focus:outline-none focus:ring-1 focus:ring-ink-400"
                   />
-                  <input
-                    inputMode="decimal"
+                  <AmountCalculatorInput
                     value={weekYuan}
-                    onChange={(e) => setBudget(c.name, e.target.value, 'week')}
+                    onChange={(val) => setBudget(c.name, val, 'week')}
                     placeholder="—"
+                    allowZero={false}
+                    showOperatorBar={false}
                     className="w-full px-2 py-1.5 rounded-lg text-right num text-sm bg-white dark:bg-ink-900 border border-ink-200 dark:border-ink-700 focus:outline-none focus:ring-1 focus:ring-ink-400"
                   />
                   <span className="text-[11px] text-ink-500 shrink-0">元</span>
