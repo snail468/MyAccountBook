@@ -99,5 +99,15 @@ describe('UTC+8 时间与时区一致性测试', () => {
     // 2026-10-01 00:00:00+08:00 = 2026-09-30 16:00:00Z
     expect(end.toISOString()).toBe('2026-09-30T16:00:00.000Z');
   });
+
+  it('操作时间变更时（如10月31日改成11月2日），自动算出对应的北京时间月份', () => {
+    // 用户在10月31日记账
+    const oct31 = localInputToISO('2026-10-31T20:00');
+    expect(formatYearMonthBeijing(oct31)).toBe('2026-10');
+
+    // 用户随后改为11月2日
+    const nov02 = localInputToISO('2026-11-02T10:30');
+    expect(formatYearMonthBeijing(nov02)).toBe('2026-11');
+  });
 });
 

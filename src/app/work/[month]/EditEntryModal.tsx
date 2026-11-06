@@ -3,7 +3,8 @@
 import { useState } from 'react';
 import { PRESET_CATEGORIES, type Direction } from '@/lib/categories';
 import { yuanToCents } from '@/lib/money';
-import { localInputToISO, toLocalInput } from '@/lib/datetime';
+import { localInputToISO, toLocalInput, formatYearMonthBeijing } from '@/lib/datetime';
+import { useToast } from '@/components/ui/Dialog';
 
 type Props = {
   entry: {
@@ -19,6 +20,7 @@ type Props = {
 };
 
 export default function EditEntryModal({ entry, onClose, onSaved }: Props) {
+  const toast = useToast();
   const [direction, setDirection] = useState<Direction>(entry.direction);
   const [category, setCategory] = useState(entry.category);
   const [customMode, setCustomMode] = useState(
@@ -66,6 +68,9 @@ export default function EditEntryModal({ entry, onClose, onSaved }: Props) {
       return;
     }
     setSaving(true);
+    const finalOccurredAtISO = localInputToISO(occurredAt);
+    const newYearMonth = formatYearMonthBeijing(finalOccurredAtISO);
+    const oldYearMonth = formatYearMonthBeijing(entry.occurredAt);
     try {
       const res = await fetch(`/api/entries/${entry.id}`, {
         method: 'PATCH',
@@ -76,11 +81,17 @@ export default function EditEntryModal({ entry, onClose, onSaved }: Props) {
           direction,
           amountCents: cents,
           note: note.trim() || null,
-          occurredAt: localInputToISO(occurredAt),
+          occurredAt: finalOccurredAtISO,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || '保存失败');
+      if (newYearMonth && oldYearMonth && newYearMonth !== oldYearMonth) {
+        toast({
+          message: `操作时间已更改，账单已自动归入 ${newYearMonth.replace('-', '年')}月`,
+          kind: 'info',
+        });
+      }
       onSaved();
     } catch (e) {
       setError(e instanceof Error ? e.message : '保存失败');

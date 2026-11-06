@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { requireOwnedEntry } from '@/lib/ownership';
 import { badRequest } from '@/lib/apiError';
+import { formatYearMonthBeijing } from '@/lib/datetime';
 
 const patchSchema = z.union([
   z.object({
@@ -45,7 +46,11 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const data: Record<string, unknown> = {};
   if (p.amountCents !== undefined) data.amountCents = p.amountCents;
   if (p.note !== undefined) data.note = p.note?.trim() || null;
-  if (p.occurredAt !== undefined) data.occurredAt = p.occurredAt ? new Date(p.occurredAt) : null;
+  if (p.occurredAt !== undefined) {
+    const occurredDate = p.occurredAt ? new Date(p.occurredAt) : new Date();
+    data.occurredAt = occurredDate;
+    data.yearMonth = formatYearMonthBeijing(occurredDate);
+  }
   if (p.category !== undefined) data.category = p.category;
   if (p.direction !== undefined) data.direction = p.direction;
   await prisma.entry.update({ where: { id }, data });

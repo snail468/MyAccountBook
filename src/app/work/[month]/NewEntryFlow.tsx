@@ -4,7 +4,7 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { PRESET_CATEGORIES, type Direction } from '@/lib/categories';
 import { yuanToCents } from '@/lib/money';
-import { defaultOccurredAtFor, localInputToISO, toLocalInput } from '@/lib/datetime';
+import { defaultOccurredAtFor, localInputToISO, toLocalInput, formatYearMonthBeijing } from '@/lib/datetime';
 import { friendlyFetchError, isNetworkError } from '@/lib/netError';
 import { enqueue } from '@/lib/offlineQueue';
 import { useToast } from '@/components/ui/Dialog';
@@ -79,13 +79,14 @@ export default function NewEntryFlow({
     // 幂等键：正常路径直接传给后端；断网入队时同一 clientId 让重放去重
     const clientId = crypto.randomUUID();
     const occurredAtISO = localInputToISO(occurredAt) ?? new Date().toISOString();
+    const finalYearMonth = formatYearMonthBeijing(occurredAtISO) || yearMonth;
     try {
       const res = await fetch('/api/entries', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...(ledgerId ? { ledgerId } : {}),
-          yearMonth,
+          yearMonth: finalYearMonth,
           category,
           direction,
           amountCents: cents,
@@ -100,6 +101,12 @@ export default function NewEntryFlow({
           throw new Error(data.error || `HTTP ${res.status}`);
         }
         throw Object.assign(new Error(data.error || `HTTP ${res.status}`), { queue: true });
+      }
+      if (finalYearMonth !== yearMonth) {
+        toast({
+          message: `操作时间属于 ${finalYearMonth.replace('-', '年')}月，已自动归入对应月份`,
+          kind: 'info',
+        });
       }
       reset();
       startTransition(() => router.refresh());
@@ -118,7 +125,7 @@ export default function NewEntryFlow({
             ledgerId: ledgerId ?? 'work',
             payload: {
               ...(ledgerId ? { ledgerId } : {}),
-              yearMonth,
+              yearMonth: finalYearMonth,
               category,
               direction,
               amountCents: cents,
@@ -126,7 +133,13 @@ export default function NewEntryFlow({
               occurredAt: occurredAtISO,
             },
           });
-          toast({ message: '已存到本地，联网后自动同步', kind: 'info' });
+          toast({
+            message:
+              finalYearMonth !== yearMonth
+                ? `已自动归入 ${finalYearMonth.replace('-', '年')}月（离线保存，联网后同步）`
+                : '已存到本地，联网后自动同步',
+            kind: 'info',
+          });
           reset();
           return;
         } catch (qErr) {

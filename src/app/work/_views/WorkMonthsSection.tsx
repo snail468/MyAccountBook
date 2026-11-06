@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/db';
 import { NOT_DELETED } from '@/lib/softDelete';
 import { currentBeijingYearMonth, getBeijingParts } from '@/lib/datetime';
+import { runStartupTasks } from '@/lib/bootstrap';
 import WorkMonthsClient from './WorkMonthsClient';
 
 // 工作账本"月份列表"section。
@@ -14,7 +15,7 @@ import WorkMonthsClient from './WorkMonthsClient';
 // backHref：返回按钮跳转目标（/ 或 /l/[id]/...）
 // monthHrefPrefix：单月页链接前缀，比如 '/work' 或 '/l/<id>/month'
 
-function makeMonthList(earliest: string | null): string[] {
+export function makeMonthList(earliest: string | null, latest: string | null = null): string[] {
   const p = getBeijingParts(new Date())!;
   const curY = p.year;
   const curM = p.month;
@@ -33,10 +34,20 @@ function makeMonthList(earliest: string | null): string[] {
     startY -= 1;
   }
 
+  let endY = curY;
+  let endM = curM;
+  if (latest) {
+    const [ly, lm] = latest.split('-').map(Number);
+    if (ly > endY || (ly === endY && lm > endM)) {
+      endY = ly;
+      endM = lm;
+    }
+  }
+
   const months: string[] = [];
   let y = startY;
   let m = startM;
-  while (y < curY || (y === curY && m <= curM)) {
+  while (y < endY || (y === endY && m <= endM)) {
     months.push(`${y}-${String(m).padStart(2, '0')}`);
     m += 1;
     if (m > 12) {
@@ -60,6 +71,7 @@ export default async function WorkMonthsSection({
   monthHrefPrefix: string;
   expensesHref: string;
 }) {
+  await runStartupTasks();
   const entries = await prisma.entry.findMany({
     where: { ledgerId, ...NOT_DELETED },
     select: { yearMonth: true, direction: true, amountCents: true },
@@ -67,8 +79,10 @@ export default async function WorkMonthsSection({
 
   const byMonth = new Map<string, { income: number; expense: number; count: number }>();
   let earliest: string | null = null;
+  let latest: string | null = null;
   for (const e of entries) {
     if (!earliest || e.yearMonth < earliest) earliest = e.yearMonth;
+    if (!latest || e.yearMonth > latest) latest = e.yearMonth;
     const acc = byMonth.get(e.yearMonth) ?? { income: 0, expense: 0, count: 0 };
     if (e.direction === 'income') acc.income += e.amountCents;
     else acc.expense += e.amountCents;
@@ -76,7 +90,7 @@ export default async function WorkMonthsSection({
     byMonth.set(e.yearMonth, acc);
   }
 
-  const months = makeMonthList(earliest);
+  const months = makeMonthList(earliest, latest);
   const currentMonth = currentBeijingYearMonth();
 
   const monthItems = months.map((m) => {

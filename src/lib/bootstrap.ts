@@ -19,10 +19,40 @@ import { ensureLedgersForUser } from '@/lib/ledgerBootstrap';
 import { migrateArchivedIfNeeded, purgeExpiredTrash } from '@/lib/ledgerTrash';
 import { purgeExpiredRecords } from '@/lib/recordTrash';
 import { createLogger } from '@/lib/logger';
+import { formatYearMonthBeijing } from '@/lib/datetime';
 
 const log = createLogger('bootstrap');
 
 let startupDone = false;
+
+/**
+ * 确保所有工作账本条目的 yearMonth 与其 occurredAt（北京时间）严格一致。
+ * 自动修复历史修改操作时间后未联动更新归属月份的条目。
+ */
+export async function syncEntryYearMonths(): Promise<number> {
+  const entries = await prisma.entry.findMany({
+    select: { id: true, yearMonth: true, occurredAt: true },
+  });
+  const updates: { id: string; yearMonth: string }[] = [];
+  for (const e of entries) {
+    const expected = formatYearMonthBeijing(e.occurredAt);
+    if (expected && e.yearMonth !== expected) {
+      updates.push({ id: e.id, yearMonth: expected });
+    }
+  }
+  if (updates.length > 0) {
+    await prisma.$transaction(
+      updates.map((u) =>
+        prisma.entry.update({
+          where: { id: u.id },
+          data: { yearMonth: u.yearMonth },
+        }),
+      ),
+    );
+    log.info(`自动校准 ${updates.length} 笔工作账本条目的归属月份`);
+  }
+  return updates.length;
+}
 
 /** 进程启动时跑一次。失败只记日志 —— 不能因为维护任务挂了就起不来。 */
 export async function runStartupTasks(): Promise<void> {
@@ -47,6 +77,11 @@ export async function runStartupTasks(): Promise<void> {
     await purgeExpiredRecords();
   } catch (err) {
     log.error('记账类回收站清理失败', err);
+  }
+  try {
+    await syncEntryYearMonths();
+  } catch (err) {
+    log.error('工作账本月份对齐失败', err);
   }
 }
 
@@ -84,6 +119,11 @@ export async function maintenanceTick(): Promise<void> {
   }
   try {
     await purgeExpiredRecords();
+  } catch {
+    /* 已在内部记日志 */
+  }
+  try {
+    await syncEntryYearMonths();
   } catch {
     /* 已在内部记日志 */
   }

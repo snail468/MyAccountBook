@@ -175,7 +175,7 @@ export default function FeatureManage({
               <div>
                 <div className="text-sm font-medium">首页与导航显示名称</div>
                 <div className="text-xs text-ink-400 mt-0.5">
-                  自定义业务管理在首页和顶部栏的入口名称
+                  自定义业务管理在首页的入口名称
                 </div>
               </div>
 
@@ -278,7 +278,7 @@ export default function FeatureManage({
               <div>
                 <div className="text-sm font-medium">首页与导航显示名称</div>
                 <div className="text-xs text-ink-400 mt-0.5">
-                  自定义人情往来在首页和顶部栏的入口名称
+                  自定义人情往来在首页的入口名称
                 </div>
               </div>
 

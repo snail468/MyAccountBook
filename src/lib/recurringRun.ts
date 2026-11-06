@@ -8,6 +8,7 @@
 import { prisma } from '@/lib/db';
 import { createLogger } from '@/lib/logger';
 import { dueOccurrences, type RecurringSchedule } from '@/lib/recurring';
+import { formatYearMonthBeijing } from '@/lib/datetime';
 
 const log = createLogger('recurring');
 
@@ -62,7 +63,7 @@ export async function materializeDueRules(
               userId,
               ledgerId: r.ledgerId,
               // 工作账本按 yearMonth 归集，要与 occurredAt 保持一致
-              yearMonth: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`,
+              yearMonth: formatYearMonthBeijing(d),
               category: r.category,
               direction: r.direction,
               amountCents: r.amountCents,

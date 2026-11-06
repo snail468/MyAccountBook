@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/db';
 import { NOT_DELETED } from '@/lib/softDelete';
+import { runStartupTasks } from '@/lib/bootstrap';
 import WorkMonthClient from './WorkMonthClient';
 
 // 工作账本"单月"section。
@@ -25,6 +26,7 @@ export default async function WorkMonthSection({
   /** 只读协作者(viewer)传 false：隐藏「记一笔」入口。默认可写（owner 自有路由）。 */
   canEdit?: boolean;
 }) {
+  await runStartupTasks();
   const entries = await prisma.entry.findMany({
     where: { ledgerId, ...NOT_DELETED, yearMonth: month },
     orderBy: [{ occurredAt: 'desc' }, { createdAt: 'desc' }],

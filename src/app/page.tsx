@@ -525,22 +525,6 @@ export default async function HomePage() {
       <div className="flex items-center justify-between mb-2">
         <div className="text-sm text-ink-500">{user.username} · 心愿便利贴</div>
         <div className="flex items-center gap-2">
-          {s.hasLoanBusiness && (
-            <Link
-              href="/loan"
-              className="text-xs px-2.5 py-1 rounded-full bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 font-medium border border-blue-200/60 dark:border-blue-700/60 active:scale-95 transition"
-            >
-              🏠 {s.loanBusinessName} ›
-            </Link>
-          )}
-          {s.hasRenqing && (
-            <Link
-              href="/renqing"
-              className="text-xs px-2.5 py-1 rounded-full bg-rose-50 dark:bg-rose-900/30 text-rose-700 dark:text-rose-300 font-medium border border-rose-200/60 dark:border-rose-700/60 active:scale-95 transition"
-            >
-              🧧 {s.renqingName} ›
-            </Link>
-          )}
           <LogoutButton />
         </div>
       </div>

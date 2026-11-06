@@ -5,6 +5,7 @@ import { requireSessionUser, resolveOwnLedgerId } from '@/lib/ownership';
 import { badRequest, notFound } from '@/lib/apiError';
 import { roleAtLeast, isLedgerRole } from '@/lib/ledgerRole';
 import { PRESET_CATEGORIES } from '@/lib/categories';
+import { formatYearMonthBeijing, currentBeijingYearMonth } from '@/lib/datetime';
 import {
   cursorWhere,
   decodeCursor,
@@ -87,7 +88,7 @@ export async function GET(req: Request) {
 }
 
 const bodySchema = z.object({
-  yearMonth: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/),
+  yearMonth: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/).optional(),
   category: z.string().trim().min(1).max(32),
   direction: z.enum(['income', 'expense']),
   amountCents: z.number().int().positive().max(1_000_000_00),
@@ -127,17 +128,20 @@ export async function POST(req: Request) {
     }
   }
 
+  const occurredDate = occurredAt ? new Date(occurredAt) : new Date();
+  const finalYearMonth = formatYearMonthBeijing(occurredDate) || yearMonth || currentBeijingYearMonth();
+
   try {
     const entry = await prisma.entry.create({
       data: {
         userId: user.id,
         ledgerId,
-        yearMonth,
+        yearMonth: finalYearMonth,
         category,
         direction: finalDirection,
         amountCents,
         note: note?.trim() || null,
-        occurredAt: occurredAt ? new Date(occurredAt) : new Date(),
+        occurredAt: occurredDate,
         clientId: clientId ?? null,
       },
     });
